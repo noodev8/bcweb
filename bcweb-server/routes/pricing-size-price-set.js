@@ -5,7 +5,7 @@ API Route: pricing_size_price_set
 Method: POST
 Purpose: Give ONE size of a style its own Shopify price (owner, 2026-11-08) — the Size prices panel on the Shopify pricing drill. For a
          dead size of a selling style (Milano 35: 5 pairs, never sells), so the style price stays where it earns. On Shopify the size
-         shows this price with the style price crossed out; it ends by itself when the size sells out, when the style price goes to or
+         shows this price with the RRP crossed out, like every other size; it ends by itself when the size sells out, when the style price goes to or
          below it, or by hand (POST /pricing-size-price-clear). Rules: utils/sizePrice.js (THE copy).
 
          - Set BY HAND; the screen fills in 50% of RRP. Must be BELOW the style price and the size must have stock (refused otherwise —

@@ -19,7 +19,7 @@ matched.
 
 What it compares, for every ACTIVE Shopify variant whose SKU is one of our codes on a style flagged live (skusummary.shopify = 1):
   - price and compareAtPrice against utils/shopify.js → variantPrice — THE rule the push itself uses, so the two can't disagree (a size
-    with its own price in force, utils/sizePrice.js, is expected at that price with the style price as its "was" price);
+    with its own price in force, utils/sizePrice.js, is expected at that price, RRP as its "was" price as usual);
   - skumap.variantlink against the live variant id (the Google feed builds its ?variant= links from it);
   - the product title against title.shopifytitle, once per style (both trimmed — the retired Python compared them that way).
 It also lists live Shopify products with SKUs we don't know, and ACTIVE products whose style is flagged OFF in BCWEB — reported only.

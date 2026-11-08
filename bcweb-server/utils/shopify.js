@@ -18,7 +18,7 @@ Purpose: The ONE place the bcweb server talks to the Shopify Admin API. Mirrors 
            - variant  <-> skumap.code  (= the Shopify variant SKU, e.g. '0151181-ARIZONA-36')
            - size     <-> Option1 "Size", value = the size display string ('36 EU / 3.5 UK')
            - price/rrp <-> skusummary.shopifyprice / rrp  (Shopify price / compareAtPrice) — except a size with its OWN price
-                           (shopify_size_price, utils/sizePrice.js, 2026-11-08): that price, the style price as compareAtPrice
+                           (shopify_size_price, utils/sizePrice.js, 2026-11-08): that price, the RRP as compareAtPrice as usual
            - barcode  <-> skumap.ean with the legacy trailing 'B' stripped
          After a successful push we cache each returned variant id back into skumap.variantlink ('<id>V'), exactly like
          price_update2.py's update_variant_links_in_database, so downstream lookups stay fast.
@@ -157,18 +157,18 @@ function buildSeedDescription(product) {
  * variantPrice({ price, rrp, sizePrice }) -> { price: '36.95', compareAtPrice: '50.00' | null }
  * THE rule for what a variant's price and "was" price are on Shopify. One function, so the push (buildProductSetInput) and the drift check
  * (scripts/shopify-price-check.js) can never disagree about what Shopify SHOULD show.
- *   - a size with its OWN price (utils/sizePrice.js — passed only while it is in force: below the style price and in stock): that
- *     price, with the STYLE price crossed out as its "was" price (owner, 2026-11-08: ~~£85~~ £45);
- *   - every other size: the style price, with compareAtPrice = the RRP only when it is above the price; null clears a stale "was"
- *     price (see the note in buildProductSetInput).
+ *   - the price is the size's OWN price when it has one in force (utils/sizePrice.js — passed only while below the style price and
+ *     in stock), else the style price;
+ *   - compareAtPrice is the RRP when it is above that price, for EVERY size — a size price included (owner, 2026-11-08: "Its simply
+ *     £45 from a £90 RRP" — the style price crossed out made no sense to a customer); null clears a stale "was" price (see the note
+ *     in buildProductSetInput).
  * A sizePrice at or above the style price is ignored here too (belt and braces — sizePrice.ACTIVE_SQL already leaves it out).
  */
 function variantPrice({ price, rrp, sizePrice = null }) {
-  if (sizePrice !== null && sizePrice !== undefined && Number(sizePrice) > 0 && Number(sizePrice) < Number(price)) {
-    return { price: Number(sizePrice).toFixed(2), compareAtPrice: Number(price).toFixed(2) };
-  }
-  const hasRrp = rrp !== null && rrp !== undefined && Number(rrp) > Number(price);
-  return { price: Number(price).toFixed(2), compareAtPrice: hasRrp ? Number(rrp).toFixed(2) : null };
+  const own = sizePrice !== null && sizePrice !== undefined && Number(sizePrice) > 0 && Number(sizePrice) < Number(price);
+  const sell = own ? Number(sizePrice) : Number(price);
+  const hasRrp = rrp !== null && rrp !== undefined && Number(rrp) > sell;
+  return { price: sell.toFixed(2), compareAtPrice: hasRrp ? Number(rrp).toFixed(2) : null };
 }
 
 function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true, productId = null, gallery = [], liveMedia = null, dropMediaIds = [] } = {}) {

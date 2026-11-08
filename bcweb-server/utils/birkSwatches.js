@@ -5,7 +5,7 @@ Module: utils/birkSwatches.js
 Purpose: Colour swatches + a Narrow / Regular switch on Birkenstock product pages, like birkenstock.com (owner, 2026-11-08: option B —
          "model + material, like Birkenstock", "hide sold out"). Each colour stays its OWN Shopify product (own URL, own description —
          SEO); BCWEB works out which products belong together and writes that onto each product as metafields. The theme shows them:
-         a Dawn "Custom liquid" block on the product page (docs/shopify-swatches.liquid.txt) — no theme files edited.
+         a Dawn "Custom liquid" block on the product page (docs/shopify-swatches.liquid.txt; listed in docs/shopify-theme-edits.txt) — no theme files edited.
 
 THE RULE — from title.shopifytitle (never the handle, which often omits the width):
          "[Womens|Mens|Unisex] Birkenstock <model + material> <Sandals|Trainers|Slippers|Shoes|Boots|Clogs> <colour> <Narrow|Regular> Fit"

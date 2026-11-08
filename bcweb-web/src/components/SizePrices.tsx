@@ -4,7 +4,7 @@
  *
  * A dead size of a selling style (Milano 35: 5 pairs, never sells, while the style sold 101 in a year) gets its OWN Shopify price, so
  * the style price stays where it earns (memory check-price-grain: never cut a style to clear its dead sizes). On Shopify the size
- * shows its price with the style price crossed out (~~£85~~ £45). Rules on the server, utils/sizePrice.js (THE copy):
+ * shows its price against the RRP like every other size (~~£90~~ £45 — owner: "simply £45 from a £90 RRP"). Rules on the server, utils/sizePrice.js (THE copy):
  *   - set BY HAND; the box fills with 50% of RRP (header.size_price_default) — type the last selling price instead if you like;
  *   - must be BELOW the style price, and the size must have stock (refused otherwise); below cost is flagged, never blocked;
  *   - it ends by itself when the size sells out (Update Orders) or the style price goes to or below it — and "Back to style price" here;
@@ -19,6 +19,7 @@ import { useAuth } from '@/contexts/AuthContext';
 interface SizePricesProps {
   sizes: SizeRow[];
   stylePrice: number | null;
+  rrp: number | null;            // crossed out beside a size price, as on Shopify
   cost: number | null;
   defaultPrice: number | null;   // 50% of RRP (server)
   onChanged: () => Promise<void> | void;
@@ -26,7 +27,7 @@ interface SizePricesProps {
 
 const gbp = (n: number) => `£${n.toFixed(2)}`;
 
-export default function SizePrices({ sizes, stylePrice, cost, defaultPrice, onChanged }: SizePricesProps) {
+export default function SizePrices({ sizes, stylePrice, rrp, cost, defaultPrice, onChanged }: SizePricesProps) {
   const { logout } = useAuth();
   const [open, setOpen] = useState<string | null>(null);        // code of the size being edited
   const [priceStr, setPriceStr] = useState('');
@@ -94,7 +95,7 @@ export default function SizePrices({ sizes, stylePrice, cost, defaultPrice, onCh
       <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h3 className="text-sm font-semibold text-slate-800">Size prices</h3>
         <span className="text-xs text-slate-400">
-          A size that won&apos;t sell at the style price can have its own — Shopify shows it with the style price crossed out. It ends
+          A size that won&apos;t sell at the style price can have its own — Shopify shows it against the RRP, like the other sizes. It ends
           when the size sells out.
         </span>
         {withOwn > 0 && <span className="ml-auto text-xs text-slate-500">{withOwn} size{withOwn === 1 ? '' : 's'} with own price</span>}
@@ -140,7 +141,7 @@ export default function SizePrices({ sizes, stylePrice, cost, defaultPrice, onCh
                   {r.own_price != null && r.own_active ? (
                     <>
                       <span className="font-semibold text-slate-900">{gbp(r.own_price)}</span>
-                      {stylePrice !== null && <span className="ml-2 text-xs text-slate-400 line-through">{gbp(stylePrice)}</span>}
+                      {rrp !== null && rrp > r.own_price && <span className="ml-2 text-xs text-slate-400 line-through">{gbp(rrp)}</span>}
                       <span className="ml-2 rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white">own price</span>
                     </>
                   ) : r.own_price != null ? (

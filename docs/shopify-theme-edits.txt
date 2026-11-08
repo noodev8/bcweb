@@ -1,0 +1,69 @@
+SHOPIFY THEME EDITS — THE ONE RECORD OF EVERY CHANGE WE MAKE TO THE SHOP'S THEME
+=====================================================================================
+Live theme: Dawn 16.1.0 (published). Every change BCWEB depends on is listed here, newest section last, so a NEW theme or a Dawn
+update (which replaces the theme's files) can be brought back to how the shop works today by going down this list. Add any future theme
+change here — never only in the Shopify editor. Take a backup (duplicate the theme) before editing the published theme.
+
+INDEX
+  A. Birkenstock colour swatches + Narrow / Regular switch (2026-11-08) — a "Custom liquid" block on the product page (theme editor,
+     no theme files). The block's code: docs/shopify-swatches.liquid.txt. Rules: utils/birkSwatches.js.
+  B. Size prices (2026-11-08) — three THEME FILE edits, below. Rules: utils/sizePrice.js.
+
+Editing tip: the Shopify code editor auto-closes {% {{ " < as you type — check line ends for stray " %}" before saving.
+
+
+=====================================================================================================================================
+B. SIZE PRICES (applied 2026-11-08)
+=====================================================================================================================================
+Why: a size with its own price (utils/sizePrice.js — e.g. Milano Black Regular 35 at £45, every other size £82.49, RRP £90) must
+never LEAD the price on the shop. Without these edits Dawn showed "From £45.00" on every card and opened the product page on size 35
+at £45 (it opens on the first size in stock) — the support-call risk from the last time per-size prices were tried. Owner chose a
+range on the cards ("£45.00 – £82.49") over the style price alone, a price tag on the size's button, and opening on a full-price size.
+
+These are THEME FILE edits (a backup of the theme was taken first by the owner). A DAWN UPDATE REPLACES THE FILES — re-apply all three
+from here after any theme update. Styles whose sizes all have one price are unaffected by all three (checked on Arizona EVA Black Narrow).
+
+-------------------------------------------------------------------------------------------------------------------------------------
+1. snippets/price.liquid — cards / search / "you may also like" show the whole range
+-------------------------------------------------------------------------------------------------------------------------------------
+Inside the opening {%- liquid … -%} block, Dawn's
+
+    if target == product and product.price_varies
+      assign money_price = 'products.product.price.from_price_html' | t: price: money_price
+    endif
+
+became
+
+    if target == product and product.price_varies
+      # BCWEB size prices 2026-11-08: show the whole price range on cards, not From the lowest size price
+      assign money_price = price_min | money | append: ' – ' | append: money_price_max
+    endif
+
+Result: ~~£90.00 GBP~~ £45.00 – £82.49 GBP. (money_price_max carries "GBP" when the currency code setting is on.) The product page
+prices the chosen size (use_variant), so this branch doesn't touch it.
+
+-------------------------------------------------------------------------------------------------------------------------------------
+2. snippets/product-variant-options.liquid — the size's own price on its button
+-------------------------------------------------------------------------------------------------------------------------------------
+In the picker_type == 'button' part, one line was added after {{ value -}} inside the <label>:
+
+    {%- # BCWEB size prices 2026-11-08: a size priced below the rest shows its own price on its button -%}{%- if value.variant and value.variant.price < value.variant.product.price_max -%}<span class="bc-size-offer" style="margin-left: 0.4em; font-weight: 600;">{{- value.variant.price | money_without_trailing_zeros -}}</span>{%- endif -%}
+
+Result: "35 EU / 2.5 UK £45". Drawn by the theme, so it survives Dawn redrawing the sizes when one is picked.
+
+-------------------------------------------------------------------------------------------------------------------------------------
+3. snippets/product-variant-options.liquid — open on a full-price size (added at the END of the file, after {%- endfor -%})
+-------------------------------------------------------------------------------------------------------------------------------------
+    {%- # BCWEB size prices 2026-11-08: page opened without a chosen size and Dawn would open on a size priced below the rest, so switch to the first in-stock size at the full price -%}
+    {%- if picker_type == 'button' and option.position == 1 and product and product.selected_variant == nil and product.price_varies and product.selected_or_first_available_variant.price < product.price_max -%}
+      {%- assign bc_full = nil -%}{%- for v in product.variants -%}{%- if v.available and v.price == product.price_max -%}{%- assign bc_full = v -%}{%- break -%}{%- endif -%}{%- endfor -%}
+      {%- if bc_full -%}<script>document.addEventListener('DOMContentLoaded', function () { var i = document.querySelector('variant-selects input[type="radio"][value="{{ bc_full.option1 | escape }}"]'); if (i && !i.checked) { i.checked = true; i.dispatchEvent(new Event('change', { bubbles: true })); } });</script>{%- endif -%}
+    {%- endif -%}
+
+(Planned as a Custom liquid block; put in this snippet instead because the code editor could be driven reliably. Same effect.)
+Result: Milano Black Regular opens on 36 at ~~£90~~ £82.49 (add-to-cart and link follow). A link that names a size (Google's
+?variant= links) is left alone, so Google's size 35 listing still opens on 35 at £45. £45 may show for a split second while loading.
+
+-------------------------------------------------------------------------------------------------------------------------------------
+Checked live 2026-11-08: search card range; 35 button tag (kept after picking 38); page opens on 36; ?variant=<35> opens on 35 at £45;
+a style with one price (Arizona EVA) unchanged — opens on its first size, no tags.

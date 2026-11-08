@@ -451,7 +451,7 @@ function Dot() {
 // A SIZE'S OWN SHOPIFY PRICE on its tile (2026-11-08, server utils/sizePrice.js) — a small solid tag, so a size already being dealt with
 // on the Shopify pricing drill reads as such. Display only. (The same tag is on Deep sellers' tiles.)
 function OwnPrice({ price }: { price: number }) {
-  return <span className="ml-0.5 rounded bg-slate-800 px-1 text-[10px] font-medium text-white">£{price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)}</span>;
+  return <span className="ml-0.5 mr-1 rounded bg-slate-800 px-1 text-[10px] font-medium text-white">£{price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)}</span>;
 }
 
 // THE SIZE RUN — white = in this box (size · qty, the dot if never sold; a link to the style's size screen), grey = the rest.
