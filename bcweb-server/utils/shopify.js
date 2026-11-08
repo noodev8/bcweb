@@ -149,10 +149,19 @@ function buildSeedDescription(product) {
   return parts.join('\n');
 }
 
+/*
+ * variantPrice({ price, rrp }) -> { price: '36.95', compareAtPrice: '50.00' | null }
+ * THE rule for what a variant's price and "was" price are on Shopify. One function, so the push (buildProductSetInput) and the drift check
+ * (scripts/shopify-price-check.js) can never disagree about what Shopify SHOULD show. compareAtPrice is the RRP only when it is above the
+ * price; null clears a stale "was" price (see the note in buildProductSetInput).
+ */
+function variantPrice({ price, rrp }) {
+  const hasRrp = rrp !== null && rrp !== undefined && Number(rrp) > Number(price);
+  return { price: Number(price).toFixed(2), compareAtPrice: hasRrp ? Number(rrp).toFixed(2) : null };
+}
+
 function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true, productId = null, gallery = [], liveMedia = null, dropMediaIds = [] } = {}) {
-  const priceStr = Number(product.price).toFixed(2);
-  const hasRrp = product.rrp !== null && product.rrp !== undefined && Number(product.rrp) > Number(product.price);
-  const compareAt = hasRrp ? Number(product.rrp).toFixed(2) : null;
+  const { price: priceStr, compareAtPrice: compareAt } = variantPrice(product);
 
   const productOptions = [
     { name: 'Size', values: sizes.map((s) => ({ name: s.sizeDisplay })) }
@@ -602,4 +611,4 @@ async function liveVariantPrices(handle) {
   }
 }
 
-module.exports = { isConfigured, buildProductSetInput, buildFiles, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, publishToAllChannels, pushIfLive, pushIfStale, liveVariantPrices };
+module.exports = { isConfigured, variantPrice, buildProductSetInput, buildFiles, upsertProduct, shopifyGraphQL, findProductIdByHandle, deleteByHandle, publishToAllChannels, pushIfLive, pushIfStale, liveVariantPrices };
