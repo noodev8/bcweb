@@ -103,7 +103,7 @@ decides membership and tells you whether the decision worked.
 
 ### 2.1 The field is `googlecampaign`, not `custom_label_0`
 
-`merchant_feed.py:217-218`:
+`utils/merchantFeed.js → buildItem` (was `merchant_feed.py:217-218`, the Python feed retired 2026-11-08):
 
 ```python
 "custom_label_0": row["googlecampaign"],

@@ -1087,7 +1087,7 @@ export interface ShopifyPushResult { pushed: boolean; isNew?: boolean; variantCo
 // Outcome of the automatic "re-push price to Google Merchant Center on save" that pricing-apply and product-price run when a product
 // is live on Google. null/absent means "not live on Google, Google not configured, or no googleid yet — nothing pushed"; pushed=false
 // means the DB save stands but the whole push failed (updated/failed/total cover PARTIAL success — a groupid can have several
-// googleids, one per size). Unlike Shopify, a failed Google push isn't urgent to retry — the nightly merchant_feed.py --upload cron
+// googleids, one per size). Unlike Shopify, a failed Google push isn't urgent to retry — the nightly scripts/merchant-feed.js --upload cron
 // is still an eventual fallback.
 export interface GooglePushResult { pushed: boolean; updated?: number; failed?: number; total?: number; error?: string; message?: string; }
 export function setProductShopify(groupid: string, shopify: boolean, status?: 'ACTIVE' | 'DRAFT') {

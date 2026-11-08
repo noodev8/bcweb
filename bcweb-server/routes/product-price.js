@@ -20,7 +20,7 @@ Purpose: Save the price fields on skusummary for the Add / Modify Product module
              without changing the price).
            - GOOGLE: right after the Shopify push, also re-pushes the price to the Google Merchant API if the product is
              live there (`utils/googleMerchant.js → pushIfLive`), same as `pricing-apply.js` (W1) — otherwise Google Shopping/ads would
-             show the old price until the next nightly `C:\scripts\merchant-feed\merchant_feed.py --upload` cron run. Best-effort, never
+             show the old price until the next nightly `C:\scripts\merchant-feed\scripts/merchant-feed.js --upload` cron run. Best-effort, never
              fails the save. Unlike the Shopify push (which may still be reconciling other listing fields), this fires ONLY when the
              Shopify price actually changed (old != new — the same `logged` condition as the audit row): Google Merchant carries price
              only, so a no-op save has nothing to send there and we skip the round-trip. `google` is null when the price was unchanged.
@@ -193,7 +193,7 @@ router.post('/', async (req, res) => {
     // Same for Google, but ONLY when the price actually changed: Google Merchant carries price only, so a no-op save (old == new) has
     // nothing to send there — skip the Merchant API round-trip entirely (unlike Shopify above, which may still be reconciling other
     // listing fields). When the price did change, push the new price to the Merchant API right now (best-effort — never
-    // fails the save), so it doesn't wait on the nightly merchant_feed.py --upload cron (mirrors pricing-apply.js, W1).
+    // fails the save), so it doesn't wait on the nightly scripts/merchant-feed.js --upload cron (mirrors pricing-apply.js, W1).
     const googleResult = logged ? await googleMerchant.pushIfLive(groupid) : null;
 
     return res.json({

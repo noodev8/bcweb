@@ -75,7 +75,7 @@ Root problem left: our DB knows only the main image (`skusummary.imagename`); th
 
 ## Not done
 
-5. Google feed: `additional_image_link` (up to 10) in `C:\scripts\merchant-feed\merchant_feed.py`.
+5. Google feed: `additional_image_link` (up to 10) in `bcweb-server/utils/merchantFeed.js` (was the Python merchant_feed.py).
 - Raise "done" from 2 to 4 images later: `MIN_IMAGES` in `utils/productImage.js`.
 
 ## Useful

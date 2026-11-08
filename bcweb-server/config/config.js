@@ -90,9 +90,22 @@ module.exports = {
     fulfilClientSecret: process.env.SHOPIFY_FULFIL_CLIENT_SECRET || ''
   },
 
+  // Google Merchant Center PRIMARY feed upload — the nightly product file (scripts/merchant-feed.js --upload), sent to Merchant Center's
+  // SFTP drop. Moved here from the Python merchant_feed.py on 2026-11-08 with the same MERCHANT_SFTP_* variables (port default 19321 as
+  // the Python had). Optional: not validated at boot; the script refuses to upload with a clear message if any is missing.
+  // QUOTE MERCHANT_SFTP_PASSWORD in .env (single quotes): it contains '#', which Node's dotenv reads as the start of a comment — the
+  // password arrives one character short and the login fails "All configured authentication methods failed". Python's dotenv didn't
+  // cut it, so the scripts repo's .env has it unquoted. (Same trap as EBAY_REFRESH_TOKEN.)
+  merchantSftp: {
+    host: process.env.MERCHANT_SFTP_HOST || '',
+    port: Number(process.env.MERCHANT_SFTP_PORT || 19321),
+    username: process.env.MERCHANT_SFTP_USERNAME || '',
+    password: process.env.MERCHANT_SFTP_PASSWORD || ''
+  },
+
   // Google Merchant Center Merchant API — real-time price push after a Shopify Pricing apply (utils/googleMerchant.js). Without this,
-  // Google Shopping/ads would show the old price until the next nightly C:\scripts\merchant-feed\merchant_feed.py --upload cron run.
-  // Same service-account credential the (currently cron-disabled, --no-google) C:\scripts\price_update.py already uses. Optional
+  // Google Shopping/ads would show the old price until the next nightly feed upload (scripts/merchant-feed.js --upload).
+  // Same service-account credential the retired Python price scripts used. Optional
   // feature like onecom/shopify above: not validated at boot; utils/googleMerchant.js checks these are present before it does anything.
   //
   // The push is now done in-process in Node (utils/googleAuth.js signs a service-account JWT with the built-in crypto module and caches

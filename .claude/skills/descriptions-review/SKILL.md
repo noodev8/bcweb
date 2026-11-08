@@ -7,7 +7,7 @@ description: Run the Shopify descriptions review — fetch every product descrip
 
 The approved plain-text description of each product lives in `shopify_description.description` (LIVE DB, `brookfield_prod`).
 Two things read it, and neither ever calls Shopify:
-- **Google Merchant feed** — nightly `merchant_feed.py`; an unapproved product goes out with its title.
+- **Google Merchant feed** — nightly `bcweb-server/scripts/merchant-feed.js`; an unapproved product goes out with its title.
 - **eBay listing** (bcweb) — `utils/ebayCandidates.js`; a style with no approved description is blocked ("description") on Not on eBay.
 
 The tool is `D:\projects\scripts\merchant-feed\descriptions.py` (README beside it). It is NOT in this repo.

@@ -4,7 +4,7 @@ Module: utils/googleMerchant.js
 =======================================================================================================================================
 Purpose: Keep Google Merchant Center's price in step with a Shopify Pricing apply (W1), the same way utils/shopify.js keeps Shopify in
          step. Without this, Google Shopping/ads would keep showing the OLD price after an Apply until the next nightly
-         C:\scripts\merchant-feed\merchant_feed.py --upload cron run (3:30am BST) — that script is the only thing that regenerates and
+         C:\scripts\merchant-feed\scripts/merchant-feed.js --upload cron run (3:30am BST) — that script is the only thing that regenerates and
          re-uploads the full feed to Google.
 
          DONE IN NODE (2026-07-24): the price push now runs in-process with the built-in fetch + a service-account token from
@@ -53,12 +53,12 @@ function resourceNames() {
   return { parent, dataSource };
 }
 
-// googleid + current shopifyprice for every active, google-eligible size under groupid. Mirrors merchant_feed.py's WHERE clause so we
+// googleid + current shopifyprice for every active, google-eligible size under groupid. Mirrors utils/merchantFeed.js's WHERE clause so we
 // only ever push products that are actually IN the Google feed.
 //
 // THE GTIN CONDITION IS LOAD-BEARING — do not drop it as redundant. A supplemental override is matched to an existing product by
 // (offerId, contentLanguage, feedLabel), so pushing an offerId Google has never seen returns 404 "The resource with name `Product` was
-// not found". merchant_feed.py only emits rows whose skumap.ean yields a valid 12/13-digit GTIN once the legacy trailing 'B' is
+// not found". utils/merchantFeed.js only emits rows whose skumap.ean yields a valid 12/13-digit GTIN once the legacy trailing 'B' is
 // stripped (see its "Only process rows with valid GTIN" guard) — so a size with a googleid but a blank/short ean is NOT on Google, and
 // pushing it can only ever 404. This filter previously only checked googleid, and the resulting 404 counted as a push failure, which
 // stopped the sweep stamping the row: the style then retried every couple of hours forever. Found 2026-07-26 via 0552683-ARIZONA
@@ -176,7 +176,7 @@ async function pushIfLive(groupid) {
 
     return { pushed: true, updated, absent: absent.length, failed: errors.length, total: targets.length };
   } catch (err) {
-    // Wholesale failure (token mint / DB read) — the DB write still stands; nightly merchant_feed.py --upload is the backstop.
+    // Wholesale failure (token mint / DB read) — the DB write still stands; nightly scripts/merchant-feed.js --upload is the backstop.
     logger.error(`[googleMerchant] pushIfLive failed for ${groupid}: ${err.message}`);
     return { pushed: false, error: 'GOOGLE_PUSH_FAILED', message: err.message };
   }

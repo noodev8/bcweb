@@ -138,11 +138,11 @@ bcweb-web:     npx tsc --noEmit   AND   npm run lint   AND   npm run build   —
 
 ## 4. The Google sweep and the feed must agree on what's "on Google" (fixed 2026-07-26 — NEEDS A VPS DEPLOY)
 
-**The rule: `googleMerchant.fetchTargets` must mirror `merchant_feed.py`'s filters exactly.** If bcweb pushes an offerId the feed
+**The rule: `googleMerchant.fetchTargets` must mirror `utils/merchantFeed.js`'s filters (the nightly feed, moved from the Python `merchant_feed.py` 2026-11-08) exactly.** If bcweb pushes an offerId the feed
 never published, Google 404s it, and that used to block the style forever.
 
 What happened: `0552683-ARIZONA` was repriced (£60.19 → £63.19) on 2026-07-25 23:21 and never stamped, retrying every sweep for a
-day. Size 35 has a **blank `ean`**. `merchant_feed.py` only emits rows whose `skumap.ean` yields a valid 12/13-digit GTIN once the
+day. Size 35 has a **blank `ean`**. `utils/merchantFeed.js` only emits rows whose `skumap.ean` yields a valid 12/13-digit GTIN once the
 legacy trailing `B` is stripped, so size 35 was never in the feed, so Google had no such product, so the supplemental override
 returned `404 "The resource with name 'Product' was not found."` `fetchTargets` filtered only on `googleid`, counted the 404 as a
 push failure, and the sweep therefore refused to stamp. **69 sizes across 49 Google-live styles were in the same position** —

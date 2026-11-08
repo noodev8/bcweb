@@ -5,14 +5,14 @@ API Route: google_ads_assign
 Method: POST
 Purpose: Google Ads module — put one or more styles into a campaign bucket. THE ONLY WRITE THIS MODULE MAKES TO PRODUCT DATA.
 
-         Sets `skusummary.googlecampaign`, which merchant_feed.py ships as Google's `custom_label_0`, which is what scopes a Shopping
+         Sets `skusummary.googlecampaign`, which the nightly feed (utils/merchantFeed.js) ships as Google's `custom_label_0`, which is what scopes a Shopping
          campaign. Writes the assignment log in the same transaction. Requires auth.
 
          It writes NOTHING else. Not `googlestatus`, not `shopify`, not price. Pulling a style out of Google is done by assigning it
          the `pause` bucket (owner's call, spec §1) — reversible, one lever, and it leaves the product itself alone.
 
 WHAT ACTUALLY REACHES GOOGLE, AND WHEN — SAY THIS ON SCREEN
-Nothing here touches Google. The chain is: this write -> merchant_feed.py at 3:30am -> SFTP to Merchant Center -> Google recrawls ->
+Nothing here touches Google. The chain is: this write -> the nightly feed (scripts/merchant-feed.js) -> SFTP to Merchant Center -> Google recrawls ->
 `custom_label_0` updates -> only then can the Ads UI scope a campaign to it. **Tomorrow at the earliest.** The Merchant API
 supplemental datasource used for instant price pushes is declared salePrice-only and cannot carry a label, so there is no fast path.
 The screen shows "pending" until an import comes back agreeing.

@@ -23,7 +23,7 @@ Rules enforced here:
   - Google is DECOUPLED (2026-07-24): this route does NOT push to Google. The change is logged to price_change_log; a periodic sweep
     (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) sends un-sent SHP changes to Google Merchant Center in one
     deduped pass and stamps price_change_log.google_pushed_at. Keeps Apply fast when thrashing through many changes; nightly
-    merchant_feed.py --upload is the backstop. (Add/Modify's product-price still pushes Google inline — it doesn't log to price_change_log.)
+    scripts/merchant-feed.js --upload is the backstop. (Add/Modify's product-price still pushes Google inline — it doesn't log to price_change_log.)
   - changed_by = req.user.display_name, resolved by verifyToken from the token's id — NEVER sent by the client (CLAUDE.md).
   - The UPDATE + INSERT run inside withTransaction so they both land or neither does (audit can't drift from the price).
   - The write itself (the bounds, the hold rule, the UPDATE + INSERT) lives in utils/priceWrite.js → writeShopifyPrice since
@@ -50,7 +50,7 @@ Success Response:
 Shopify push outcome (`shopify` field): null = product not live (skusummary.shopify != 1) or Shopify not configured — nothing pushed;
 { pushed:true, ... } = the new price reached Shopify; { pushed:false, error, message } = DB save stands but the push failed (retry Apply).
 Google: NOT in this response — Google is decoupled. The change is logged to price_change_log and sent to Google by the periodic sweep
-(scripts/google-price-sweep.js); the nightly merchant_feed.py --upload is the backstop.
+(scripts/google-price-sweep.js); the nightly scripts/merchant-feed.js --upload is the backstop.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -142,7 +142,7 @@ router.post('/', async (req, res) => {
     // Google is DECOUPLED (2026-07-24): this route no longer pushes to Google Merchant Center. The change is already recorded in
     // price_change_log above; the periodic sweep (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) picks up un-sent
     // SHP changes, pushes each Google-live style's CURRENT price ONCE (dedup), and stamps price_change_log.google_pushed_at. This keeps
-    // Apply fast when thrashing through many changes; the nightly merchant_feed.py --upload remains the ultimate backstop.
+    // Apply fast when thrashing through many changes; the nightly scripts/merchant-feed.js --upload remains the ultimate backstop.
 
     return res.json({
       return_code: 'SUCCESS',

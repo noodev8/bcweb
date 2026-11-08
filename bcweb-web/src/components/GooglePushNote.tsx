@@ -9,7 +9,7 @@ Purpose: A tiny inline status shown next to a Save/Apply button, reporting what 
 
          Renders nothing on success (the parent's plain "Saved."/"Applied." stands on its own) or when there's no result (product not
          live on Google / not configured). Unlike ShopifyPushNote, a Google failure is phrased as non-urgent: the nightly
-         merchant_feed.py --upload cron is still an eventual fallback, so there's no "press save again" implication.
+         scripts/merchant-feed.js --upload cron is still an eventual fallback, so there's no "press save again" implication.
 =======================================================================================================================================
 */
 
