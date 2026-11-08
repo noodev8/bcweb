@@ -1,0 +1,69 @@
+{%- comment -%}
+  BCWEB colour swatches + Narrow / Regular switch for Birkenstock product pages (owner, 2026-11-08).
+  The data is set by BCWEB (bcweb-server/utils/birkSwatches.js) as product metafields bcweb.colours / colour / width / width_twin.
+  HOW TO ADD: Online Store > Themes > Customize > Products > Default product > Product information > Add block > Custom liquid,
+  paste this whole file, drag the block above the size picker, Save. Products without the metafields (non-Birkenstock) show nothing.
+  Sold out colours are hidden (owner); the page you are on always shows, outlined. The width switch shows only if the other width
+  is in stock.
+{%- endcomment -%}
+{%- assign bc_colours = product.metafields.bcweb.colours.value -%}
+{%- assign bc_twin = product.metafields.bcweb.width_twin.value -%}
+{%- assign bc_colour = product.metafields.bcweb.colour.value -%}
+{%- assign bc_width = product.metafields.bcweb.width.value -%}
+{%- assign bc_shown = 0 -%}
+{%- for p in bc_colours -%}
+  {%- if p.available or p.id == product.id -%}{%- assign bc_shown = bc_shown | plus: 1 -%}{%- endif -%}
+{%- endfor -%}
+{%- assign bc_twin_ok = false -%}
+{%- if bc_width != blank and bc_twin and bc_twin.available -%}{%- assign bc_twin_ok = true -%}{%- endif -%}
+
+{%- if bc_shown > 1 or bc_twin_ok -%}
+<div class="bc-swatches">
+  {%- if bc_shown > 1 -%}
+    <p class="bc-label">Colour: <strong>{{ bc_colour }}</strong></p>
+    <div class="bc-row">
+      {%- for p in bc_colours -%}
+        {%- if p.available or p.id == product.id -%}
+          {%- assign bc_name = p.metafields.bcweb.colour.value | default: p.title -%}
+          <a href="{{ p.url }}" class="bc-swatch{% if p.id == product.id %} bc-current{% endif %}" title="{{ bc_name | escape }}"
+             {% if p.id == product.id %}aria-current="true"{% endif %}>
+            {%- if p.featured_image -%}
+              {{ p.featured_image | image_url: width: 160 | image_tag: loading: 'lazy', alt: bc_name, sizes: '80px' }}
+            {%- else -%}
+              <span class="bc-noimg">{{ bc_name }}</span>
+            {%- endif -%}
+          </a>
+        {%- endif -%}
+      {%- endfor -%}
+    </div>
+  {%- endif -%}
+
+  {%- if bc_twin_ok -%}
+    <p class="bc-label">Width: <strong>{{ bc_width }}</strong></p>
+    <div class="bc-row">
+      {%- if bc_width == 'Regular' -%}
+        <span class="bc-width bc-current" aria-current="true">Regular</span>
+        <a class="bc-width" href="{{ bc_twin.url }}">Narrow</a>
+      {%- else -%}
+        <a class="bc-width" href="{{ bc_twin.url }}">Regular</a>
+        <span class="bc-width bc-current" aria-current="true">Narrow</span>
+      {%- endif -%}
+    </div>
+  {%- endif -%}
+</div>
+<style>
+  .bc-swatches { margin: 0 0 1.5rem; }
+  .bc-label { margin: 1rem 0 .6rem; font-size: 1.4rem; }
+  .bc-row { display: flex; flex-wrap: wrap; gap: .8rem; }
+  .bc-swatch { display: block; width: 80px; border: 1px solid rgba(var(--color-foreground), .15); border-radius: 4px;
+               padding: 2px; background: #fff; }
+  .bc-swatch img { display: block; width: 100%; height: auto; }
+  .bc-swatch:hover { border-color: rgba(var(--color-foreground), .5); }
+  .bc-current { border: 2px solid rgb(var(--color-foreground)); padding: 1px; }
+  .bc-noimg { display: block; font-size: 1.1rem; padding: .6rem .2rem; text-align: center; color: rgb(var(--color-foreground)); }
+  .bc-width { display: inline-block; min-width: 9rem; padding: .9rem 1.6rem; text-align: center; font-size: 1.4rem; text-decoration: none;
+              color: rgb(var(--color-foreground)); border: 1px solid rgba(var(--color-foreground), .3); border-radius: 4px; }
+  .bc-width.bc-current { border: 2px solid rgb(var(--color-foreground)); padding: calc(.9rem - 1px) calc(1.6rem - 1px); font-weight: 600; }
+  a.bc-width:hover { border-color: rgb(var(--color-foreground)); }
+</style>
+{%- endif -%}

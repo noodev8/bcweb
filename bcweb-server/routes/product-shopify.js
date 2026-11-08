@@ -57,6 +57,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
+const { syncSwatchesSafe } = require('../utils/birkSwatches');
 
 router.use(verifyToken);
 
@@ -79,7 +80,7 @@ router.post('/', async (req, res) => {
     const status = String(body.status || 'ACTIVE').toUpperCase() === 'DRAFT' ? 'DRAFT' : 'ACTIVE';
 
     // Confirm the product exists up front so DISABLE (which doesn't call Shopify) still returns a clean NOT_FOUND.
-    const exists = await query(`SELECT 1 FROM skusummary WHERE groupid = $1`, [groupid]);
+    const exists = await query(`SELECT brand FROM skusummary WHERE groupid = $1`, [groupid]);
     if (exists.rows.length === 0) {
       return res.json({ return_code: 'NOT_FOUND', message: `No product with groupid ${groupid}` });
     }
@@ -114,6 +115,7 @@ router.post('/', async (req, res) => {
     // existing product via handle, updates without duplicating, and sets the flag.)
     await query(`UPDATE skusummary SET shopify = 1, updated = ${UPDATED_EXPR}, updated_date = now() WHERE groupid = $1`, [groupid]);
 
+    syncSwatchesSafe(exists.rows[0].brand); // a new Birkenstock colour joins its family's swatches (background)
     return res.json({ return_code: 'SUCCESS', groupid, shopify: true, push });
   } catch (err) {
     logger.error('[product-shopify] error:', err.message);

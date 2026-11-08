@@ -60,6 +60,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { deleteImage } = require('../utils/sftp');
 const { fileInUseElsewhere } = require('../utils/productGallery');
 const shopify = require('../utils/shopify');
+const { syncSwatchesSafe } = require('../utils/birkSwatches');
 const logger = require('../utils/logger');
 const { logProductEvent, EVENT, SOURCE } = require('../utils/productEvents');
 
@@ -158,6 +159,7 @@ router.post('/', async (req, res) => {
     }
 
     logger.info(`[product-delete] deleted ${groupid} (shopify=${shopifyDeleted}, image=${imageDeleted})`);
+    if (shopifyDeleted) syncSwatchesSafe(brand); // its siblings' colour swatches drop it (background)
     return res.json({ return_code: 'SUCCESS', groupid, shopifyDeleted, imageDeleted });
   } catch (err) {
     logger.error('[product-delete] error:', err.message);

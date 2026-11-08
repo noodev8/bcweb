@@ -52,6 +52,7 @@ const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
+const { syncSwatchesSafe } = require('../utils/birkSwatches');
 
 router.use(verifyToken);
 
@@ -128,6 +129,7 @@ router.post('/', async (req, res) => {
 
     // If the product is live on Shopify, re-push so the title/vendor/type change reaches the store (best-effort — never fails the save).
     const shopifyResult = await shopify.pushIfLive(groupid);
+    syncSwatchesSafe(brand); // Birkenstock colour swatches follow the title (background, never fails the save)
 
     return res.json({
       return_code: 'SUCCESS',
