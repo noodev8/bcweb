@@ -29,7 +29,11 @@ async function main() {
   console.log(`[order-sync] ${r.log}`);
   for (const c of r.channels) if (!c.checked) console.log(`[order-sync] ${c.name} NOT CHECKED: ${c.error}`);
   for (const n of r.notes) console.log(`[order-sync] note: ${n}`);
-  // eBay stock (runOrderSync step 3 — after the orders are saved; never fails the run).
+  // Shopify stock (runOrderSync step 3 — first after the orders are saved; never fails the run).
+  const sh = r.shopifyStock;
+  if (sh && sh.error) console.log(`[order-sync] Shopify stock sync failed: ${sh.error}`);
+  else if (sh && (sh.sent || sh.stale || sh.failed)) console.log(`[order-sync] Shopify stock: ${sh.sent} set, ${sh.stale} moved meanwhile, ${sh.failed} failed of ${sh.checked}`);
+  // eBay stock (runOrderSync step 4 — after the orders are saved; never fails the run).
   const e = r.ebayStock;
   if (e && e.error) console.log(`[order-sync] eBay stock sync failed: ${e.error}`);
   else if (e && e.added.length) console.log(`[order-sync] eBay sizes added: ${e.added.map((a) => `${a.code} (UK ${a.uk_size}, ${a.qty})`).join(', ')}`);

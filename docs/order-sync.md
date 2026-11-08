@@ -20,18 +20,29 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
            E  allocate picks           ONCE, for every channel's orders
            F  housekeeping             six statements
            bclog row                   section 'Order Sync', workstation = user or 'cron'
-3 EBAY STOCK  after the commit: utils/ebayStockSync.js — new sizes added, then eBay quantities in step with our stock
-4 ORDER SOURCES  after the commit: utils/orderSource.js — where each Shopify order of the last 3 days came from
-5 VISITS         after the commit: utils/shopifySessions.js — Shopify sessions per day by source, last 3 days replaced
+3 SHOPIFY STOCK first after the commit: utils/shopifyStockSync.js — Shopify's counts in step with our free local + FBA live
+4 EBAY STOCK  after the commit: utils/ebayStockSync.js — new sizes added, then eBay quantities in step with our stock
+5 ORDER SOURCES  after the commit: utils/orderSource.js — where each Shopify order of the last 3 days came from
+6 VISITS         after the commit: utils/shopifySessions.js — Shopify sessions per day by source, last 3 days replaced
 ```
 
-- **Visits (step 5, 2026-11-07).** Shopify's sessions report (ShopifyQL, `read_reports` on the "bcweb-fulfill" Dev
+- **Shopify stock (step 3, 2026-11-08).** Replaced the Python `update_shopify_inventory.py` (cron 3am, archived in the
+  scripts repo), which was the only thing ever setting Shopify's stock — so a pair sold on eBay / Amazon / in the shop stayed
+  buyable on Shopify until 3am. Each live size shows `max(min(local #FREE + FBA live, 5) − pairs on Shopify orders not yet
+  imported, 0)` (the Python's rule without its empty UK-distributor source). Shopify's counts are read first, then the
+  unimported orders, then ours; only sizes that differ are sent (`inventorySetQuantities`), each with `compareQuantity`, so a
+  count Shopify changed mid-run is refused and picked up next run — never overwritten. Orders unreadable → decreases only.
+  FIRST of the post-commit steps because it stops overselling. ~2–4 s. Caught, **never fails the run**; its own bclog row
+  (section 'Shopify Stock') only when something was sent / refused / failed. By hand: `scripts/shopify-stock-sync.js` (dry
+  run; `--commit`). **Stock changed by hand in Shopify admin is overwritten** — change stock in BCWEB.
+
+- **Visits (step 6, 2026-11-07).** Shopify's sessions report (ShopifyQL, `read_reports` on the "bcweb-fulfill" Dev
   Dashboard app) for the last 3 days, grouped by day × referrer × utm, replaces those days in `shopify_sessions_daily`
   with a `came_from` on the same labels as the orders. **Human visits only** (what Shopify's Home shows — bots excluded)
   and Shopify's own `traffic_type` (paid / organic) per row, so paid vs free Google holds for past days too. Keeps 2 years.
   Caught, **never fails the run**. History: `scripts/shopify-sessions-backfill.js` (dry run by default).
 
-- **Order sources (step 4, 2026-11-07).** Every Shopify order created in the last 3 days is re-read (REST `landing_site` /
+- **Order sources (step 5, 2026-11-07).** Every Shopify order created in the last 3 days is re-read (REST `landing_site` /
   `referring_site` + the GraphQL customer journey) and upserted into `shopify_order_source` with its `came_from`
   (Google paid / Google free / AI / Email / Direct … — THE rule is `utils/orderSource.js → cameFrom`). Re-reading 3 days
   picks up a journey Shopify fills in late. Read-only on Shopify, caught, **never fails the run**, no bclog row.
@@ -39,7 +50,7 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
   `scripts/shopify-order-source-backfill.js` (dry run by default). Why: measuring Shopify sales we didn't pay Google for
   (docs/seo/PLAN.md) — Shopify's own Analytics call paid Shopping clicks "Google / SEO"; the landing URL's gclid doesn't lie.
 
-- **eBay stock (step 3, 2026-11-01).** After the orders are saved, every size on a live BCWEB eBay listing
+- **eBay stock (step 4, 2026-11-01).** After the orders are saved, every size on a live BCWEB eBay listing
   (`ebay_listing_size`) gets our Stock (local `#FREE` + FBA live) sent to eBay, **only where it differs from the
   quantity last sent** (`qty_sent`). Comparing with what we sent, not with eBay's count, stops an eBay FBA sale
   being put back before the next Update Amazon import. Inventory API `bulkUpdatePriceQuantity`, 25 a call; a size

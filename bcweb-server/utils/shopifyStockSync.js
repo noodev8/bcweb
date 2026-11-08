@@ -26,7 +26,10 @@ ORDER OF WORK closes the race the Python had (it could set a count straight back
      landed), Shopify refuses that size and the next run picks it up with the order imported. Nothing is ever forced.
 If the orders in step 2 can't be read, only DECREASES are sent that run (never raise a count without knowing what's on order).
 
-Never throws into Update Orders' result: the caller wraps it (orders are already saved). The location is SHOPIFY_LOCATION_ID (the one
+Runs as step 3 of Update Orders (utils/orderSync.js), FIRST after the commit — the run's orders and picks are saved by then, so a
+pair just sold on eBay is already out of free stock. Never throws into Update Orders' result: the caller wraps it (orders are already
+saved). One bclog row (section 'Shopify Stock', workstation = who ran Update Orders, or 'cron') only when a size was sent, refused or
+failed — a run with nothing to change writes nothing (it runs 5+ times a day). The location is SHOPIFY_LOCATION_ID (the one
 the Python used); the token is SHOPIFY_ACCESS_TOKEN (has write_inventory).
 =======================================================================================================================================
 */
@@ -36,6 +39,7 @@ const config = require('../config/config');
 const logger = require('./logger');
 const shopify = require('./shopify');
 const shopifyOrders = require('./shopifyOrders');
+const { logActivity } = require('./bclog');
 
 const CAP = 5;                 // the most Shopify ever shows for one size (the Python's cap)
 const BATCH = 100;             // sizes per inventorySetQuantities call
@@ -161,11 +165,11 @@ async function send(items) {
 }
 
 /*
- * syncShopifyStock({ commit }) -> plan + { sent, stale, failed }
+ * syncShopifyStock({ commit, by }) -> plan + { sent, stale, failed }
  *   commit false = plan only (nothing sent). Sends in groups; if a group is refused (one size's count moved — Shopify may refuse the
  *   whole call), its sizes are sent one by one so only the moved ones wait for the next run.
  */
-async function syncShopifyStock({ commit = true } = {}) {
+async function syncShopifyStock({ commit = true, by = null } = {}) {
   if (!shopify.isConfigured()) throw new Error('Shopify is not configured');
   if (!config.shopify.locationId) throw new Error('SHOPIFY_LOCATION_ID is not set');
   const plan = await planShopifyStock();
@@ -190,6 +194,13 @@ async function syncShopifyStock({ commit = true } = {}) {
         out.failed.push({ ...c, error: err.message });
       }
     }
+  }
+  if (by && (out.sent.length || out.stale.length || out.failed.length)) {
+    const parts = [];
+    if (out.sent.length) parts.push(`${out.sent.length} sizes set (${out.sent.slice(0, 8).map((c) => `${c.code} ${c.shopify}→${c.want}`).join(', ')}${out.sent.length > 8 ? ' …' : ''})`);
+    if (out.stale.length) parts.push(`${out.stale.length} moved on Shopify meanwhile (next run)`);
+    if (out.failed.length) parts.push(`${out.failed.length} failed`);
+    await logActivity({ who: by, section: 'Shopify Stock', log: `Stock sync: ${parts.join('; ')}` });
   }
   return out;
 }

@@ -22,8 +22,9 @@ Purpose: The ONE place the bcweb server talks to the Shopify Admin API. Mirrors 
          After a successful push we cache each returned variant id back into skumap.variantlink ('<id>V'), exactly like
          price_update2.py's update_variant_links_in_database, so downstream lookups stay fast.
 
-         Scope note: this does NOT set inventory quantities. Stock is riskier (overselling) and is already owned by
-         update_shopify_inventory.py; productSet here only establishes the product/variants/price/barcode/title/image. Ongoing PRICE
+         Scope note: this does NOT set inventory quantities. Stock is owned by utils/shopifyStockSync.js (end of every Update
+         Orders since 2026-11-08 — it replaced the Python update_shopify_inventory.py; a new product's sizes get their stock on the
+         next run). productSet here only establishes the product/variants/price/barcode/title/image. Ongoing PRICE
          re-sync is a separate, deferred decision — the price sent here is just the initial one a variant must have to exist.
 
          Nothing in this module runs until a route calls it. Wiring it into the "enable Shopify" toggle / product-sizes is the next step.

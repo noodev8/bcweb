@@ -19,15 +19,19 @@ THE RUN
                    F  CLEANUP   six housekeeping statements over orderstatus + localstock
                    one bclog row (section 'Order Sync', workstation = who pressed, or 'cron') — /order-sync-last reads it
          A run lands completely or not at all; a failure is "nothing written, safe to run again".
-    3  EBAY STOCK  AFTER the commit: new in-stock sizes added to their listings, then eBay's quantities brought in step with our
+    3  SHOPIFY STOCK  FIRST after the commit: Shopify's count for every live size set to our free local + FBA live stock (cap 5),
+                 less Shopify orders not yet imported — only sizes that differ, refused if Shopify's count moved mid-run
+                 (utils/shopifyStockSync.js; replaced the Python update_shopify_inventory.py at 3am, owner 2026-11-08). First, because
+                 overselling is what it prevents: a pair just sold on eBay comes off Shopify now. Never fails the run; own bclog row.
+    4  EBAY STOCK  AFTER the commit: new in-stock sizes added to their listings, then eBay's quantities brought in step with our
                  stock (utils/ebayStockSync.js — eBay Add step 3,
                  2026-11-01). Outside the transaction and never allowed to fail the run: the orders are already saved; a size eBay
                  didn't take is retried next run. Not on the button's line (owner: the total of new orders only) — its own bclog row.
-    4  ORDER SOURCES  AFTER the commit: where each Shopify order of the last 3 days came from (Google paid / Google free / AI /
+    5  ORDER SOURCES  AFTER the commit: where each Shopify order of the last 3 days came from (Google paid / Google free / AI /
                  Email / Direct …) into shopify_order_source (utils/orderSource.js, 2026-11-07 — measuring sales we didn't pay Google
                  for). Read-only on Shopify, never fails the run, no bclog row (it runs every few minutes). Rows older than
                  2 years are deleted as it goes (owner, 2026-11-07).
-    5  VISITS    AFTER the commit: Shopify's sessions per day by source for the last 3 days into shopify_sessions_daily
+    6  VISITS    AFTER the commit: Shopify's sessions per day by source for the last 3 days into shopify_sessions_daily
                  (utils/shopifySessions.js — the 20 → 30 visits target), each run replacing those days; 2 years kept. Never fails the run.
 
 HISTORY: until 2026-11-01 the Shopify half also ran from cron as C:\scripts\orders\update_orders.py (a Python twin of these rules)
@@ -47,6 +51,7 @@ SCOPE NOTE — phases E and F reach outside customer orders:
 const { withTransaction } = require('./transaction');
 const { CHANNELS } = require('./orderChannels');
 const { syncEbayStock } = require('./ebayStockSync');
+const { syncShopifyStock } = require('./shopifyStockSync');
 const { recordOrderSources, purgeOldSources } = require('./orderSource');
 const { recordSessions, purgeOldSessions } = require('./shopifySessions');
 const logger = require('./logger');
@@ -351,7 +356,22 @@ async function runOrderSync({ by }) {
   logger.info(`[orderSync] ${by}: ${result.log}`);
   if (result.notes.length) logger.error(`[orderSync] notes: ${result.notes.join(' | ')}`);
 
-  // ---- 3. EBAY STOCK (after the commit — never fails the run) -----------------------------------------------------------------
+  // ---- 3. SHOPIFY STOCK (first after the commit — never fails the run) --------------------------------------------------------
+  // Shopify's counts brought in step with our free local + FBA live stock (utils/shopifyStockSync.js). First of the post-commit steps
+  // because it is the one that stops overselling — this run's orders and picks are already saved, so it sees them.
+  try {
+    const s = await syncShopifyStock({ by });
+    result.shopifyStock = { checked: s.checked, sent: s.sent.length, stale: s.stale.length, failed: s.failed.length, ordersRead: s.ordersRead };
+    if (s.sent.length || s.stale.length || s.failed.length) {
+      logger.info(`[orderSync] Shopify stock: ${s.sent.length} set, ${s.stale.length} moved meanwhile, ${s.failed.length} failed of ${s.checked}`);
+    }
+    if (s.failed.length) logger.error(`[orderSync] Shopify stock failures: ${s.failed.map((f) => `${f.code}: ${f.error}`).join(' | ')}`);
+  } catch (err) {
+    result.shopifyStock = { error: err.message };
+    logger.error(`[orderSync] Shopify stock sync failed (orders are saved): ${err.message}`);
+  }
+
+  // ---- 4. EBAY STOCK (after the commit — never fails the run) -----------------------------------------------------------------
   try {
     result.ebayStock = await syncEbayStock({ by });
     const s = result.ebayStock;
@@ -364,7 +384,7 @@ async function runOrderSync({ by }) {
     logger.error(`[orderSync] eBay stock sync failed (orders are saved): ${err.message}`);
   }
 
-  // ---- 4. WHERE SHOPIFY BUYERS CAME FROM (after the commit — never fails the run) ---------------------------------------------
+  // ---- 5. WHERE SHOPIFY BUYERS CAME FROM (after the commit — never fails the run) ---------------------------------------------
   // shopify_order_source (utils/orderSource.js, owner 2026-11-07): every Shopify order of the last 3 days, re-read each run so a
   // customer journey Shopify fills in late is picked up. Read-only on Shopify; writes only that table. Not on the button's line.
   try {
@@ -377,7 +397,7 @@ async function runOrderSync({ by }) {
     logger.error(`[orderSync] order sources not recorded (orders are saved): ${err.message}`);
   }
 
-  // ---- 5. SHOPIFY VISITS PER DAY (after the commit — never fails the run) -----------------------------------------------------
+  // ---- 6. SHOPIFY VISITS PER DAY (after the commit — never fails the run) -----------------------------------------------------
   // shopify_sessions_daily (utils/shopifySessions.js, owner 2026-11-07 — the 20 → 30 visits a day target): the last 3 days re-read
   // each run (Shopify revises recent days; today is partial until it's over), then anything over 2 years purged. Read-only on Shopify.
   try {

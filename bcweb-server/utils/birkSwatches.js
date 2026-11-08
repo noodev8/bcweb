@@ -20,7 +20,7 @@ METAFIELDS (namespace bcweb, on every Birkenstock product ACTIVE on Shopify):
          colour      single_line_text_field   "Faded Khaki" — the label beside the swatches
          width       single_line_text_field   "Narrow" | "Regular"
          width_twin  product_reference        the same colour in the other width, when it exists
-         Sold out is NOT decided here: the theme hides any product that isn't available (Shopify stock, kept by the inventory script),
+         Sold out is NOT decided here: the theme hides any product that isn't available (Shopify stock, kept by utils/shopifyStockSync.js in Update Orders),
          so the swatches follow stock live with no re-sync.
 
          Membership = Birkenstock styles in skusummary whose handle is an ACTIVE product on Shopify (a style switched OFF in BCWEB stays

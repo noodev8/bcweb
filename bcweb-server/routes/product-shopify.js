@@ -20,7 +20,8 @@ Purpose: Turn a product's Shopify listing ON or OFF (`skusummary.shopify` 1/0) â
            4. `status` (optional, ACTIVE|DRAFT, default ACTIVE) lets us create as a DRAFT for a safe first live test before going public.
 
          DISABLE (shopify=false): set shopify=0 only. We deliberately do NOT delete/unpublish the Shopify product here (non-destructive;
-         whether "off" should also unpublish is an open product decision). The nightly price/inventory scripts already skip shopify=0.
+         whether "off" should also unpublish is an open product decision). The Shopify stock sync (utils/shopifyStockSync.js) skips shopify=0 too,
+         as the retired Python did â€” an "off" style's Shopify count is left where it was.
 
          The `shopify` flag write uses the legacy 'YYYYMMDD HH24:MI:SS' Europe/London `updated` stamp, like the other product routes.
          Requires auth.
