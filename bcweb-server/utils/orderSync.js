@@ -4,7 +4,7 @@ Module: utils/orderSync.js   — the Update Orders run (every channel, one trans
 =======================================================================================================================================
 Purpose: runOrderSync() is THE order run. Two callers, one copy of the logic:
            * the Update Orders button  -> POST /order-sync          (routes/order-sync.js)
-           * the cron                  -> scripts/order-sync.js      (schedule: crontab.txt in the scripts repo)
+           * the cron                  -> scripts/order-sync.js      (schedule: docs/crontab.txt)
          Both take the same advisory lock, so a press landing on a cron run just waits a few seconds for it — no timing gaps needed.
 
 THE RUN

@@ -4,7 +4,7 @@ Script: scripts/merchant-feed.js   (builds the Google Merchant feed file; with -
 =======================================================================================================================================
 Purpose: Build the Google Merchant Center product feed (GOOGLE-DATA-Merchant.txt) from the database and, with --upload, put it on Merchant
          Center's SFTP drop, which Google fetches as the PRIMARY product data (titles, links, stock, RRP, price…). The rules are in
-         utils/merchantFeed.js. Runs nightly from the VPS crontab (crontab.txt in the scripts repo is the schedule — don't restate it).
+         utils/merchantFeed.js. Runs nightly from the VPS crontab (docs/crontab.txt is the schedule — don't restate it).
 
 MOVED FROM PYTHON (owner, 2026-11-08): replaces the scripts repo's merchant-feed/merchant_feed.py (now in its archive/). Before the switch
 the two files were compared against the same data — 2,020 lines, identical byte for byte. Same file name on the SFTP drop, same

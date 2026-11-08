@@ -5,7 +5,7 @@
 | Trigger | Calls |
 |---|---|
 | The **Update orders** button (Analytics → Sales, Customer Orders, dashboard tile, manifest button) → `POST /order-sync` | `utils/orderSync.js → runOrderSync({ by: <user> })` |
-| Cron → `bcweb-server/scripts/order-sync.js` (schedule: `crontab.txt` in the scripts repo — not restated here) | `runOrderSync({ by: 'cron' })` |
+| Cron → `bcweb-server/scripts/order-sync.js` (schedule: `docs/crontab.txt` — not restated here) | `runOrderSync({ by: 'cron' })` |
 
 Before that, Shopify's cron half was a Python twin (`C:\scripts\orders\update_orders.py`) and eBay had its own
 cron script, timed five minutes apart because the Python took no lock. Both were retired. Git history has them,

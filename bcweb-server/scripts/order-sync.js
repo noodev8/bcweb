@@ -10,7 +10,7 @@ Purpose: Exactly what pressing Update Orders does, without anyone pressing it: e
          two cron jobs 5 minutes apart because the Python took no lock. Now one job; the button and this script share the run's advisory
          lock, so if they meet, one waits for the other.
 
-SCHEDULE: crontab.txt in the scripts repo is the definitive source — it isn't restated here.
+SCHEDULE: docs/crontab.txt is the definitive source — it isn't restated here.
 
 A channel that can't be read is skipped and the rest still run (logged below and in the bclog row). Exit 1 only when nothing could be
 read or the write rolled back — nothing is written in that case.

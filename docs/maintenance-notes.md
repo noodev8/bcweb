@@ -168,7 +168,7 @@ changed a minute earlier, and pushed fine. The leading zero is irrelevant.
 
 ### There is no sweep log file — don't go looking for one
 
-No entry in `crontab.txt` redirects output (none of the 16 use `>>`). The other files in `/apps/scripts/logs/` exist because the
+No entry in `docs/crontab.txt` redirects output (none of the 16 use `>>`). The other files in `/apps/scripts/logs/` exist because the
 Python jobs self-log via `logging_utils`; `google-price-sweep.js` only writes `console.log`/`console.error`, so under cron its
 output goes to stdout/stderr and is mailed to root or dropped. To see it, run the cron line by hand:
 

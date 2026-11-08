@@ -48,7 +48,7 @@ to the Merchant API (products/v1) in-process; auth is utils/googleAuth.js (servi
 access token cached ~1h). Google is DECOUPLED from the apply: POST /pricing-apply just logs the change to price_change_log; the
 sweep (scripts/google-price-sweep.js) sends the un-sent ones.
 
-SCHEDULING IS NOT DOCUMENTED HERE. crontab.txt is the definitive source for when the sweep runs -- full stop. Do not restate the
+SCHEDULING IS NOT DOCUMENTED HERE. docs/crontab.txt is the definitive source for when the sweep runs -- full stop. Do not restate the
 schedule in this file; the copy that used to live here had drifted from the real one.
 
 Env (unchanged -- already in prod .env; NO new vars to add):
