@@ -3007,6 +3007,18 @@ export function getAmzImportLast() {
   }));
 }
 
+// Nightly database backup status (GET /backup-last, READ ONLY) — the dashboard warns only when stale: the last run failed, or no good
+// backup for 2 days, or none ever reported. The backup script writes one bclog row per run (scripts repo db-maint/pg_backup.sh).
+export interface BackupStatus { lastOk: string | null; daysSince: number | null; lastFailed: { at: string; log: string } | null; stale: boolean }
+export function getBackupLast() {
+  return request<BackupStatus>({ url: '/backup-last', method: 'GET' }, (b) => ({
+    lastOk: (b.lastOk as string) || null,
+    daysSince: typeof b.daysSince === 'number' ? b.daysSince : null,
+    lastFailed: (b.lastFailed as BackupStatus['lastFailed']) || null,
+    stale: b.stale === true,
+  }));
+}
+
 // AMZ Shipment — the Amazon boxes packed so far (amzshipment), with each box's contents and measurements. READ ONLY.
 // Measurements come through as the strings the legacy table holds ('' when unset).
 export interface AmzBoxLine { code: string; sku: string; fnsku: string; supplier: string; groupid: string; title: string; qty: number }

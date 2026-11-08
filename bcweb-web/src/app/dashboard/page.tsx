@@ -50,7 +50,7 @@ import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { SKU_HEALTH } from '@/lib/features';
-import { getAmzImportLast, getAmzLoadedList, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSlowSizes } from '@/lib/api';
+import { getAmzImportLast, getAmzLoadedList, getBackupLast, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSlowSizes } from '@/lib/api';
 import { splitHeldSizes } from '@/lib/slowBands';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
@@ -199,6 +199,7 @@ export default function DashboardPage() {
       <Daily />
 
       <AmzHistoryWarning />
+      <BackupWarning />
 
       {/* Two rows of three; each row's panel opens directly under it. No heading (owner, 2026-11-01: remove "Everything else") —
           the first row keeps the gap below Daily that the heading used to give. */}
@@ -339,6 +340,33 @@ function AmzHistoryWarning() {
       <span className="font-semibold">No Amazon stock report for {h.daysSince} days</span>
       <span className="text-amber-800">Last {h.lastDay}. Import the FBA Inventory report on Update Amazon, or these days have no stock or price history.</span>
       <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-amber-600" />
+    </Link>
+  );
+}
+
+/* =====================================================================================================================================
+   DATABASE BACKUP WARNING — shown ONLY when the nightly backup needs attention (owner, 2026-11-08): the last run FAILED, no good backup
+   for 2 days, or none has ever reported. The crontab has no MAILTO, so this is the only place a failed backup is seen (in 2026 backups
+   silently stopped reaching Google Drive for 109 days). Red, not amber: without a backup a bad day can't be undone. It needs the VPS —
+   the fix is never on this screen — so it links to the Activity log, where the 'Backup' rows say what went wrong.
+===================================================================================================================================== */
+function BackupWarning() {
+  const q = useApiQuery('backup-last', getBackupLast);
+  const b = q.data ?? null;
+  if (!b || !b.stale) return null;
+  const head = b.lastFailed ? 'Last night’s database backup FAILED'
+    : b.lastOk ? `No database backup for ${b.daysSince} days` : 'No database backup has reported yet';
+  const detail = b.lastFailed ? `${b.lastFailed.log}. ${b.lastOk ? `Last good backup ${b.lastOk}.` : ''}`
+    : b.lastOk ? `Last good backup ${b.lastOk}. The backup runs at 1am — check it on the server.`
+      : 'The backup reports here after each night’s run (1am). If this stays, check the backup on the server.';
+  return (
+    <Link
+      href="/analytics/activity-log"
+      className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm text-rose-900 outline-none transition hover:border-rose-400 focus-visible:ring-2 focus-visible:ring-rose-200"
+    >
+      <span className="font-semibold">{head}</span>
+      <span className="text-rose-800">{detail}</span>
+      <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-rose-600" />
     </Link>
   );
 }

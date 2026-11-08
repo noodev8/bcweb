@@ -134,4 +134,5 @@ Three parts, all built: **Checking (READ ONLY) → Add, with stock kept in step 
 
 - The API points at the **LIVE production DB.** Reads are safe; writes touch real product rows. When testing writes, wrap in a manual `BEGIN … ROLLBACK` unless the owner OKs a live apply-and-restore.
 - Single `.gitignore` at repo root.
+- **Backup warning (2026-11-08):** the nightly DB backup (scripts repo `db-maint/pg_backup.sh`, 1am) writes one bclog row per run (section 'Backup', "OK: …" / "FAILED: …") because the crontab has no MAILTO — a failed run was otherwise silent (109 days of backups never reached Drive in 2026). `GET /backup-last` → the dashboard's red `BackupWarning`, shown only when the last run failed, no OK run for 2 days, or none ever reported.
 - Don't invent pricing logic — the domain notes above and the code are the source of truth.
