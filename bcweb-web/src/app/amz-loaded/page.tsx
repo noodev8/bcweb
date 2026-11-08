@@ -17,7 +17,8 @@ how it does for pricing so its clear what it is"). The same controls as the pric
 The list is fetched once with the parked ones included (GET /amz-loaded-list?parked=include), so the switch costs no request.
 
 Columns: Style (group id, title) · Brand · Stock (pairs held locally, sizes) · Shopify price / RRP · Sold SHP 90d (how it does where it
-is) · Review. No subtitle and no product hand-off cards (both taken off, owner 2026-10-26).
+is) · Review. No subtitle and no product hand-off cards (both taken off, owner 2026-10-26) — but a small closed "What is this screen
+for?" line at the top (owner, 2026-11-08), the screen's purpose in three lines.
 
 CLICK A STYLE TO OPEN ITS SIZES (owner, 2026-10-26): every size with its barcode — one click copies it ("just give me the barcodes to
 copy") — and its local stock; the AMAZON UPLOAD FILE button ("let me get the amz upload file from there as well") — the same file as Add
@@ -106,6 +107,17 @@ export default function AmzLoadedPage() {
     <AppShell title="AMZ loaded">
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {q.isLoading && <p className="text-sm text-slate-400">Loading…</p>}
+
+      {/* WHAT IS THIS? (owner, 2026-11-08: "a brief description on the page itself. Not too prominent ... I will remember") — a small
+          grey line, closed by default; the one place this screen explains itself. */}
+      <details className="group mb-3 text-xs text-slate-500">
+        <summary className="cursor-pointer select-none text-slate-400 hover:text-slate-600">What is this screen for?</summary>
+        <div className="mt-2 max-w-2xl space-y-1 leading-relaxed">
+          <p>Styles we hold in stock that have <strong className="font-medium text-slate-600">no size on Amazon</strong> (Birkenstock left out). The job: decide whether each is worth listing there.</p>
+          <p><strong className="font-medium text-slate-600">Check it</strong> — click a style for its sizes and barcodes; paste a barcode into Amazon to see the listing, its rank and the competition.</p>
+          <p><strong className="font-medium text-slate-600">Worth it</strong> — the Amazon upload file button in the style&rsquo;s drop-down. <strong className="font-medium text-slate-600">Not now</strong> — set a review: the style leaves the Due list (and the dashboard count) until then. Pricing review dates aren&rsquo;t touched.</p>
+        </div>
+      </details>
 
       {q.data && (
         <>
