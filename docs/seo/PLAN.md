@@ -228,13 +228,26 @@ size-6 page won on. Google has no reason to prefer our copy of the same sentence
 in July's priority list) — compare a trial with its control over the SAME weeks, never
 with the summer.
 
-**Open questions to settle:**
-1. Collections or product pages (or the cheap collection tidy first)? — the description
-   finding points to product pages.
+**Settled 2026-11-07 (owner):**
+1. ~~Collections or product pages?~~ **Product pages first, one at a time** (owner: "do
+   one first. Lets go slow for the start"). The collection is the next, separate step.
 2. ~~Are the descriptions supplier copy?~~ Yes (above).
-3. Which style for the trial, and which styles are the control?
-4. Where the text is written and approved (Shopify directly, or through the
-   descriptions-review flow so the feed and eBay take it too)?
+3. ~~Which style?~~ **Zermatt** (in season, pages at 7.1) — LIVE 2026-11-07 on all 12
+   pages. Control: the untouched `/collections/birkenstock-slippers`. Read from
+   2026-12-05 (CHANGELOG).
+4. ~~Where is the text written?~~ **In Shopify** (the source); the descriptions review
+   then carries it to the Google feed and eBay. The owner edits a draft in Downloads
+   first — keep as much of the owner's own wording as possible ("sound human and unique
+   to my tone"); fix typos only.
+
+5. ~~Controls?~~ **No control pages** (owner, 2026-11-07, on Arizona: "we are writing good
+   useful, quality content… to increase the value of our website and then track position.
+   Doesnt need an anchor other than its current position and the shopify sessions as a
+   whole"). A rewritten page is judged against ITS OWN position before the change, and the
+   site against Shopify sessions. Don't propose untouched control styles again.
+6. ~~Which style next?~~ **Arizona** — LIVE 2026-11-07 on all 67 pages (the top Birkenstock
+   earner). Written in November so Google has re-read it before the February season; read
+   March 2027 (CHANGELOG).
 
 **Closed experiments:** Arizona and Madrid collections (failed, 2026-08) and the size-6
 blog (worked on position, 2026-11-07) — outcomes in CHANGELOG.md.

@@ -469,6 +469,7 @@ export interface SeoTracker {
   };
   visits: {
     avg7: number;
+    avg7_free: number;      // visits not from an ad (NOT_FREE rule), a day over the same 7 days
     d28: { now: number; ly: number; from: string; to: string };
     per100: { now: number | null; ly: number | null };
     by_source: { came_from: string; visits: number }[];

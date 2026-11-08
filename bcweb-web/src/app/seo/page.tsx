@@ -119,7 +119,17 @@ export default function SeoTrackerPage() {
             <div className="grid gap-6 sm:grid-cols-3">
               <div>
                 <p className="text-sm text-slate-500">A day, last 7 days</p>
-                <p className="text-3xl font-semibold tabular-nums text-slate-900">{t.visits.avg7.toFixed(0)}</p>
+                {/* Total and FREE (not from an ad) side by side — owner, 2026-11-07: "add free visits a day next to the total". */}
+                <div className="flex items-baseline gap-5">
+                  <div>
+                    <p className="text-3xl font-semibold tabular-nums text-slate-900">{t.visits.avg7.toFixed(0)}</p>
+                    <p className="text-xs text-slate-500">all visits</p>
+                  </div>
+                  <div>
+                    <p className="text-3xl font-semibold tabular-nums text-slate-900">{t.visits.avg7_free.toFixed(0)}</p>
+                    <p className="text-xs text-slate-500">free (not from an ad)</p>
+                  </div>
+                </div>
               </div>
               <Figure label="Last 28 days" now={n(t.visits.d28.now)} ly={n(t.visits.d28.ly)} nowRaw={t.visits.d28.now} lyRaw={t.visits.d28.ly} />
               <Figure

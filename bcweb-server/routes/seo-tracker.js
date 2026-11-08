@@ -119,9 +119,13 @@ router.get('/', async (req, res) => {
     const webOrders28 = bySource.reduce((a, r) => a + r.orders, 0);
     const unknown28 = (bySource.find((r) => r.came_from === 'Unknown') || { orders: 0 }).orders;
 
-    // Visits.
-    const [v7, v28, v28ly, o28, o28ly] = await Promise.all([
-      visits((await query(`SELECT ($1::date - 6)::text AS d`, [w.y])).rows[0].d, w.y),
+    // Visits. FREE visits a day sit beside the total (owner, 2026-11-07: "add free visits a day next to the total") so the ads going
+    // on or off doesn't swing the one figure — same NOT_FREE rule as free sales.
+    const d7From = (await query(`SELECT ($1::date - 6)::text AS d`, [w.y])).rows[0].d;
+    const [v7, v7free, v28, v28ly, o28, o28ly] = await Promise.all([
+      visits(d7From, w.y),
+      query(`SELECT COALESCE(SUM(sessions), 0)::int AS n FROM shopify_sessions_daily WHERE day BETWEEN $1 AND $2 AND came_from <> ALL($3)`,
+        [d7From, w.y, NOT_FREE]).then((r) => r.rows[0].n),
       visits(w.d28_from, w.y), visits(w.ly_from, w.ly_to), allOrders(w.d28_from, w.y), allOrders(w.ly_from, w.ly_to),
     ]);
     const visitsBySource = (await query(
@@ -170,6 +174,7 @@ router.get('/', async (req, res) => {
       },
       visits: {
         avg7: Math.round((v7 / 7) * 10) / 10,
+        avg7_free: Math.round((v7free / 7) * 10) / 10,
         d28: { now: v28, ly: v28ly, from: w.d28_from, to: w.y },
         per100: { now: per100(o28, v28), ly: per100(o28ly, v28ly) },
         by_source: visitsBySource,
