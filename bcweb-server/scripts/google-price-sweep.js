@@ -31,7 +31,8 @@ const { query } = require('../database');
 const googleMerchant = require('../utils/googleMerchant');
 
 async function main() {
-  // The work queue: distinct Google-live styles with an un-sent SHP change. (Add/Modify doesn't log here, so it's out of scope by design.)
+  // The work queue: distinct Google-live styles with an un-sent SHP change. (Add / Modify logs here too and also pushes Google inline,
+  // so its change is sent twice — harmless, the override is a repeatable write.)
   //
   // NO-OP GUARD (2026-08-31): skip rows where the price didn't actually move. Two kinds land here — the HOLD rows the park routes
   // now write (new_price = old_price, see docs/hold-logging-spec.md) and the occasional accidental apply of the price a style
@@ -40,13 +41,23 @@ async function main() {
   // defence — it is what catches the accidental applies, which have always reached Google as no-ops.
   // IS DISTINCT FROM, not <>: a legacy row with a NULL price on either side is a real change we cannot characterise, so it stays
   // in the queue rather than being silently dropped by NULL comparison.
+  //
+  // SIZE PRICES (2026-11-08, utils/sizePrice.js): every row of shopify_size_price_log not yet sent queues its style too — a size price
+  // set, ended by hand, by a style price or by selling out. The ENDS matter as much as the sets: the supplemental override would
+  // otherwise keep the old size price on Google. pushIfLive sends every size at its current price either way, so one push covers both.
   const pending = await query(`
-    SELECT DISTINCT l.groupid
+    SELECT l.groupid
     FROM price_change_log l
     JOIN skusummary sm ON sm.groupid = l.groupid
     WHERE l.channel = 'SHP'
       AND l.google_pushed_at IS NULL
       AND l.new_price IS DISTINCT FROM l.old_price
+      AND sm.googlestatus = 1 AND sm.shopify = 1
+    UNION
+    SELECT s.groupid
+    FROM shopify_size_price_log s
+    JOIN skusummary sm ON sm.groupid = s.groupid
+    WHERE s.google_pushed_at IS NULL
       AND sm.googlestatus = 1 AND sm.shopify = 1
   `);
   const groupids = pending.rows.map((r) => r.groupid);
@@ -86,6 +97,12 @@ async function main() {
          SET google_pushed_at = now()
        WHERE channel = 'SHP'
          AND google_pushed_at IS NULL
+         AND groupid = ANY($1::text[])
+    `, [done]);
+    await query(`
+      UPDATE shopify_size_price_log
+         SET google_pushed_at = now()
+       WHERE google_pushed_at IS NULL
          AND groupid = ANY($1::text[])
     `, [done]);
   }

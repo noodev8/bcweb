@@ -287,6 +287,20 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
         )}
       </div>
 
+      {/* Size prices the typed style price would END (it goes to or below them — server utils/sizePrice.js → styleDrop). Said before
+          Apply, not only after: it is the one thing a style price does that the box doesn't show. */}
+      {(() => {
+        const hit = changed && Number.isFinite(price) && price > 0
+          ? sizes.filter((s) => s.own_price != null && price <= s.own_price)
+          : [];
+        return hit.length ? (
+          <div className="-mt-3 mb-4 text-xs text-amber-600">
+            {hit.map((s) => `Size ${s.size} (£${s.own_price!.toFixed(2)})`).join(', ')} {hit.length === 1 ? 'has its own price' : 'have their own prices'} — at
+            this price {hit.length === 1 ? 'it goes' : 'they go'} back to the style price.
+          </div>
+        ) : null;
+      })()}
+
       {/* Note (optional) — saved to the price_change_log row. Only meaningful on a real price change (Apply is the only path that logs). */}
       <div className="mb-1 text-sm font-medium text-slate-700">
         Note <span className="font-normal text-slate-400">(optional — saved to the price log)</span>

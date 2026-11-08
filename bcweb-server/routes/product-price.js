@@ -47,6 +47,8 @@ Success Response:
   "saved": { "cost": 18.75, "rrp": 45.00, "tax": true, "price": 39.95 },  // numbers actually written (price is the 2dp value)
   "logged": true,                 // true if a price_change_log row was written (i.e. the Shopify price changed)
   "next_review": "2026-07-22",    // next_shopify_price_review after the write (YYYY-MM-DD), or null if none set
+  "size_prices_ended": [ { "code": "…-35", "size": "35", "price": 45.00 } ],  // size prices the new style price went to or below, so
+                                  // they went back to the style price (utils/sizePrice.js → styleDrop, same rule as W1); [] if none
   "shopify": { "pushed": true, "isNew": false, "variantCount": 11 },  // direct Shopify push outcome; null if not live
   "google": { "pushed": true, "updated": 11, "failed": 0, "total": 11 }  // direct Google Merchant push outcome; null if not applicable
 }
@@ -67,6 +69,7 @@ const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
+const { styleDrop } = require('../utils/sizePrice');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
 const googleMerchant = require('../utils/googleMerchant');
@@ -139,7 +142,7 @@ router.post('/', async (req, res) => {
 
     const changedBy = req.user.display_name; // resolved server-side from the token — never from the client body
 
-    const { logged, nextReview } = await withTransaction(async (client) => {
+    const { logged, nextReview, sizePricesEnded } = await withTransaction(async (client) => {
       // Read the current Shopify price first so we can (a) detect whether it actually changed and (b) record old->new in the audit log.
       // Legacy VARCHAR that can hold junk, so read via safeNumeric (NULL when non-numeric); a null old price counts as "changed".
       const before = await client.query(
@@ -177,7 +180,12 @@ router.post('/', async (req, res) => {
         `, [groupid, oldNum, priceNum, note, changedBy]);
       }
 
-      return { logged: priceChanged, nextReview: upd.rows[0].next_shopify_price_review };
+      // Size prices (utils/sizePrice.js, owner 2026-11-08): the same rule as W1 — a size keeps its own price unless the style price
+      // goes to or below it, then it goes back to the style price, in this transaction. Run on every save (not only a logged change):
+      // it removes nothing unless a size price is at or above the style price.
+      const sizePricesEnded = await styleDrop(client, { groupid, stylePrice: priceNum, by: changedBy });
+
+      return { logged: priceChanged, nextReview: upd.rows[0].next_shopify_price_review, sizePricesEnded };
     });
 
     // Format the review date (if any) as YYYY-MM-DD from local components (avoid a UTC day-shift).
@@ -202,6 +210,7 @@ router.post('/', async (req, res) => {
       saved: { cost: costNum, rrp: rrpNum, tax: tax === 1, price: priceNum },
       logged,
       next_review: nextReviewIso,
+      size_prices_ended: sizePricesEnded,
       shopify: shopifyResult,
       google: googleResult,
     });

@@ -91,6 +91,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { query } = require('../database');
 const { readSlowSizes, datedFromFirstArrival } = require('../utils/slowSizes');
 const logger = require('../utils/logger');
+const { ACTIVE_SQL } = require('../utils/sizePrice');
 
 router.use(verifyToken);
 
@@ -109,7 +110,7 @@ router.get('/', async (req, res) => {
     // The extras for the style rows (see SLOW MOVERS AS STYLE ROWS) — three set queries, no N+1.
     const codes = sizes.map((x) => x.code);
     const groupids = [...new Set(sizes.map((x) => x.groupid))];
-    const [imgQ, soldQ, othersQ, ukQ] = await Promise.all([
+    const [imgQ, soldQ, othersQ, ukQ, ownQ] = await Promise.all([
       query(`SELECT groupid, NULLIF(TRIM(imagename), '') AS imagename FROM skusummary WHERE groupid = ANY($1::text[])`, [groupids]),
       query(`SELECT code, SUM(qty)::int AS q FROM sales
               WHERE code = ANY($1::text[]) AND solddate > (now() AT TIME ZONE 'Europe/London')::date - 365
@@ -120,13 +121,17 @@ router.get('/', async (req, res) => {
                 AND (EXISTS (SELECT 1 FROM incoming_stock i WHERE i.code = m.code)
                      OR EXISTS (SELECT 1 FROM sales s WHERE s.code = m.code))`, [groupids, codes]),
       query(`SELECT DISTINCT ON (code) code, TRIM(uksize) AS uk FROM skumap WHERE code = ANY($1::text[]) ORDER BY code`, [codes]),
+      // A size's own Shopify price in force (utils/sizePrice.js, 2026-11-08) — shown on its tile so it reads as already dealt with.
+      query(`SELECT code, price FROM (${ACTIVE_SQL}) a WHERE a.code = ANY($1::text[])`, [codes]),
     ]);
+    const own = new Map(ownQ.rows.map((r) => [r.code, Number(r.price)]));
     const sold = new Map(soldQ.rows.map((r) => [r.code, Math.max(Number(r.q) || 0, 0)]));
     // "5.5 UK" -> "5.5"; a child size ("8 UK Child") or anything else -> null (the grid's Other column).
     const uk = new Map(ukQ.rows.map((r) => [r.code, (/^([0-9]+([.]5)?) UK$/.exec(r.uk || '') || [])[1] || null]));
     for (const x of sizes) {
       x.sold_12m = sold.get(x.code) || 0;
       x.uk = uk.get(x.code) || null;
+      x.size_price = own.has(x.code) ? own.get(x.code) : null;
     }
 
     return res.json({ return_code: 'SUCCESS', today, cutoff, sizes,

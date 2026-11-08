@@ -45,6 +45,8 @@ Success Response:
   "old_price": 36.95,             // previous numeric price (null if none)
   "next_review": "2026-07-11",    // CURRENT_DATE + reviewDays, or null when review was None / left untouched
   "warnings": ["ABOVE_RRP"],       // any non-blocking flags (BELOW_COST, ABOVE_RRP); [] if none
+  "size_prices_ended": [ { "code": "0034791-MILANO-35", "size": "35", "price": 45.00 } ],  // size prices the new style price went to
+                                   // or below, so they went back to the style price (utils/sizePrice.js → styleDrop); [] if none
   "shopify": { "pushed": true, "isNew": false, "variantCount": 11 }  // direct Shopify push outcome (see below); null if not live
 }
 Shopify push outcome (`shopify` field): null = product not live (skusummary.shopify != 1) or Shopify not configured — nothing pushed;
@@ -151,6 +153,8 @@ router.post('/', async (req, res) => {
       old_price: oldPrice,
       next_review: nextReviewIso,
       warnings,
+      // Size prices the new style price ended (it went to or below them — utils/sizePrice.js). The screen says so; [] = none.
+      size_prices_ended: written.sizePricesEnded,
       shopify: shopifyResult
     });
   } catch (err) {

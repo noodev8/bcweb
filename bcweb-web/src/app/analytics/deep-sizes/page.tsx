@@ -417,6 +417,12 @@ function DeepSizesBody() {
 
 // THE SIZE RUN — white = a deep size (size · its OVER qty, an amber dot if more is on order; a link to the style's size screen), grey =
 // the rest. No tooltips (owner).
+// A SIZE'S OWN SHOPIFY PRICE on its tile (2026-11-08, server utils/sizePrice.js) — a small solid tag, so a size already being dealt with
+// on the Shopify pricing drill reads as such. Display only. (The same tag is on Range's list tiles.)
+function OwnPrice({ price }: { price: number }) {
+  return <span className="ml-0.5 rounded bg-slate-800 px-1 text-[10px] font-medium text-white">£{price % 1 === 0 ? price.toFixed(0) : price.toFixed(2)}</span>;
+}
+
 function SizeRun({ g, href }: { g: StyleRow; href: string }) {
   return (
     <div className="mt-2 flex flex-wrap gap-1">
@@ -427,6 +433,7 @@ function SizeRun({ g, href }: { g: StyleRow; href: string }) {
             <Link key={t.code} href={href} onClick={(e) => e.stopPropagation()}
               className="relative flex h-6 min-w-[2.25rem] items-center justify-center gap-1 rounded bg-white px-1.5 text-[11px] font-semibold tabular-nums text-slate-900 ring-1 ring-inset ring-slate-400 transition hover:bg-brand-50 hover:ring-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
               {t.size}<span className="font-normal text-slate-500">·{s.over}</span>
+              {s.size_price != null && <OwnPrice price={s.size_price} />}
               {s.on_order > 0 && <span aria-hidden className="absolute right-0.5 top-0.5 inline-block h-1.5 w-1.5 rounded-full bg-amber-500" />}
             </Link>
           );

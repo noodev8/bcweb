@@ -96,7 +96,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
   const [ok, setOk] = useState(false);
   const [push, setPush] = useState<ShopifyPushResult | null>(null);   // Shopify re-push outcome, when the product is live
   const [googlePush, setGooglePush] = useState<GooglePushResult | null>(null);   // Google Merchant re-push outcome, when live there
-  const [savedInfo, setSavedInfo] = useState<{ logged: boolean; nextReview: string | null } | null>(null);
+  const [savedInfo, setSavedInfo] = useState<{ logged: boolean; nextReview: string | null; sizesEnded: string[] } | null>(null);
   // Optional extras (see header). reviewDays null = no review chosen; note '' = none.
   const [reviewDays, setReviewDays] = useState<number | null>(null);
   const [note, setNote] = useState('');
@@ -181,7 +181,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
       setOk(true);
       setPush(res.data.shopify ?? null);
       setGooglePush(res.data.google ?? null);
-      setSavedInfo({ logged: res.data.logged, nextReview: res.data.next_review });
+      setSavedInfo({ logged: res.data.logged, nextReview: res.data.next_review, sizesEnded: res.data.size_prices_ended.map((e) => e.size) });
       onSaved?.(s);
     } else {
       if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
@@ -289,6 +289,8 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
             Saved.
             {savedInfo?.logged ? ' Change logged.' : ''}
             {savedInfo?.nextReview ? ` Review ${savedInfo.nextReview}.` : ''}
+            {/* A size price at or above the new style price went back to the style price (server utils/sizePrice.js). */}
+            {savedInfo?.sizesEnded.length ? ` Size ${savedInfo.sizesEnded.join(', ')} back to the style price.` : ''}
           </span>
         )}
         {ok && !dirty && <ShopifyPushNote result={push} />}

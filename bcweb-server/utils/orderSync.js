@@ -23,6 +23,9 @@ THE RUN
                  less Shopify orders not yet imported — only sizes that differ, refused if Shopify's count moved mid-run
                  (utils/shopifyStockSync.js; replaced the Python update_shopify_inventory.py at 3am, owner 2026-11-08). First, because
                  overselling is what it prevents: a pair just sold on eBay comes off Shopify now. Never fails the run; own bclog row.
+    3b SIZE PRICES  right after: a size's own Shopify price (utils/sizePrice.js, 2026-11-08) ends when the size has sold out
+                 (local free + FBA live = 0), so a later delivery or a return sells at the style price; those styles are re-pushed.
+                 Never fails the run; a bclog row (section 'Shopify Pricing') only when one ended.
     4  EBAY STOCK  AFTER the commit: new in-stock sizes added to their listings, then eBay's quantities brought in step with our
                  stock (utils/ebayStockSync.js — eBay Add step 3,
                  2026-11-01). Outside the transaction and never allowed to fail the run: the orders are already saved; a size eBay
@@ -52,6 +55,9 @@ const { withTransaction } = require('./transaction');
 const { CHANNELS } = require('./orderChannels');
 const { syncEbayStock } = require('./ebayStockSync');
 const { syncShopifyStock } = require('./shopifyStockSync');
+const { endSoldOut } = require('./sizePrice');
+const { pushIfLive: shopifyPushIfLive } = require('./shopify');
+const { logActivity } = require('./bclog');
 const { recordOrderSources, purgeOldSources } = require('./orderSource');
 const { recordSessions, purgeOldSessions } = require('./shopifySessions');
 const logger = require('./logger');
@@ -369,6 +375,29 @@ async function runOrderSync({ by }) {
   } catch (err) {
     result.shopifyStock = { error: err.message };
     logger.error(`[orderSync] Shopify stock sync failed (orders are saved): ${err.message}`);
+  }
+
+  // ---- 3b. SIZE PRICES THAT HAVE SOLD OUT (after the commit — never fails the run) -------------------------------------------
+  // A size's own Shopify price ends when the size sells out (utils/sizePrice.js, owner 2026-11-08), so a later delivery or a return
+  // sells at the style price. Its own small transaction (rows deleted + logged — the log rows send the change to Google via the sweep),
+  // then each style touched is re-pushed to Shopify. Right after the stock step: this run's sales are saved, so a last pair just sold
+  // is already out of free stock.
+  try {
+    const ended = await withTransaction((client) => endSoldOut(client, { by: String(by || 'cron') }));
+    result.sizePrices = { ended: ended.ended.length, pushed: 0, failed: 0 };
+    for (const groupid of ended.groupids) {
+      const p = await shopifyPushIfLive(groupid);
+      if (p && p.pushed === false) { result.sizePrices.failed += 1; logger.error(`[orderSync] size price push failed for ${groupid}: ${p.message}`); }
+      else if (p) result.sizePrices.pushed += 1;
+    }
+    if (ended.ended.length) {
+      const line = `Size prices ended: ${ended.ended.map((e) => `${e.code} £${e.price.toFixed(2)} (${e.reason === 'soldout' ? 'sold out' : 'tidy'})`).join(', ')}`;
+      logger.info(`[orderSync] ${line}`);
+      await logActivity({ who: String(by || 'cron'), section: 'Shopify Pricing', log: line });
+    }
+  } catch (err) {
+    result.sizePrices = { error: err.message };
+    logger.error(`[orderSync] size price tidy failed (orders are saved): ${err.message}`);
   }
 
   // ---- 4. EBAY STOCK (after the commit — never fails the run) -----------------------------------------------------------------

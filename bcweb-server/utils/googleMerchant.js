@@ -30,6 +30,7 @@ const { query } = require('../database');
 const config = require('../config/config');
 const logger = require('./logger');
 const { getAccessToken } = require('./googleAuth');
+const { ACTIVE_SQL } = require('./sizePrice');
 
 // Merchant API (products bundle) base. productInputs.insert writes a productInput into a data source.
 // NOTE: the products sub-API is GA at v1 — v1beta was discontinued on 2026-02-28 (returns 409 "upgrade to v1"). Keep this on v1.
@@ -63,11 +64,14 @@ function resourceNames() {
 // pushing it can only ever 404. This filter previously only checked googleid, and the resulting 404 counted as a push failure, which
 // stopped the sweep stamping the row: the style then retried every couple of hours forever. Found 2026-07-26 via 0552683-ARIZONA
 // (size 35, blank ean); 69 sizes across 49 Google-live styles were in the same position.
+//
+// size_price (2026-11-08): the size's own Shopify price when one is in force (utils/sizePrice.js → ACTIVE_SQL), else null.
 async function fetchTargets(groupid) {
   const r = await query(`
-    SELECT m.googleid, sm.shopifyprice
+    SELECT m.googleid, sm.shopifyprice, asp.price AS size_price
     FROM skusummary sm
     JOIN skumap m ON m.groupid = sm.groupid
+    LEFT JOIN (${ACTIVE_SQL}) asp ON asp.code = m.code
     WHERE sm.groupid = $1
       AND sm.googlestatus = 1 AND sm.shopify = 1 AND m.googlestatus = 1
       AND COALESCE(m.deleted, 0) = 0
@@ -82,9 +86,15 @@ async function fetchTargets(groupid) {
 // input overlays just the attributes it carries, so title/availability/RRP/etc. all still come from the primary feed. Throws on failure
 // so the caller can count it. (An `insert` replaces the whole productInput for this key in the supplemental source, so a later
 // salePrice-only insert cleanly drops any `price` we might have written before.)
-async function insertPriceOverride(token, parent, dataSource, offerId, amountMicros) {
+//
+// excludeAds (2026-11-08): a size with its own Shopify price (utils/sizePrice.js) is also kept OUT of paid Shopping ads (owner: no ad
+// spend on clearance stock; free listings keep it) — the override carries excludedDestinations for it, matching the nightly feed's
+// excluded_destination column. Because an insert replaces the whole override, the next salePrice-only insert (the size price ended)
+// drops the exclusion again.
+async function insertPriceOverride(token, parent, dataSource, offerId, amountMicros, excludeAds = false) {
   const { contentLanguage, feedLabel } = config.google;
   const salePrice = { amountMicros: String(amountMicros), currencyCode: 'GBP' }; // int64 -> string per Google JSON convention
+  const productAttributes = excludeAds ? { salePrice, excludedDestinations: ['SHOPPING_ADS'] } : { salePrice };
   const url = `${MERCHANT_API_BASE}/${parent}/productInputs:insert?dataSource=${encodeURIComponent(dataSource)}`;
   const resp = await fetch(url, {
     method: 'POST',
@@ -93,7 +103,7 @@ async function insertPriceOverride(token, parent, dataSource, offerId, amountMic
       offerId,
       contentLanguage,
       feedLabel,
-      productAttributes: { salePrice },
+      productAttributes,
     }),
   });
   if (!resp.ok) {
@@ -109,7 +119,7 @@ async function insertPriceOverride(token, parent, dataSource, offerId, amountMic
 /*
  * pushIfLive(groupid)
  * If the product is live on Google (skusummary.googlestatus=1 AND shopify=1) and creds are configured, push the current shopifyprice to
- * every size's googleid. Returns:
+ * every size's googleid — or, for a size with its own Shopify price in force (utils/sizePrice.js), that price, out of paid ads. Returns:
  *    null                                       -> legitimately nothing to push: the style is NOT live on Google (googlestatus/shopify
  *                                                  != 1) or has no googleid mapped yet. A genuine no-op — stays silent in the UI.
  *    { pushed: false, error: 'GOOGLE_NOT_CONFIGURED', ... } -> the style IS live on Google but the server isn't configured, so the push
@@ -147,14 +157,17 @@ async function pushIfLive(groupid) {
       logger.error(`[googleMerchant] pushIfLive: shopifyprice for ${groupid} is not numeric`);
       return { pushed: false, error: 'GOOGLE_PUSH_FAILED', message: 'shopifyprice is not numeric' };
     }
-    const amountMicros = Math.round(price * 1_000_000);
+    const micros = (p) => Math.round(Number(p) * 1_000_000);
 
     const token = await getAccessToken(); // cached ~1h — this is what removes the per-apply cold-start
     const { parent, dataSource } = resourceNames();
 
     // No custombatch in the Merchant API — fire every size's insert concurrently. Per-offer failures are collected, not fatal.
+    // Each size at ITS price: its own Shopify price (out of paid ads) when one is in force, else the style price (2026-11-08).
     const results = await Promise.allSettled(
-      targets.map((t) => insertPriceOverride(token, parent, dataSource, t.googleid, amountMicros))
+      targets.map((t) => (t.size_price !== null
+        ? insertPriceOverride(token, parent, dataSource, t.googleid, micros(t.size_price), true)
+        : insertPriceOverride(token, parent, dataSource, t.googleid, micros(price))))
     );
     let updated = 0;
     const absent = [];   // 404 — Google has no such product, so there is nothing to override. NOT a failure (see below).

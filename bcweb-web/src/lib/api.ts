@@ -233,6 +233,7 @@ export interface DrillHeader {
   ad_floor_confidence: 'own' | 'segment' | 'none';   // 'segment' is an ESTIMATE from neighbours; render it as one
   ad_floor_basis: { clicks: number; units: number; spend: number; days: number } | null;
   below_ad_floor: boolean;              // current price < ad_floor (precomputed server-side; false when the floor is null)
+  size_price_default: number | null;    // what the Size prices panel fills in: 50% of RRP (server: utils/sizePrice.js)
 }
 export interface TimelineRow {
   price: number; units: number;
@@ -246,6 +247,9 @@ export interface SizeRow {
   qty: number;                          // our sellable stock in that size (0 = sold out — shown, not hidden)
   amz_price: number | null;             // what Amazon charges for THAT size; null = size not on Amazon FBA. Render "—", never 0.
   amz_live: number;                     // Amazon's stock in that size; 0 = listed but out of stock (a different fact from null price)
+  code: string;                         // skumap.code — what a size price is set on
+  own_price: number | null;             // the size's OWN Shopify price (utils/sizePrice.js); null = sells at the style price
+  own_active: boolean;                  // own_price is in force now (below the style price and in stock) — what Shopify shows
 }
 export interface DrillData { header: DrillHeader; timeline: TimelineRow[]; weeks: VelocityWeek[]; bands: PriceBand[]; sizes: SizeRow[]; days: number; }
 // Drill reports (lazy — fetched only when their section is opened). Both bounded by most-recent-N rows; `truncated` = more exist.
@@ -281,7 +285,9 @@ export interface ProductDetail {
 export interface LoginData { token: string; display_name: string; }
 // No `google` field: pricing-apply is decoupled from Google (a periodic server sweep pushes SHP changes to Google Merchant — see
 // scripts/google-price-sweep.js). Only the Shopify push happens inline. (Add/Modify's updateProductPrice still returns a google result.)
-export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; shopify?: ShopifyPushResult | null; }
+// A size price a style-price write ended (the style price went to or below it — server utils/sizePrice.js → styleDrop).
+export interface SizePriceEnded { code: string; size: string; price: number; }
+export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; size_prices_ended: SizePriceEnded[]; shopify?: ShopifyPushResult | null; }
 export interface ParkData { groupid: string; next_review: string; }
 
 // =============================================================================================================================
@@ -1041,7 +1047,7 @@ export interface ProductPriceFields { cost: string; rrp: string; tax: boolean; s
 export interface ProductPriceExtras { reviewDays?: number | null; note?: string; }
 export interface ProductPriceSaved { cost: number; rrp: number; tax: boolean; price: number; }
 export function updateProductPrice(groupid: string, fields: ProductPriceFields, extras?: ProductPriceExtras) {
-  return request<{ groupid: string; saved: ProductPriceSaved; logged: boolean; next_review: string | null; shopify?: ShopifyPushResult; google?: GooglePushResult }>(
+  return request<{ groupid: string; saved: ProductPriceSaved; logged: boolean; next_review: string | null; size_prices_ended: SizePriceEnded[]; shopify?: ShopifyPushResult; google?: GooglePushResult }>(
     {
       url: '/product-price',
       method: 'POST',
@@ -1058,6 +1064,7 @@ export function updateProductPrice(groupid: string, fields: ProductPriceFields, 
       saved: b.saved as ProductPriceSaved,
       logged: Boolean(b.logged),
       next_review: (b.next_review ?? null) as string | null,
+      size_prices_ended: (b.size_prices_ended || []) as SizePriceEnded[],
       shopify: b.shopify,
       google: b.google,
     })
@@ -1130,7 +1137,24 @@ export function generateAmzDeleteFile(skus: string[]) {
 export function applyPrice(groupid: string, newPrice: number, reviewDays: number | null, note?: string) {
   return request<ApplyData>(
     { url: '/pricing-apply', method: 'POST', data: { groupid, newPrice, reviewDays, note } },
-    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [], shopify: b.shopify ?? null })
+    (b) => ({ groupid: b.groupid, new_price: b.new_price, old_price: b.old_price, next_review: b.next_review, warnings: b.warnings || [], size_prices_ended: b.size_prices_ended || [], shopify: b.shopify ?? null })
+  );
+}
+
+// Shopify SIZE prices (2026-11-08, server utils/sizePrice.js): one size of a style at its own price, shown on Shopify against the style
+// price; must be below the style price, the size in stock. Ends by itself when the size sells out or the style price reaches it.
+export interface SizePriceSetData { code: string; groupid: string; size: string; price: number; old_price: number | null; style_price: number; warnings: string[]; shopify?: ShopifyPushResult | null; }
+export function setSizePrice(code: string, price: number) {
+  return request<SizePriceSetData>(
+    { url: '/pricing-size-price-set', method: 'POST', data: { code, price } },
+    (b) => ({ code: b.code, groupid: b.groupid, size: b.size, price: b.price, old_price: b.old_price ?? null, style_price: b.style_price, warnings: b.warnings || [], shopify: b.shopify ?? null })
+  );
+}
+// Back to the style price for one size.
+export function clearSizePrice(code: string) {
+  return request<{ code: string; size: string; old_price: number; shopify?: ShopifyPushResult | null }>(
+    { url: '/pricing-size-price-clear', method: 'POST', data: { code } },
+    (b) => ({ code: b.code, size: b.size, old_price: b.old_price, shopify: b.shopify ?? null })
   );
 }
 
@@ -1580,6 +1604,7 @@ export interface SlowSize {
   sold_12m: number;           // THIS size, net, last 12 months
   uk: string | null;          // UK size ("5.5"); null = child size or none recorded
   clearance: boolean;         // idle 9+ calendar months — Slow movers' Clearance box
+  size_price: number | null;  // its own Shopify price in force (server utils/sizePrice.js); null = sells at the style price
 }
 // A size of a listed style that we DON'T hold (ever arrived on Goods In or ever sold) — a grey tile on Slow movers.
 export interface SlowOtherSize { groupid: string; code: string; size: string }
@@ -1610,6 +1635,7 @@ export interface DeepSize {
   over: number;               // units − keep
   on_order: number;           // supplier lines not yet arrived
   on_amazon: boolean;
+  size_price: number | null;  // its own Shopify price in force (server utils/sizePrice.js); null = sells at the style price
 }
 export type DeepWayOut = 'shopify' | 'amazon' | 'off';
 export interface DeepStyle { groupid: string; imagename: string | null; units: number; deep_units: number; way_out: DeepWayOut }

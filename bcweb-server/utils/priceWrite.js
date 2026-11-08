@@ -21,6 +21,7 @@ Both functions:
 */
 
 const { safeNumeric } = require('./sql');
+const { styleDrop } = require('./sizePrice');
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
@@ -28,7 +29,8 @@ const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v)
  * writeShopifyPrice(client, { groupid, price, reviewDays, note, changedBy })
  *   price       number, > 0, already rounded to 2dp
  *   reviewDays  integer >= 1, or null = leave next_shopify_price_review untouched ("None")
- * Returns { error, message } or { oldPrice, newPrice (the 2dp string written), isHold, warnings, nextReview (pg DATE or null), logId }.
+ * Returns { error, message } or { oldPrice, newPrice (the 2dp string written), isHold, warnings, nextReview (pg DATE or null), logId,
+ *   sizePricesEnded: [{ code, size, price }] — size prices this style price ended (utils/sizePrice.js → styleDrop) }.
  *
  * Rules (CLAUDE.md W1):
  *   - shopifyprice is a VARCHAR — written as a 2dp STRING ('36.95').
@@ -88,9 +90,13 @@ async function writeShopifyPrice(client, { groupid, price, reviewDays, note, cha
     RETURNING id
   `, [groupid, oldPrice, price, note, changedBy, isHold]);
 
+  // Size prices (utils/sizePrice.js, owner 2026-11-08): a size keeps its own price UNLESS the style price goes to or below it — then it
+  // goes back to the style price, in THIS transaction, and the caller says so on screen (sizePricesEnded).
+  const sizePricesEnded = await styleDrop(client, { groupid, stylePrice: price, by: changedBy });
+
   return {
     oldPrice, newPrice: priceString, isHold, warnings,
-    nextReview: upd.rows[0].next_shopify_price_review, logId: ins.rows[0].id,
+    nextReview: upd.rows[0].next_shopify_price_review, logId: ins.rows[0].id, sizePricesEnded,
   };
 }
 

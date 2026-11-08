@@ -127,6 +127,8 @@ app.use('/pricing-vs-amazon', require('./routes/pricing-vs-amazon')); // GET: ev
 app.use('/pricing-apply', require('./routes/pricing-apply'));
 app.use('/pricing-match-toggle', require('./routes/pricing-match-toggle')); // turn Shopify "match Amazon price" autopilot on/off for a style
 app.use('/pricing-park', require('./routes/pricing-park'));
+app.use('/pricing-size-price-set', require('./routes/pricing-size-price-set'));     // a size's own Shopify price (utils/sizePrice.js)
+app.use('/pricing-size-price-clear', require('./routes/pricing-size-price-clear')); // that size back to the style price
 app.use('/pricing-park-bulk', require('./routes/pricing-park-bulk')); // bulk W2: batch "just set review" — park a selection of un-changed styles
 app.use('/pricing-history', require('./routes/pricing-history')); // drill report: recent Shopify price changes (audit log, lazy)
 app.use('/pricing-sales', require('./routes/pricing-sales'));     // drill report: recent raw Shopify sales w/ sold price (lazy)

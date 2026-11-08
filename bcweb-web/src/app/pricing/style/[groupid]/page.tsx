@@ -27,6 +27,7 @@ import ZoomableThumb from '@/components/ZoomableThumb';
 import PriceHistory from '@/components/PriceHistory';
 import SalesList from '@/components/SalesList';
 import PriceSetter from '@/components/PriceSetter';
+import SizePrices from '@/components/SizePrices';
 import MatchAmazonPanel from '@/components/MatchAmazonPanel';
 import { AMZ_MATCH_UI } from '@/lib/features';
 import { getDrill, applyPrice, parkStyle } from '@/lib/api';
@@ -121,7 +122,13 @@ function DrillContent() {
       }
       // Google is decoupled — a periodic server sweep (scripts/google-price-sweep.js) pushes this change to Google Merchant later, so
       // there's nothing to report here (and no per-Google failure to surface). The plain "Saved" covers the DB + live Shopify push.
-      setNotice(warn ? { kind: 'warn', text: `Saved £${res.data.new_price}${warn}.` } : null);
+      // A size price the new style price went to or below is gone (back to the style price — server utils/sizePrice.js). Say so: it
+      // is the one side effect of a style price the operator can't see in the box they typed in.
+      const ended = res.data.size_prices_ended;
+      const endedMsg = ended.length
+        ? ` Size ${ended.map((e) => `${e.size} (was £${e.price.toFixed(2)})`).join(', ')} back to the style price — the new price reached ${ended.length === 1 ? 'its' : 'their'} own.`
+        : '';
+      setNotice(warn || endedMsg ? { kind: 'warn', text: `Saved £${res.data.new_price}${warn}.${endedMsg}` } : null);
       await refresh();
       setReloadKey((k) => k + 1);
     } else {
@@ -228,6 +235,19 @@ function DrillContent() {
               />
             )}
           </section>
+
+          {/* 1b. Size prices (owner, 2026-11-08) — a dead size of a selling style at its own Shopify price, the style price crossed out.
+                 Under the price card because it is the other price decision on this screen; components/SizePrices.tsx. Shown only once
+                 the server sends each size's code (an older server, mid-deploy, doesn't — the panel would have nothing to set). */}
+          {data.sizes.length > 0 && data.sizes.every((s) => s.code) && (
+            <SizePrices
+              sizes={data.sizes}
+              stylePrice={data.header.now}
+              cost={data.header.cost}
+              defaultPrice={data.header.size_price_default ?? null}
+              onChanged={async () => { await refresh(); }}
+            />
+          )}
 
           {/* 2. Recent sales — the report the operator goes straight to. Open by default and up top. */}
           <SalesList key={`sales-${reloadKey}`} groupid={groupid} defaultOpen />

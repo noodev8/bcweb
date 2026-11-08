@@ -17,7 +17,8 @@ Purpose: The ONE place the bcweb server talks to the Shopify Admin API. Mirrors 
            - product  <-> skusummary.handle
            - variant  <-> skumap.code  (= the Shopify variant SKU, e.g. '0151181-ARIZONA-36')
            - size     <-> Option1 "Size", value = the size display string ('36 EU / 3.5 UK')
-           - price/rrp <-> skusummary.shopifyprice / rrp  (Shopify price / compareAtPrice)
+           - price/rrp <-> skusummary.shopifyprice / rrp  (Shopify price / compareAtPrice) — except a size with its OWN price
+                           (shopify_size_price, utils/sizePrice.js, 2026-11-08): that price, the style price as compareAtPrice
            - barcode  <-> skumap.ean with the legacy trailing 'B' stripped
          After a successful push we cache each returned variant id back into skumap.variantlink ('<id>V'), exactly like
          price_update2.py's update_variant_links_in_database, so downstream lookups stay fast.
@@ -33,6 +34,7 @@ Purpose: The ONE place the bcweb server talks to the Shopify Admin API. Mirrors 
 
 const { query } = require('../database');
 const { safeNumeric } = require('./sql');
+const { activeSizePrices } = require('./sizePrice');
 const config = require('../config/config');
 const logger = require('./logger');
 
@@ -118,7 +120,8 @@ async function shopifyGraphQL(queryStr, variables = {}) {
  * buildProductSetInput(product, sizes, { status, isNew, productId })
  * PURE mapping from our DB shape to a ProductSetInput. No network — unit-testable in isolation. Faithful to the legacy CSV:
  *   - one Option: "Size"; its values are the size-display strings in saved order.
- *   - one variant per size: SKU = code (on inventoryItem), price = the product price, compareAtPrice = rrp (only if > price, else null to clear),
+ *   - one variant per size: SKU = code (on inventoryItem), price + compareAtPrice from variantPrice (the style price with "was" = rrp only
+ *     if > price, else null to clear — or a size's OWN price against the style price, s.sizePrice, utils/sizePrice.js),
  *     barcode = the (already 'B'-stripped) barcode, inventory policy DENY, taxable false, requires shipping, weight 0 kg, tracked.
  *   - images: our product_images gallery, keeping live Shopify media we don't hold (see buildFiles).
  *
@@ -151,24 +154,31 @@ function buildSeedDescription(product) {
 }
 
 /*
- * variantPrice({ price, rrp }) -> { price: '36.95', compareAtPrice: '50.00' | null }
+ * variantPrice({ price, rrp, sizePrice }) -> { price: '36.95', compareAtPrice: '50.00' | null }
  * THE rule for what a variant's price and "was" price are on Shopify. One function, so the push (buildProductSetInput) and the drift check
- * (scripts/shopify-price-check.js) can never disagree about what Shopify SHOULD show. compareAtPrice is the RRP only when it is above the
- * price; null clears a stale "was" price (see the note in buildProductSetInput).
+ * (scripts/shopify-price-check.js) can never disagree about what Shopify SHOULD show.
+ *   - a size with its OWN price (utils/sizePrice.js — passed only while it is in force: below the style price and in stock): that
+ *     price, with the STYLE price crossed out as its "was" price (owner, 2026-11-08: ~~£85~~ £45);
+ *   - every other size: the style price, with compareAtPrice = the RRP only when it is above the price; null clears a stale "was"
+ *     price (see the note in buildProductSetInput).
+ * A sizePrice at or above the style price is ignored here too (belt and braces — sizePrice.ACTIVE_SQL already leaves it out).
  */
-function variantPrice({ price, rrp }) {
+function variantPrice({ price, rrp, sizePrice = null }) {
+  if (sizePrice !== null && sizePrice !== undefined && Number(sizePrice) > 0 && Number(sizePrice) < Number(price)) {
+    return { price: Number(sizePrice).toFixed(2), compareAtPrice: Number(price).toFixed(2) };
+  }
   const hasRrp = rrp !== null && rrp !== undefined && Number(rrp) > Number(price);
   return { price: Number(price).toFixed(2), compareAtPrice: hasRrp ? Number(rrp).toFixed(2) : null };
 }
 
 function buildProductSetInput(product, sizes, { status = 'ACTIVE', isNew = true, productId = null, gallery = [], liveMedia = null, dropMediaIds = [] } = {}) {
-  const { price: priceStr, compareAtPrice: compareAt } = variantPrice(product);
-
   const productOptions = [
     { name: 'Size', values: sizes.map((s) => ({ name: s.sizeDisplay })) }
   ];
 
   const variants = sizes.map((s) => {
+    // Per size: a size with its own price (s.sizePrice, utils/sizePrice.js) shows it against the style price; the rest the style price.
+    const { price: priceStr, compareAtPrice: compareAt } = variantPrice({ price: product.price, rrp: product.rrp, sizePrice: s.sizePrice });
     const variant = {
       optionValues: [{ optionName: 'Size', name: s.sizeDisplay }],
       price: priceStr,
@@ -428,10 +438,14 @@ async function upsertProduct(groupid, { status = 'ACTIVE', dropMediaIds = [] } =
   `, [groupid]);
 
   if (sizeRes.rows.length === 0) throw coded('NO_SIZES', `Product ${groupid} has no sizes to push`);
+  // Size prices in force right now (utils/sizePrice.js — below the style price and in stock). Read HERE, in the one choke point every
+  // push goes through, so no price change, image save or size edit can ever wipe a size price off Shopify.
+  const own = await activeSizePrices({ query }, groupid);
   const sizes = sizeRes.rows.map((s) => ({
     code: s.code,
     barcode: s.barcode || null,
-    sizeDisplay: s.sizedisplay || null
+    sizeDisplay: s.sizedisplay || null,
+    sizePrice: own.has(s.code) ? own.get(s.code) : null
   }));
 
   const product = {
@@ -572,7 +586,7 @@ async function pushIfLive(groupid, { status = 'ACTIVE', dropMediaIds = [] } = {}
 
 const PRODUCT_PRICES_QUERY = `
   query productPrices($q: String!) {
-    products(first: 5, query: $q) { nodes { handle variants(first: 250) { nodes { price } } } }
+    products(first: 5, query: $q) { nodes { handle variants(first: 250) { nodes { sku price compareAtPrice } } } }
   }
 `;
 
@@ -581,31 +595,45 @@ const PRODUCT_PRICES_QUERY = `
  * The push for a SAME-PRICE Apply (a W1 "hold" — utils/priceWrite.js). A hold has nothing new to tell Shopify, so it used to send nothing
  * (owner, 2026-09-30) — but that also made "Press Apply again to retry" after a FAILED push a silent no-op: the DB already held the new
  * price, the re-Apply was a hold, and the store kept the old price. Fixed 2026-10-17 (owner chose compare-to-live over always-resend): read
- * the product's live variant prices — one small query — and push only if any differs from `price`. A true hold still sends nothing; a
- * retry actually retries.
+ * the product's live variant prices — one small query — and push only if any differs from what it should be. A true hold still sends
+ * nothing; a retry actually retries.
+ * Since 2026-11-08 EACH SIZE is compared with its own expected price + "was" price from variantPrice — a size with its own price
+ * (utils/sizePrice.js) is not at the style price — rather than every variant against one price.
  * Same contract as pushIfLive (null = not live / nothing sent; never throws). If the live prices can't be read it pushes anyway: that is
  * the safe direction, and the push reports its own failure if Shopify is down.
  */
 async function pushIfStale(groupid, price) {
   if (!isConfigured()) return null;
-  const r = await query(`SELECT shopify, handle FROM skusummary WHERE groupid = $1`, [groupid]);
+  const r = await query(`SELECT shopify, handle, ${safeNumeric('rrp')} AS rrp FROM skusummary WHERE groupid = $1`, [groupid]);
   if (!r.rows.length || r.rows[0].shopify !== 1 || !r.rows[0].handle) return null;
   const live = await liveVariantPrices(r.rows[0].handle);
-  const want = Math.round(Number(price) * 100) / 100;
-  if (live && live.length && live.every((p) => p === want)) return null;   // already live at this price — a real hold
-  logger.info(`[shopify] ${groupid}: same-price apply but Shopify shows ${live === null ? 'unreadable' : live.length ? [...new Set(live)].join('/') : 'no product'} — re-pushing ${want.toFixed(2)}`);
+  const rrp = r.rows[0].rrp === null ? null : Number(r.rows[0].rrp);
+  let stale = live === null || live.length === 0;
+  if (!stale) {
+    const own = await activeSizePrices({ query }, groupid);
+    stale = live.some((v) => {
+      const want = variantPrice({ price, rrp, sizePrice: own.has(v.sku) ? own.get(v.sku) : null });
+      return v.price !== want.price || v.compareAtPrice !== want.compareAtPrice;
+    });
+  }
+  if (!stale) return null;   // already live at these prices — a real hold
+  logger.info(`[shopify] ${groupid}: same-price apply but Shopify ${live === null ? 'is unreadable' : live.length ? 'differs' : 'has no product'} — re-pushing`);
   return pushIfLive(groupid);
 }
 
 /*
- * liveVariantPrices(handle) -> number[] (2dp, one per variant; [] = no such product on the store) | null (couldn't read — Shopify down).
+ * liveVariantPrices(handle) -> [{ sku, price: '36.95', compareAtPrice: '50.00' | null }]  ([] = no such product on the store)
+ *                              | null (couldn't read — Shopify down). 2dp strings, the shape variantPrice returns.
  * Read-only: what the store is actually charging. Never throws.
  */
 async function liveVariantPrices(handle) {
+  const money = (v) => (v === null || v === undefined ? null : Number(v).toFixed(2));
   try {
     const data = await shopifyGraphQL(PRODUCT_PRICES_QUERY, { q: `handle:${handle}` });
     const node = ((data.products && data.products.nodes) || []).find((n) => n.handle === handle);
-    return node && node.variants ? node.variants.nodes.map((v) => Math.round(Number(v.price) * 100) / 100) : [];
+    return node && node.variants
+      ? node.variants.nodes.map((v) => ({ sku: v.sku, price: money(v.price), compareAtPrice: money(v.compareAtPrice) }))
+      : [];
   } catch (err) {
     logger.error(`[shopify] couldn't read live prices for ${handle}: ${err.message}`);
     return null;

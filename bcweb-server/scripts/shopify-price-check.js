@@ -18,7 +18,8 @@ products (title.last_shopify_sync NULL, never re-set on an edit), whose titles B
 matched.
 
 What it compares, for every ACTIVE Shopify variant whose SKU is one of our codes on a style flagged live (skusummary.shopify = 1):
-  - price and compareAtPrice against utils/shopify.js → variantPrice — THE rule the push itself uses, so the two can't disagree;
+  - price and compareAtPrice against utils/shopify.js → variantPrice — THE rule the push itself uses, so the two can't disagree (a size
+    with its own price in force, utils/sizePrice.js, is expected at that price with the style price as its "was" price);
   - skumap.variantlink against the live variant id (the Google feed builds its ?variant= links from it);
   - the product title against title.shopifytitle, once per style (both trimmed — the retired Python compared them that way).
 It also lists live Shopify products with SKUs we don't know, and ACTIVE products whose style is flagged OFF in BCWEB — reported only.
@@ -36,6 +37,7 @@ require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') }
 const { pool, query } = require('../database');
 const shopify = require('../utils/shopify');
 const { safeNumeric } = require('../utils/sql');
+const { ACTIVE_SQL } = require('../utils/sizePrice');
 
 // Every variant on the store, 250 a page. Product status + handle ride along so draft/archived products are skipped and named.
 const VARIANTS_QUERY = `
@@ -75,6 +77,8 @@ async function main() {
     WHERE COALESCE(m.deleted, 0) = 0
   `);
   const byCode = new Map(ours.rows.map((r) => [r.code, r]));
+  // Size prices in force (utils/sizePrice.js, 2026-11-08) — such a size should show its own price against the style price.
+  const own = new Map((await query(`SELECT code, price FROM (${ACTIVE_SQL}) a`)).rows.map((r) => [r.code, Number(r.price)]));
 
   const styles = new Map();        // groupid -> [lines describing what differs]
   const unknown = [];              // live SKUs with no skumap row
@@ -93,7 +97,9 @@ async function main() {
     if (r.price === null || Number(r.price) <= 0) { unpriced.add(r.groupid); continue; }
     checked += 1;
 
-    const want = shopify.variantPrice({ price: Number(r.price), rrp: r.rrp === null ? null : Number(r.rrp) });
+    const want = shopify.variantPrice({
+      price: Number(r.price), rrp: r.rrp === null ? null : Number(r.rrp), sizePrice: own.has(v.sku) ? own.get(v.sku) : null,
+    });
     if (money(v.price) !== want.price) note(r.groupid, `${v.sku}: price ${money(v.price)} on Shopify, ${want.price} in BCWEB`);
     if (money(v.compareAtPrice) !== want.compareAtPrice) {
       note(r.groupid, `${v.sku}: "was" price ${money(v.compareAtPrice) || 'none'} on Shopify, ${want.compareAtPrice || 'none'} in BCWEB`);

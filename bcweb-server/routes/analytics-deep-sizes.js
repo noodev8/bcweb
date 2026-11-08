@@ -50,6 +50,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { query } = require('../database');
 const { readDeepSizes, RANGE_DAYS, NEW_DAYS, MIN_OVER } = require('../utils/deepSizes');
 const logger = require('../utils/logger');
+const { ACTIVE_SQL } = require('../utils/sizePrice');
 
 router.use(verifyToken);
 
@@ -60,14 +61,18 @@ router.get('/', async (req, res) => {
     const heldCodes = held.map((x) => x.code);
 
     // Pictures, and the grey "not held" sizes, as routes/analytics-slow-sizes.js (never-stocked placeholders left out).
-    const [imgQ, othersQ] = await Promise.all([
+    const [imgQ, othersQ, ownQ] = await Promise.all([
       query(`SELECT groupid, NULLIF(TRIM(imagename), '') AS imagename FROM skusummary WHERE groupid = ANY($1::text[])`, [groupids]),
       query(`SELECT DISTINCT m.groupid, m.code, SUBSTRING(m.code FROM '[^-]*$') AS size
                FROM skumap m
               WHERE m.groupid = ANY($1::text[]) AND m.code IS NOT NULL AND NOT (m.code = ANY($2::text[]))
                 AND (EXISTS (SELECT 1 FROM incoming_stock i WHERE i.code = m.code)
                      OR EXISTS (SELECT 1 FROM sales s WHERE s.code = m.code))`, [groupids, heldCodes]),
+      // A size's own Shopify price in force (utils/sizePrice.js, 2026-11-08) — shown on its tile so it reads as already dealt with.
+      query(`SELECT code, price FROM (${ACTIVE_SQL}) a WHERE a.code = ANY($1::text[])`, [heldCodes]),
     ]);
+    const own = new Map(ownQ.rows.map((r) => [r.code, Number(r.price)]));
+    for (const x of [...sizes, ...held]) x.size_price = own.has(x.code) ? own.get(x.code) : null;
     const img = new Map(imgQ.rows.map((r) => [r.groupid, r.imagename || null]));
 
     return res.json({

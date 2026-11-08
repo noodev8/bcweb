@@ -63,9 +63,10 @@ Success Response:
     { "price": 65.00, "units": 18, "profit_per_unit": 29.58, "first": "2026-06-01", "last": "2026-06-30" }
     // ascending price (ceiling reads top-down); profit_per_unit is NET (sales.profit / units), null when no profit data
   ],
-  "sizes": [ { "size": "38", "qty": 3, "amz_price": 40.39, "amz_live": 36 },
-             { "size": "39", "qty": 5, "amz_price": null,  "amz_live": 0 } ],  // oldest-first by size
+  "sizes": [ { "size": "38", "code": "…-38", "qty": 3, "amz_price": 40.39, "amz_live": 36, "own_price": null, "own_active": false },
+             { "size": "39", "code": "…-39", "qty": 5, "amz_price": null,  "amz_live": 0,  "own_price": 45.00, "own_active": true } ],
     // amz_price/amz_live = what Amazon charges and holds for THAT size. amz_price null = size not on Amazon FBA (render "—", not 0).
+    // own_price = the size's own Shopify price (utils/sizePrice.js), own_active = in force now. header.size_price_default = 50% RRP.
   "days": 90
 }
 =======================================================================================================================================
@@ -88,6 +89,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { getAdFloors } = require('../utils/adFloor');
+const { ACTIVE_SQL, suggestedPrice } = require('../utils/sizePrice');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -265,12 +267,20 @@ router.get('/', async (req, res) => {
     // to see the whole Amazon spread — a single "Amazon price" does not exist, and the old autopilot's answer (pin to the cheapest
     // in-stock size) let one thin size set the price for the style. Aggregated per size before the join for the same reason the stock
     // side is: multiple amzfeed rows for a code must not fan the size rows out. amzfeed is READ ONLY (CLAUDE.md).
+    //
+    // SIZE PRICES (2026-11-08, utils/sizePrice.js): each size also carries its code (what the Size prices panel sets), its own Shopify
+    // price if it has one (own_price — the stored row; own_active = in force right now, i.e. below the style price and in stock, which is
+    // what Shopify shows) and fba_live, because a size price's "sold out" is local free + FBA live (what Shopify shows), not local alone.
     const sizesResult = await query(`
-      SELECT sizes.size, COALESCE(st.qty, 0) AS qty, af.amz_price, COALESCE(af.amz_live, 0) AS amz_live
+      SELECT sizes.size, sizes.code, COALESCE(st.qty, 0) AS qty, af.amz_price, COALESCE(af.amz_live, 0) AS amz_live,
+             sp.price AS own_price, (act.code IS NOT NULL) AS own_active
       FROM (
-        SELECT DISTINCT SUBSTRING(code FROM '[^-]*$') AS size
+        SELECT SUBSTRING(code FROM '[^-]*$') AS size, MIN(code) AS code
         FROM skumap WHERE groupid=$1 AND COALESCE(deleted,0)=0
+        GROUP BY SUBSTRING(code FROM '[^-]*$')
       ) sizes
+      LEFT JOIN shopify_size_price sp ON sp.code = sizes.code
+      LEFT JOIN (${ACTIVE_SQL}) act ON act.code = sizes.code
       LEFT JOIN (
         SELECT SUBSTRING(code FROM '[^-]*$') AS size, SUM(qty) AS qty FROM localstock
         WHERE groupid=$1 AND ordernum='#FREE' AND COALESCE(deleted,0)=0 AND qty>0
@@ -289,10 +299,15 @@ router.get('/', async (req, res) => {
     // as 0. amz_live 0 means listed but out of stock, which is a different fact and worth showing as such.
     const sizes = sizesResult.rows.map((r) => ({
       size: r.size,
+      code: r.code,
       qty: Number(r.qty),
       amz_price: num(r.amz_price),
-      amz_live: Number(r.amz_live)
+      amz_live: Number(r.amz_live),
+      own_price: num(r.own_price),
+      own_active: r.own_active === true
     }));
+    // The figure the Size prices panel fills in: 50% of RRP (owner, 2026-11-08 — they may type the last selling price instead).
+    header.size_price_default = suggestedPrice(header.rrp);
 
     // ---- Velocity trend (drill-evidence-spec §4, block 2) — 6 weeks of units/avg-price/net-profit, zero-filled so a gap week reads 0
     // (not a hidden hole), oldest→newest (a trend is read left-to-right; this is NOT the timeline's "latest on top" rule). Mirror of
