@@ -1,9 +1,9 @@
 /*
 =======================================================================================================================================
-Script: scripts/shopify-price-check.js   (READ ONLY — writes to Shopify only with --fix)
+Script: scripts/shopify-price-check.js   (READ ONLY — writes to Shopify only with --fix)   prices AND titles
 =======================================================================================================================================
-Purpose: Check that every live Shopify price matches BCWEB. Run by hand as part of the owner's MONTHLY tasks ("check Shopify prices"),
-         no cron (owner, 2026-11-08).
+Purpose: Check that every live Shopify price — and title — matches BCWEB. Run by hand as part of the owner's MONTHLY tasks ("check
+         Shopify prices"), no cron (owner, 2026-11-08).
 
 WHY IT EXISTS. It replaces the Python shopify-sync/price_update.py (retired 2026-11-08, now in the scripts repo's archive/). That script
 pushed prices flagged `shopifychange = 1` nightly and ran a FULL resync every Saturday. BCWEB never sets that flag — every BCWEB price
@@ -12,9 +12,15 @@ so the nightly run did nothing and the Saturday run was only a drift safety net.
 variant of a style to ONE price, which would wipe per-size Shopify prices every week. On 2026-11-08 this check found 0 of 2,097 live
 sizes out of step. A check run monthly keeps the safety net without a job that writes behind BCWEB's back.
 
+TITLES TOO (2026-11-08): the Python shopify-sync/update_shopify_titles.py was retired the same day for the same reason — every BCWEB
+push sends the whole product, title included, so an Add / Modify title edit is live at once; the script only ever picked up brand-new
+products (title.last_shopify_sync NULL, never re-set on an edit), whose titles BCWEB had already pushed. That day all 301 live styles
+matched.
+
 What it compares, for every ACTIVE Shopify variant whose SKU is one of our codes on a style flagged live (skusummary.shopify = 1):
   - price and compareAtPrice against utils/shopify.js → variantPrice — THE rule the push itself uses, so the two can't disagree;
-  - skumap.variantlink against the live variant id (the Google feed builds its ?variant= links from it).
+  - skumap.variantlink against the live variant id (the Google feed builds its ?variant= links from it);
+  - the product title against title.shopifytitle, once per style (both trimmed — the retired Python compared them that way).
 It also lists live Shopify products with SKUs we don't know, and ACTIVE products whose style is flagged OFF in BCWEB — reported only.
 
 --fix re-pushes each style that differs through shopify.pushIfLive (the normal whole-product push, which also re-caches variant links).
@@ -36,7 +42,7 @@ const VARIANTS_QUERY = `
   query variants($after: String) {
     productVariants(first: 250, after: $after) {
       pageInfo { hasNextPage endCursor }
-      nodes { id sku price compareAtPrice product { status handle } }
+      nodes { id sku price compareAtPrice product { status handle title } }
     }
   }
 `;
@@ -60,11 +66,12 @@ async function main() {
 
   const live = await readShopifyVariants();
   const ours = await query(`
-    SELECT m.code, m.variantlink, sm.groupid, sm.shopify,
+    SELECT m.code, m.variantlink, sm.groupid, sm.shopify, t.shopifytitle,
            ${safeNumeric('sm.shopifyprice')} AS price,
            ${safeNumeric('sm.rrp')}          AS rrp
     FROM skumap m
     JOIN skusummary sm ON sm.groupid = m.groupid
+    LEFT JOIN title t  ON t.groupid = m.groupid
     WHERE COALESCE(m.deleted, 0) = 0
   `);
   const byCode = new Map(ours.rows.map((r) => [r.code, r]));
@@ -73,6 +80,7 @@ async function main() {
   const unknown = [];              // live SKUs with no skumap row
   const flaggedOff = new Set();    // ACTIVE on Shopify, shopify flag off in BCWEB
   const unpriced = new Set();      // BCWEB price unreadable — can't check
+  const titleChecked = new Set();  // one title comparison per style, not per size
   let checked = 0;
   const note = (groupid, line) => { if (!styles.has(groupid)) styles.set(groupid, []); styles.get(groupid).push(line); };
 
@@ -90,11 +98,16 @@ async function main() {
     if (money(v.compareAtPrice) !== want.compareAtPrice) {
       note(r.groupid, `${v.sku}: "was" price ${money(v.compareAtPrice) || 'none'} on Shopify, ${want.compareAtPrice || 'none'} in BCWEB`);
     }
+    if (!titleChecked.has(r.groupid)) {
+      titleChecked.add(r.groupid);
+      const want = (r.shopifytitle || '').trim();
+      if (want && (v.product.title || '').trim() !== want) note(r.groupid, `title "${(v.product.title || '').trim()}" on Shopify, "${want}" in BCWEB`);
+    }
     const liveId = `${String(v.id).split('/').pop()}V`;
     if ((r.variantlink || '').trim() !== liveId) note(r.groupid, `${v.sku}: variant link ${r.variantlink || 'blank'} in BCWEB, ${liveId} on Shopify`);
   }
 
-  console.log(`${live.length} variants on Shopify — ${checked} live sizes checked`);
+  console.log(`${live.length} variants on Shopify — ${checked} live sizes and ${titleChecked.size} titles checked`);
   console.log(`${styles.size} style(s) out of step with BCWEB`);
   for (const [groupid, lines] of styles) {
     console.log(`  ${groupid}`);
