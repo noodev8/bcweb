@@ -74,6 +74,7 @@ const express = require('express');
 const router = express.Router();
 const { query } = require('../database');
 const { safeNumeric } = require('../utils/sql');
+const { ACTIVE_SQL } = require('../utils/sizePrice');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -251,6 +252,8 @@ router.get('/', async (req, res) => {
         -- when it is ABOVE price; the client decides that, we just ship both.
         ${safeNumeric('s.shopifyprice')}                      AS price,
         ${safeNumeric('s.rrp')}                               AS rrp,
+        -- The lowest size price in force (utils/sizePrice.js, 2026-11-08) — the card shows "£45 – £82.49" like the shop does.
+        (SELECT MIN(a.price) FROM (${ACTIVE_SQL}) a WHERE a.groupid = s.groupid) AS price_low,
         COALESCE(loc.units, 0)                                AS local_units,
         COALESCE(loc_by_size.sizes, '{}'::jsonb)              AS local_sizes,
         COALESCE(elsewhere_by_size.sizes, '{}'::jsonb)        AS elsewhere_sizes,
@@ -316,6 +319,7 @@ router.get('/', async (req, res) => {
         // safeNumeric already rejected junk to NULL, so ship numbers the client formats without parsing.
         price: r.price === null ? null : Number(r.price),
         rrp: r.rrp === null ? null : Number(r.rrp),
+        priceLow: r.price_low === null ? null : Number(r.price_low),   // lowest size price in force, or null (utils/sizePrice.js)
         // Amazon price SPREAD across sizes (see the amz_live CTE) — equal when one price covers every size; null when the style has
         // no priced amzfeed row. amzLive=false: no FBA stock, so the spread is what it WOULD sell at, and the card dims it.
         amzLow: amzLo === null || amzLo === undefined ? null : Number(amzLo),

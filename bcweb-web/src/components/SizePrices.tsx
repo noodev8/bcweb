@@ -32,6 +32,8 @@ export default function SizePrices({ sizes, stylePrice, rrp, cost, defaultPrice,
   const [open, setOpen] = useState<string | null>(null);        // code of the size being edited
   const [priceStr, setPriceStr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Closed by default (owner, 2026-11-08) — the header row says how many sizes have their own price.
+  const [panelOpen, setPanelOpen] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'warn' | 'err'; text: string } | null>(null);
 
   const rows = [...sizes].sort((a, b) => (Number(a.size) - Number(b.size)) || a.size.localeCompare(b.size));
@@ -91,16 +93,25 @@ export default function SizePrices({ sizes, stylePrice, rrp, cost, defaultPrice,
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+    <div className="rounded-xl border border-slate-200 bg-white px-5 py-3 shadow-sm">
+      <button
+        type="button"
+        onClick={() => setPanelOpen((o) => !o)}
+        aria-expanded={panelOpen}
+        className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 text-left"
+      >
+        <span className="text-xs text-slate-400">{panelOpen ? '▾' : '▸'}</span>
         <h3 className="text-sm font-semibold text-slate-800">Size prices</h3>
-        <span className="text-xs text-slate-400">
-          A size that won&apos;t sell at the style price can have its own — Shopify shows it against the RRP, like the other sizes. It ends
-          when the size sells out.
-        </span>
+        {panelOpen && (
+          <span className="text-xs text-slate-400">
+            A size that won&apos;t sell at the style price can have its own — Shopify shows it against the RRP, like the other sizes. It
+            ends when the size sells out.
+          </span>
+        )}
         {withOwn > 0 && <span className="ml-auto text-xs text-slate-500">{withOwn} size{withOwn === 1 ? '' : 's'} with own price</span>}
-      </div>
+      </button>
 
+      {panelOpen && (<div className="mt-3">
       {notice && (
         <div className={'mb-3 rounded-md px-3 py-1.5 text-sm ' + (notice.kind === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700')}>
           {notice.text}
@@ -209,6 +220,7 @@ export default function SizePrices({ sizes, stylePrice, rrp, cost, defaultPrice,
           );
         })}
       </div>
+      </div>)}
     </div>
   );
 }

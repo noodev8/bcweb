@@ -360,9 +360,16 @@ export default function InvStyleCard({
                 </div>
                 <div className="w-20">
                   <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Shopify</div>
+                  {/* A size with its own price (utils/sizePrice.js) shows the range, as the shop does — smaller, never wrapped. */}
+                  {row.priceLow != null && row.price !== null ? (
+                    <div className="-ml-12 whitespace-nowrap text-xs font-semibold tabular-nums text-slate-900" title="A size has its own price">
+                      £{row.priceLow.toFixed(2)} – £{row.price.toFixed(2)}
+                    </div>
+                  ) : (
                   <div className="text-base font-semibold tabular-nums text-slate-900">
                     {row.price !== null ? `£${row.price.toFixed(2)}` : '—'}
                   </div>
+                  )}
                 </div>
                 <div className="hidden w-28 sm:block">
                   <div className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Amazon</div>

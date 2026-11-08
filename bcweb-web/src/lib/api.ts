@@ -2191,6 +2191,7 @@ export interface InvStyleRow {
   // match_amazon_price autopilot died because one thin size could set the whole style's price. Equal low/high = one price across
   // every priced size; null = no priced amzfeed row at all. amzLive=false: no FBA stock, so the spread is over all feed rows (what it
   // WOULD sell at) and the card dims it. amzSizes = how many priced sizes the spread covers.
+  priceLow: number | null;   // lowest Shopify size price in force (server utils/sizePrice.js); null = one price
   amzLow: number | null;
   amzHigh: number | null;
   amzLive: boolean;
@@ -2237,6 +2238,7 @@ export function getInvStyles() {
         totalSizes: r.totalSizes || r.localSizes || {},
         // The Amazon spread arrived 2026-10-06. The web deploys separately from the server, so an older server reads as "no Amazon
         // price" (a dash on the card) rather than undefined.
+        priceLow: r.priceLow ?? null,
         amzLow: r.amzLow ?? null,
         amzHigh: r.amzHigh ?? null,
         amzLive: !!r.amzLive,
