@@ -15,7 +15,7 @@ Purpose: PERMANENTLY delete a product (one groupid) — the legacy "Delete" butt
              - product_images rows — same transaction.
              - the image files on one.com, main + gallery (best-effort cleanup, like a re-image).
            KEPT (owner rule — "keep all sales and report data"):
-             - sales / offlinesold / shopifysold / performance* / snapshots / price_change_log / amz_price_log / price_track / shopprices…
+             - sales / offlinesold / shopifysold / performance* / snapshots / price_change_log / amz_price_log / shopprices… (price_track was dropped 2026-11-08)
              - live-stock & operational tables (localstock, incoming_stock, orderstatus, amzfeed, …) — owned by the owner's Python + nightly
                jobs, not this app; by the time a product is deleted it's expected to be clear of stock.
 
