@@ -22,12 +22,6 @@
 # 
 # m h  dom mon dow   command
 
-# ===== ABOUT THIS FILE (bcweb docs/crontab.txt) =====
-# A mirror of root's crontab on the VPS, which is authoritative. THE only record of what runs when — never restate a schedule
-# anywhere else. Moved here from the scripts repo on 2026-11-08 (owner): most jobs are bcweb's now. Re-pull before editing:
-#   ssh root@vps "crontab -l"   (in Windows PowerShell save with  | Out-File -Encoding utf8 ; a plain > writes UTF-16)
-# /apps/scripts/... lines are the scripts repo (Python); /apps/production/bcweb-server/... lines are this repo.
-
 # ===== OVERNIGHT PROCESSING (Logical order) =====
 
 # TIMES are BST - Go up 1hr for GMT
@@ -35,47 +29,21 @@
 # 2:00 AM - Database backup (first, when DB is stable)
 0 1 * * * /apps/scripts/db-maint/pg_backup.sh
 
-# 2:15 AM - Price tracking (price_track.py) - RETIRED 2026-11-08, line removed; the price_track table was dropped the same day
-# (nothing read it; stock_daily, amz_size_history, price_change_log and sales hold the same facts). Script in the scripts repo's archive/shopify-sync/.
-
-# 2:30 AM - Shopify price push (price_update.py) - RETIRED 2026-11-08, both lines commented out on the VPS.
-# BCWEB pushes every price to Shopify the moment it is set; nothing sets shopifychange=1 any more, and the Saturday full sweep would
-# have wiped per-size Shopify prices. Drift is checked by hand monthly: bcweb-server/scripts/shopify-price-check.js (--fix re-pushes).
-# Script kept in the scripts repo's archive/shopify-sync/.
-
-# 2:40 AM - Shopify "match Amazon price" reconcile - NO LONGER USED
-# Pins flagged styles' Shopify price to Amazon's cheapest in-stock size before feed generation.
-# 40 1 * * * /apps/scripts/venv/bin/python /apps/scripts/amz-match/amz_match_sync.py
-
-# 2:45 AM - Nightly stock reading -> stock_daily (units owned at the end of yesterday; Reports -> Stock vs Sales)
-# Replaced google-ads/update_google_stock_track.py on 2026-10-09. Logs its own result to bclog ('Stock Daily').
+# 2:45 AM - Count the stock for the BCWEB stock position screen
 45 1 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/stock-daily.js
 
-# 3:00 AM - Shopify inventory sync (update_shopify_inventory.py) - RETIRED 2026-11-08, line removed. Shopify's stock is now set by
-# bcweb's Update Orders (utils/shopifyStockSync.js) - every order-sync run below and every button press, not once a night.
-# Script kept in the scripts repo's archive/shopify-sync/.
-
-# 3:15 AM - Shopify titles update (update_shopify_titles.py) - RETIRED 2026-11-08, line removed. BCWEB sends the title with every
-# Shopify push (an Add / Modify title edit is live at once); the script only re-checked new products. The monthly check
-# bcweb-server/scripts/shopify-price-check.js compares titles too. Script kept in the scripts repo's archive/shopify-sync/.
-
-# 3:30 AM - Google Merchant feed (after prices/inventory updated) - bcweb-server, Node. Replaced merchant-feed/merchant_feed.py on
-# 2026-11-08 (same file, compared line by line; Python in the scripts repo's archive/merchant-feed/). Logs its own result to bclog ('Merchant Feed').
+# 3:30 AM - Google Merchant feed (after prices/inventory updated)
 30 2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/merchant-feed.js --upload
-
-# 3:45 AM - (retired) Shopify 'lastfew' tag sync retired 2026-10-13 - update_shopify_tags.py deleted,
-# skusummary.lastfew dropped. Legacy PowerBuilder feature, no longer used (collection now uses 'clearance').
 
 # 4:00 AM - Weekly sales cleanup (Mondays only) - purge >900 days, fix return prices
 0 3 * * 1 /apps/scripts/venv/bin/python /apps/scripts/db-maint/clean_sales.py
 
 
-
 # ===== DAYTIME PROCESSING =====
 
-# Order sync — EVERY sales channel (Shopify, eBay, …), bcweb-server: the same code as the Update Orders button, sharing its lock,
-# so a press during a run just waits. Replaced orders/update_orders.py + the separate eBay job on 2026-11-01.
+# Order sync targets: 10:00, 13:00, 14:00, 15:00, 22:00 BST
 # Note: Hour values are -1 to account for GMT server time.
+
 # 10:00, 13:00, 14:00, 15:00, 22:00 BST
 0 9,12,13,14,21 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/order-sync.js
 
@@ -108,6 +76,7 @@
 
 # --- LMSLocal email sweeps - start ---
 #0 8 * * * cd /apps/production/lmslocal-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/email-sweep.js pick_reminder >/dev/null
+#2 8 * * * cd /apps/production/lmslocal-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/email-sweep.js organiser_round >/dev/null
 #5 8 * * * cd /apps/production/lmslocal-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/email-sweep.js results >/dev/null
 #10 8 * * * cd /apps/production/lmslocal-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/email-sweep.js game_complete >/dev/null
 #15 8 * * * cd /apps/production/lmslocal-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/email-sweep.js join_blocked >/dev/null

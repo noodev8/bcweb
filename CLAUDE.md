@@ -12,8 +12,9 @@ A **modular internal platform** for Brookfield Comfort (UK footwear e-commerce �
 bcweb-server/   Express API — owns the Postgres connection and ALL SQL. Runs on a VPS (PM2).
 bcweb-web/      Next.js 16 (App Router, src/app, TS, Tailwind 3) front end. Deploys to Vercel. Data fetching is SWR via
                 src/lib/useApiQuery.ts — never in a useEffect (see docs/maintenance-notes.md).
-docs/           API-RULES.md (authoritative conventions), deploy.txt (deployment procedure ONLY), crontab.txt (mirror of the VPS
-                crontab — THE only schedule record, moved here from the scripts repo 2026-11-08; re-pull with `crontab -l`),
+docs/           API-RULES.md (authoritative conventions), deploy.txt (deployment procedure ONLY), crontab.txt (an EXACT copy of the VPS
+                crontab — THE only schedule record, moved here from the scripts repo 2026-11-08. Overwritten whole by each pull,
+                so add nothing to it; pull in UTF-8: `ssh root@vps "crontab -l" | Out-File -Encoding utf8 docs/crontab.txt`),
                 maintenance-notes.md (dependency landmines, the no-fetching-in-effects rule, build gotchas),
                 legacy PowerBuilder/DB reference.
 ```
