@@ -7,12 +7,21 @@ Purpose: THE RULES of Size gaps (owner, 2026-11-08) — sizes missing from style
          sizes." Found from the Prospects screen (a "Size gaps · n" link → /prospects/size-gaps), ordered BY HAND from the supplier,
          then it arrives and is loaded onto the system as usual. Tables: migrations/20261108c_size_gap.sql (read its header).
 
-THE RANGE = a BRAND SETTING (size_gap_range, set by hand — Lunar UK 3–9 to start). Every style of the brand is checked against every
-         WHOLE UK size in it (owner chose a brand setting over "what the model's other colours carry", which can never suggest a size
-         we never bought). A size is placed by skumap.uksize ("3 UK" → 3), never the code suffix (some brands' codes carry EU sizes).
+THE RANGE = a BRAND SETTING (size_gap_range, set by hand): Lunar UK 3–9 (2026-11-08); Rieker, Remonte, Strive EU 36–42 (2026-11-09,
+         owner: "these 3 in EU fit well for our next work" — in their OWN sizing). Every style of the brand is checked against every
+         whole size in it (owner chose a brand setting over "what the model's other colours carry", which can never suggest a size we
+         never bought). A range is per BRAND + WHO — the first word of title.shopifytitle ('Womens' / 'Mens'), because Rieker's Mens
+         styles run EU 40–46 and a women's range would flag their 36–39 as gaps. Rieker Mens has no range yet (owner: later), so its
+         styles aren't checked. A brand + who with no range is simply not on the list.
+A SIZE = THE WHOLE NUMBER AT THE END OF THE CODE (…-38 → 38, Lunar …-03 → 3), for every brand (2026-11-09 — was skumap.uksize). The EU
+         brands' codes end in whole EU sizes one-to-one with their UK size, but in UK their core sizes are halves (Rieker / Remonte
+         EU 40 = 6.5, 41 = 7.5, no UK 7) and the brands convert differently (Strive EU 41 = UK 7), so the code is the one clean measure.
+         Lunar's codes end 03…09 = its UK 3–9, so nothing changed for it. A half-size code (…-37.5) is off the run (no tile).
+         size_gap_range.sizing ('UK' | 'EU') is a LABEL only ("38 EU"). The columns uk_from / uk_to / size_gap_mark.uk and the API's
+         "uk" fields keep their 2026-11-08 names but hold this size (UK or EU) — migrations/20261109_size_gap_eu.sql.
 
 A GAP = a size in the range that is EITHER
-  new     NOT ON OUR SYSTEM — no live skumap row for the style at that UK size, OR
+  new     NOT ON OUR SYSTEM — no live skumap row for the style at that size, OR
   empty   on the system with NO STOCK anywhere (local #FREE + amzfeed.amztotal, which includes inbound), NOTHING ON ORDER (orderstatus
           supplier lines 2 local / 3 Amazon not yet arrived — to place and on order both count), AND NO NET SALE IN 90 DAYS
           (utils/onShelf.js → lastNetSales; a sale that came back is not a sale). Owner changed it from 6 months to 90 days, the
@@ -24,14 +33,14 @@ LEFT OUT: Can't get styles (utils/noSupply.js — style-wide, lapses by itself, 
 
 THE ORDER = THE STYLE'S BEST SIZE, BY PROFIT A PAIR (owner, 2026-11-09 — replaced the style's total 12-month profit: "If a size can
          make good size profit, then maybe another size can. Not interested in qty at this stage"). For every size of the style (every
-         code, whole UK or not): its 12-month net profit ÷ its 12-month net pairs, EVERY CHANNEL, NET OF RETURNS (returns are negative
+         code, on the run or not): its 12-month net profit ÷ its 12-month net pairs, EVERY CHANNEL, NET OF RETURNS (returns are negative
          sales rows, so both sums are net); a size whose net pairs are 0 or less has no figure. The style's BEST = its highest, and the
          list runs highest first; a style with no size sold in 12 months goes last. QTY PLAYS NO PART — a size that sold one pair at
          £9 outranks one that sold 100 at £4. The figure IS SHOWN (owner: "There's no indication of why you sorted that way") — the
          Best size column, and each size's own figure on hover. No success bar: the owner works top to bottom and parks the low ones.
          A style with NOTHING held stays on the list (owner: "It is on the list so won't be misplaced").
 
-THE MARKS (size_gap_mark, one per groupid + UK size — a missing size has no code):
+THE MARKS (size_gap_mark, one per groupid + size — a missing size has no code):
   park      until = today + 14, 30 or 90 DAYS (owner, 2026-11-09 — all in days: "use days so they are all the same"; was 3 / 6 months. 14 / 30
             for "the supplier is out, check again before the season goes" — Chime Taupe, out at Lunar in winter; 6 months dropped);
             the size is back on the list ON that day
@@ -49,12 +58,12 @@ THE MARKS (size_gap_mark, one per groupid + UK size — a missing size has no co
 Exports:
   MARKS                      { park14: {mark:'park',days:14}, park30, park90, notmade: {days:null}, ordered: {days:90} }  — the choices
   GAP_DAYS                   90
-  readSizeGaps() -> { today, ranges: [{brand, uk_from, uk_to}], styles: [ {
-        groupid, title, brand, imagename, asin,
-        best: { per_pair, size } | null,     // the style's best size by 12-month profit a pair (size = its UK size, else code suffix)
+  readSizeGaps() -> { today, ranges: [{brand, who, uk_from, uk_to, sizing}], styles: [ {
+        groupid, title, brand, imagename, asin, sizing,     // sizing = 'UK' | 'EU', the label for its sizes
+        best: { per_pair, size } | null,     // the style's best size by 12-month profit a pair (size = e.g. "38 EU" / "5 UK")
         sizes: [ { uk, code, state: 'gap'|'held'|'onorder'|'selling', is_new, units, on_order, last_sale,
                    per_pair,                  // this size's 12-month profit a pair, null if none sold (net)
-                   mark: { mark, until, marked_on, marked_by } | null } ]   // every UK size of the range, in order; marked_on = London day
+                   mark: { mark, until, marked_on, marked_by } | null } ]   // every size of the range, in order (uk = THE size, UK or EU); marked_on = London day
      } ],   // only styles with at least one gap (open or marked), best-size order
      counts: { open_styles, open_sizes, park, ordered, notmade } }   // open = an unmarked gap; the mark counts are SIZES
 =======================================================================================================================================
@@ -76,36 +85,38 @@ const MARKS = {
   ordered: { mark: 'ordered', days: 90 },
 };
 
-// A whole UK size from skumap.uksize ("3 UK", "9", "4.5 UK"). Half sizes and junk are NULL — the range is whole sizes only for now.
-const UK_SQL = `CASE WHEN m.uksize ~* '^\\s*[0-9]+\\s*(UK)?\\s*$' THEN (substring(m.uksize FROM '[0-9]+'))::int END`;
+// THE SIZE of a code (header): the whole number after its last '-' ("…-38" → 38, "…-03" → 3). A half size ("…-37.5") or junk is NULL.
+const sizeSql = (col) => `CASE WHEN substring(${col} FROM '[^-]*$') ~ '^[0-9]{1,2}$' THEN substring(${col} FROM '[^-]*$')::int END`;
 
 async function readSizeGaps() {
   const [todayQ, rangeQ] = await Promise.all([
     query(`SELECT to_char(${LONDON_TODAY_SQL}, 'YYYY-MM-DD') AS today,
                   to_char(${LONDON_TODAY_SQL} - ${GAP_DAYS}, 'YYYY-MM-DD') AS sold_since`),
-    query(`SELECT brand, uk_from, uk_to FROM size_gap_range ORDER BY brand`),
+    query(`SELECT brand, who, uk_from, uk_to, sizing FROM size_gap_range ORDER BY brand, who`),
   ]);
   const { today, sold_since: soldSince } = todayQ.rows[0];
   const ranges = rangeQ.rows;
   const empty = { today, ranges, styles: [], counts: { open_styles: 0, open_sizes: 0, park: 0, ordered: 0, notmade: 0 } };
   if (!ranges.length) return empty;
 
-  // THE STYLES — every style of a ranged brand, Can't get left out, with its picture.
+  // THE STYLES — every style of a ranged brand + who (Womens / Mens, from its title), Can't get left out, with its picture.
   const stylesQ = await query(
     `SELECT s.groupid, NULLIF(TRIM(s.brand), '') AS brand, t.shopifytitle AS title, NULLIF(TRIM(s.imagename), '') AS imagename,
-            r.uk_from, r.uk_to
+            r.uk_from, r.uk_to, r.sizing
        FROM skusummary s
+       JOIN title t ON t.groupid = s.groupid
        JOIN size_gap_range r ON LOWER(TRIM(s.brand)) = LOWER(r.brand)
-       LEFT JOIN title t ON t.groupid = s.groupid
+                            AND LOWER(split_part(TRIM(t.shopifytitle), ' ', 1)) = LOWER(r.who)   -- 'Womens' / 'Mens' (header)
       WHERE NOT ${noSupplyNowSql('s')}`);
   if (!stylesQ.rows.length) return empty;
   const groupids = stylesQ.rows.map((r) => r.groupid);
+  const sizingBy = new Map(stylesQ.rows.map((r) => [r.groupid, r.sizing]));   // 'UK' | 'EU' — the label on the Best size
 
-  // THE SIZES ON OUR SYSTEM (live skumap rows at a whole UK size), each with stock and supplier lines on order. One query, no N+1.
+  // THE SIZES ON OUR SYSTEM (live skumap rows whose code ends in a whole size), each with stock and supplier lines on order. One query, no N+1.
   const [sizesQ, marksQ, asinQ, perCodeQ] = await Promise.all([
     query(
       `WITH m AS (
-         SELECT m.groupid, m.code, ${UK_SQL} AS uk FROM skumap m
+         SELECT m.groupid, m.code, ${sizeSql('m.code')} AS uk FROM skumap m
           WHERE m.groupid = ANY($1::text[]) AND COALESCE(m.deleted, 0) = 0 AND m.code IS NOT NULL
        ),
        stock AS (
@@ -133,18 +144,18 @@ async function readSizeGaps() {
       `SELECT DISTINCT ON (groupid) groupid, asin FROM amzfeed
         WHERE groupid = ANY($1::text[]) AND NULLIF(TRIM(asin), '') IS NOT NULL
         ORDER BY groupid, COALESCE(amztotal, 0) DESC, code`, [groupids]),
-    // THE ORDER (header): each size's 12-month NET profit and NET pairs, every channel. Every code the style sold, whole UK size or not.
+    // THE ORDER (header): each size's 12-month NET profit and NET pairs, every channel. Every code the style sold, on the run or not.
     query(
       `SELECT x.groupid, x.code, SUM(x.profit)::float AS profit, SUM(x.qty)::int AS pairs,
-              (SELECT ${UK_SQL} FROM skumap m WHERE m.code = x.code LIMIT 1) AS uk
+              ${sizeSql('x.code')} AS uk
          FROM sales x
         WHERE x.groupid = ANY($1::text[]) AND x.code IS NOT NULL AND x.solddate > ${LONDON_TODAY_SQL} - 365
         GROUP BY x.groupid, x.code`, [groupids]),
   ]);
 
-  // Profit a pair per style + UK size (for the tiles) and each style's best size (for the order). Net pairs 0 or less = no figure.
+  // Profit a pair per style + size (for the tiles) and each style's best size (for the order). Net pairs 0 or less = no figure.
   const perPairBySize = new Map();   // groupid|uk -> £ a pair
-  const sumBySize = new Map();       // groupid|uk -> { profit, pairs } (two codes at one UK size are added together)
+  const sumBySize = new Map();       // groupid|uk -> { profit, pairs } (two codes at one size are added together)
   const bestBy = new Map();          // groupid -> { per_pair, size }
   const round2 = (v) => Math.round(v * 100) / 100;
   for (const r of perCodeQ.rows) {
@@ -154,10 +165,10 @@ async function readSizeGaps() {
       cur.profit += r.profit || 0; cur.pairs += r.pairs || 0;
       sumBySize.set(k, cur);
     } else if (r.pairs > 0) {
-      // A size outside the whole-UK run (a half size, an EU-coded size): no tile, but it can still be the style's best.
+      // A size off the run (a half size): no tile, but it can still be the style's best.
       const pp = round2((r.profit || 0) / r.pairs);
       const b = bestBy.get(r.groupid);
-      if (!b || pp > b.per_pair) bestBy.set(r.groupid, { per_pair: pp, size: r.code.split('-').pop() });
+      if (!b || pp > b.per_pair) bestBy.set(r.groupid, { per_pair: pp, size: `${r.code.split('-').pop()} ${sizingBy.get(r.groupid)}` });
     }
   }
   for (const [k, v] of sumBySize) {
@@ -166,7 +177,7 @@ async function readSizeGaps() {
     perPairBySize.set(k, pp);
     const [groupid, uk] = k.split('|');
     const b = bestBy.get(groupid);
-    if (!b || pp > b.per_pair) bestBy.set(groupid, { per_pair: pp, size: `${uk} UK` });
+    if (!b || pp > b.per_pair) bestBy.set(groupid, { per_pair: pp, size: `${uk} ${sizingBy.get(groupid)}` });
   }
 
   const codes = sizesQ.rows.map((r) => r.code);
@@ -177,14 +188,14 @@ async function readSizeGaps() {
   if (marksQ.rows.length) {
     const a = await query(
       `SELECT DISTINCT k.groupid, k.uk FROM size_gap_mark k
-         JOIN skumap m ON m.groupid = k.groupid AND ${UK_SQL} = k.uk
+         JOIN skumap m ON m.groupid = k.groupid AND ${sizeSql('m.code')} = k.uk
          JOIN incoming_stock i ON i.code = m.code
         WHERE k.groupid = ANY($1::text[])
           AND i.arrival_date >= (k.marked_at AT TIME ZONE 'Europe/London')::date`, [groupids]);
     for (const r of a.rows) arrived.add(`${r.groupid}|${r.uk}`);
   }
 
-  // Per style + UK size: the codes there (normally one; a duplicate row is summed).
+  // Per style + size: the codes there (normally one; a duplicate row is summed).
   const bySize = new Map();
   for (const r of sizesQ.rows) {
     const k = `${r.groupid}|${r.uk}`;
@@ -244,7 +255,7 @@ async function readSizeGaps() {
     if (open) { counts.open_styles += 1; counts.open_sizes += open; }
     styles.push({
       groupid: s.groupid, title: s.title || null, brand: s.brand, imagename: s.imagename || null,
-      asin: asinBy.get(s.groupid) || null, best: bestBy.get(s.groupid) || null, sizes,
+      asin: asinBy.get(s.groupid) || null, sizing: s.sizing, best: bestBy.get(s.groupid) || null, sizes,
     });
   }
   // Best size's profit a pair first; a style with nothing sold in 12 months last; ties by group id.

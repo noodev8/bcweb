@@ -6,7 +6,7 @@ Page: /prospects/size-gaps  (SIZE GAPS — reached from the "Size gaps · n" lin
 Purpose: Sizes missing from styles we already sell, as SKU-level PROSPECTS (owner, 2026-11-08: "We buy products and get the core sizes
          to test, but then forget what is there and just keep ordering the same sizes"). Ordered BY HAND from the supplier, then it
          arrives and is loaded onto the system as usual. EVERY RULE IS SERVER-SIDE (bcweb-server/utils/sizeGaps.js — read its header):
-         the brand range (Lunar UK 3–9, set by hand), a gap = NOT ON OUR SYSTEM ("new") or EMPTY (no stock anywhere, nothing on order,
+         the brand range (Lunar UK 3–9; Rieker / Remonte / Strive Womens EU 36–42 — each in its own sizing, set by hand), a gap = NOT ON OUR SYSTEM ("new") or EMPTY (no stock anywhere, nothing on order,
          no net sale in 90 days), Can't get styles left out — a style holding nothing at all stays (owner: "It is on the list so
          won't be misplaced").
 
@@ -111,7 +111,7 @@ function SizeGapsBody() {
     () => (data?.styles ?? []).filter((s) => s.sizes.some((z) => pickable(z, view))),
     [data, view]);
 
-  const rangeLine = (data?.ranges ?? []).map((r) => `${r.brand} ${r.uk_from}–${r.uk_to} UK`).join(', ');
+  const rangeLine = (data?.ranges ?? []).map((r) => `${r.brand} ${r.uk_from}–${r.uk_to} ${r.sizing ?? 'UK'}`).join(', ');
 
   // PICKING — a row click toggles all its pickable sizes (all picked -> none), a tile click toggles one.
   const rowKeys = (s: SizeGapStyle) => s.sizes.filter((z) => pickable(z, view)).map((z) => key(s.groupid, z.uk));
@@ -270,7 +270,7 @@ function SizeGapsBody() {
                               <div className="mt-0.5 truncate text-xs text-slate-500"><span title={s.title || undefined}>{s.title || 'Untitled'}</span></div>
                               <div className="mt-2 flex flex-wrap gap-1">
                                 {s.sizes.map((z) => (
-                                  <SizeTile key={z.uk} z={z} view={view} picked={picked.has(key(s.groupid, z.uk))}
+                                  <SizeTile key={z.uk} z={z} sizing={s.sizing ?? 'UK'} view={view} picked={picked.has(key(s.groupid, z.uk))}
                                     onClick={(e) => clickTile(e, s.groupid, z)} />
                                 ))}
                               </div>
@@ -293,7 +293,7 @@ function SizeGapsBody() {
                           <td className="border-l border-slate-100 py-3 pl-3 pr-4 align-top text-xs text-slate-600">
                             {s.sizes.filter((z) => z.mark?.mark === view).map((z) => (
                               <div key={z.uk} className="whitespace-nowrap tabular-nums">
-                                <span className="font-semibold text-slate-900">{z.uk} UK</span>
+                                <span className="font-semibold text-slate-900">{z.uk} {s.sizing ?? 'UK'}</span>
                                 {z.mark?.until ? ` · until ${dayOf(z.mark.until)}` : ''}
                                 {` · ${z.mark?.marked_by || '?'} ${dayOf(z.mark!.marked_on)}`}
                               </div>
@@ -324,8 +324,8 @@ function SizeGapsBody() {
 }
 
 // ONE SIZE TILE. White = pickable in this view (dashed + "new" if not on our system); picked = brand ring and tint. Grey = the rest.
-function SizeTile({ z, view, picked, onClick }: { z: SizeGapSize; view: View; picked: boolean; onClick: (e: ReactMouseEvent) => void }) {
-  const tip = tileTip(z);
+function SizeTile({ z, sizing, view, picked, onClick }: { z: SizeGapSize; sizing: string; view: View; picked: boolean; onClick: (e: ReactMouseEvent) => void }) {
+  const tip = tileTip(z, sizing);
   if (pickable(z, view)) {
     return (
       <button type="button" onClick={onClick} title={tip} aria-pressed={picked}
@@ -348,8 +348,8 @@ function SizeTile({ z, view, picked, onClick }: { z: SizeGapSize; view: View; pi
   );
 }
 
-function tileTip(z: SizeGapSize): string {
-  const size = `${z.uk} UK`;
+function tileTip(z: SizeGapSize, sizing: string): string {
+  const size = `${z.uk} ${sizing}`;   // UK for Lunar, EU for Rieker / Remonte / Strive
   // Each size's own profit a pair (12 months) — the figure the Best size column picks the highest of.
   const pp = z.per_pair != null ? ` · ${money(z.per_pair)} a pair (12m)` : '';
   if (z.state === 'held') return `${size} · ${n(z.units)} in stock${pp}`;

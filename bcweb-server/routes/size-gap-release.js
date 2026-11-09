@@ -51,7 +51,7 @@ router.post('/', async (req, res) => {
         await writeBcLog(client, {
           who,
           section: 'Size gaps',
-          log: `Released: ${released.map((x) => `${x.groupid} ${x.uk} UK (${x.mark})`).join(', ')}`,
+          log: `Released: ${released.map((x) => `${x.groupid} ${x.uk} (${x.mark})`).join(', ')}`,
         });
       }
     });

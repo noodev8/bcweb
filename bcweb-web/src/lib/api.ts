@@ -1687,7 +1687,7 @@ export type SizeGapState = 'gap' | 'held' | 'onorder' | 'selling';
 export type SizeGapMarkKind = 'park' | 'notmade' | 'ordered';
 export type SizeGapChoice = 'park14' | 'park30' | 'park90' | 'notmade' | 'ordered';   // all in days (owner, 2026-11-09)
 export interface SizeGapSize {
-  uk: number;
+  uk: number;                   // THE size, off the end of the code — UK for Lunar, EU for Rieker / Remonte / Strive (style.sizing)
   code: string | null;          // null = not on our system yet
   state: SizeGapState;          // gap = the work; the rest are shown grey
   is_new: boolean;              // not on our system
@@ -1699,12 +1699,13 @@ export interface SizeGapSize {
 }
 export interface SizeGapStyle {
   groupid: string; title: string | null; brand: string | null; imagename: string | null; asin: string | null;
+  sizing?: 'UK' | 'EU';         // the label for its sizes (2026-11-09; missing from an older server = UK)
   best: { per_pair: number; size: string } | null;   // the style's best size by 12-month profit a pair — THE ORDER
-  sizes: SizeGapSize[];         // every UK size of the brand's range, in order
+  sizes: SizeGapSize[];         // every size of the brand's range, in order
 }
 export interface SizeGapsData {
   today: string;
-  ranges: { brand: string; uk_from: number; uk_to: number }[];
+  ranges: { brand: string; who?: string; uk_from: number; uk_to: number; sizing?: 'UK' | 'EU' }[];
   styles: SizeGapStyle[];       // best size by profit a pair first; nothing sold in 12 months last
   counts: { open_styles: number; open_sizes: number; park: number; ordered: number; notmade: number };
 }
