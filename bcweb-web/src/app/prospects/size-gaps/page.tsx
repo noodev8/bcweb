@@ -272,7 +272,7 @@ function SizeGapsBody() {
                     <th className="w-[30rem] py-2.5 pl-4 pr-3 text-left font-medium">Style</th>
                     <th className="w-32 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Brand</th>
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
-                      title="The style's best size: its profit a pair over the last 12 months, online channels (shop sales left out — their profit is gross), net of returns. The list runs highest first — qty plays no part. Hover a size for its own figure.">Best size</th>
+                      title="The style's best size: its profit a pair over the last 12 months, online channels (shop sales left out — their profit is gross), net of returns. The list runs highest first — qty plays no part. Under it, the style's pairs sold online in 12 months (shown only). Hover a size for its own figure.">Best size</th>
                     {marked && <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Marked</th>}
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
                       title="Our sales of the style, its Amazon Order, and our Amazon listing (to check how a size ranks)">Links</th>
@@ -309,6 +309,10 @@ function SizeGapsBody() {
                             <>
                               <div className={'font-semibold ' + (s.best.per_pair < 0 ? 'text-red-700' : 'text-slate-900')}>{money(s.best.per_pair)}</div>
                               <div className="text-xs text-slate-500">a pair · {s.best.size}</div>
+                              {/* The style's pairs (owner, 2026-11-09: "an easy indication of total sales qty") — shown, never sorts. */}
+                              {s.pairs_12m != null && (
+                                <div className="mt-0.5 text-xs text-slate-400">{n(s.pairs_12m)} pair{s.pairs_12m === 1 ? '' : 's'} in 12m</div>
+                              )}
                             </>
                           ) : <span className="text-xs text-slate-400">No sales 12m</span>}
                         </td>

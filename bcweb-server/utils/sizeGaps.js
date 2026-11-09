@@ -40,7 +40,9 @@ THE ORDER = THE STYLE'S BEST SIZE, BY PROFIT A PAIR (owner, 2026-11-09 — repla
          ~£9, so one counter sale put a style top (the first four rows on 2026-11-09 were all CM3-only figures). A shop sale still
          counts as the size SELLING (the 90-day test above) — only the order ignores it; a size whose net pairs are 0 or less has no figure. The style's BEST = its highest, and the
          list runs highest first; a style with no size sold in 12 months goes last. QTY PLAYS NO PART — a size that sold one pair at
-         £9 outranks one that sold 100 at £4. The figure IS SHOWN (owner: "There's no indication of why you sorted that way") — the
+         £9 outranks one that sold 100 at £4. THE STYLE'S PAIRS are shown beside it but never sort (owner, 2026-11-09: "Unit profit is the
+         deciding factor. But is there an easy indication of total sales qty" — one pair at £21 reads very differently from 46 at £9):
+         pairs_12m = the style's 12-month net pairs, the same online sales as the profit. The figure IS SHOWN (owner: "There's no indication of why you sorted that way") — the
          Best size column, and each size's own figure on hover. No success bar: the owner works top to bottom and parks the low ones.
          A style with NOTHING held stays on the list (owner: "It is on the list so won't be misplaced").
 
@@ -66,6 +68,7 @@ Exports:
   readSizeGaps() -> { today, ranges: [{brand, who, uk_from, uk_to, sizing}], styles: [ {
         groupid, title, brand, imagename, asin, sizing,     // sizing = 'UK' | 'EU', the label for its sizes
         best: { per_pair, size } | null,     // the style's best size by 12-month profit a pair (size = e.g. "38 EU" / "5 UK")
+        pairs_12m,                           // the style's 12-month NET pairs, online (no CM3) — shown, never sorts
         sizes: [ { uk, code, state: 'gap'|'held'|'onorder'|'selling', is_new, units, on_order, last_sale,
                    per_pair,                  // this size's 12-month profit a pair, null if none sold (net)
                    mark: { mark, until, marked_on, marked_by } | null } ]   // every size of the range, in order (uk = THE size, UK or EU); marked_on = London day
@@ -165,7 +168,9 @@ async function readSizeGaps() {
   const sumBySize = new Map();       // groupid|uk -> { profit, pairs } (two codes at one size are added together)
   const bestBy = new Map();          // groupid -> { per_pair, size }
   const round2 = (v) => Math.round(v * 100) / 100;
+  const pairsBy = new Map();         // groupid -> 12-month net pairs, online (shown beside Best size, never sorts)
   for (const r of perCodeQ.rows) {
+    pairsBy.set(r.groupid, (pairsBy.get(r.groupid) || 0) + (r.pairs || 0));
     if (r.uk != null) {
       const k = `${r.groupid}|${r.uk}`;
       const cur = sumBySize.get(k) || { profit: 0, pairs: 0 };
@@ -262,7 +267,7 @@ async function readSizeGaps() {
     if (open) { counts.open_styles += 1; counts.open_sizes += open; }
     styles.push({
       groupid: s.groupid, title: s.title || null, brand: s.brand, imagename: s.imagename || null,
-      asin: asinBy.get(s.groupid) || null, sizing: s.sizing, best: bestBy.get(s.groupid) || null, sizes,
+      asin: asinBy.get(s.groupid) || null, sizing: s.sizing, best: bestBy.get(s.groupid) || null, pairs_12m: pairsBy.get(s.groupid) || 0, sizes,
     });
   }
   // Best size's profit a pair first; a style with nothing sold in 12 months last; ties by group id.

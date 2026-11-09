@@ -1701,6 +1701,7 @@ export interface SizeGapStyle {
   groupid: string; title: string | null; brand: string | null; imagename: string | null; asin: string | null;
   sizing?: 'UK' | 'EU';         // the label for its sizes (2026-11-09; missing from an older server = UK)
   best: { per_pair: number; size: string } | null;   // the style's best size by 12-month profit a pair — THE ORDER
+  pairs_12m?: number;           // the style's 12-month net pairs, online — shown under Best size, never sorts (missing from an older server)
   sizes: SizeGapSize[];         // every size of the brand's range, in order
 }
 export interface SizeGapsData {
