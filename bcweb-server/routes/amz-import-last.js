@@ -12,6 +12,10 @@ Purpose: Update Amazon module — tell the operator when this was last run. Read
          Also returns `history` — the SIZE HISTORY status (utils/amzSizeHistory.js → readHistoryStatus): the Update Amazon screen's
          status line, and the dashboard's warning, shown ONLY when `stale` (more than 3 days with no inventory import — owner,
          2026-11-03: "ensure it doesn't get too big and forgotten"). null if the table isn't there yet (migration not applied).
+
+         And `amazonApi` (2026-11-09) — the SP-API stock reads from amz_api_sync: `stock` = the quick read inside Update Orders,
+         `report` = the nightly FBA Inventory report (which replaced the inventory upload). Each { lastOk, note, error, errorAt } or
+         null; the whole field null if the table isn't there yet. An error stays until the next success clears it.
 =======================================================================================================================================
 Success Response:
 { "return_code": "SUCCESS", "lastRun": "28 Jul 2026, 14:32", "by": "Andreas",
@@ -33,17 +37,38 @@ const logger = require('../utils/logger');
 
 router.use(verifyToken);
 
+async function readApiStatus() {
+  try {
+    const r = await db.query(
+      `SELECT job, to_char(last_ok_at AT TIME ZONE 'Europe/London', 'DD Mon, HH24:MI') AS last_ok, last_ok_note,
+              last_error, to_char(last_error_at AT TIME ZONE 'Europe/London', 'DD Mon, HH24:MI') AS last_error_at, detail
+       FROM amz_api_sync`
+    );
+    const pick = (job) => {
+      const x = r.rows.find((y) => y.job === job);
+      return x ? { lastOk: x.last_ok, note: x.last_ok_note, error: x.last_error, errorAt: x.last_error_at } : null;
+    };
+    // The nightly report's reconciliation (unknown SKUs + Delete file, …) — the panel the inventory upload used to show.
+    const rep = r.rows.find((y) => y.job === 'inventory_report');
+    return { stock: pick('stock'), report: pick('inventory_report'), reconciliation: (rep && rep.detail && rep.detail.reconciliation) || null };
+  } catch (err) {
+    if (/amz_api_sync/.test(err.message)) return null;   // table not there yet
+    throw err;
+  }
+}
+
 router.get('/', async (req, res) => {
   try {
-    const [result, history] = await Promise.all([
+    const [result, history, amazonApi] = await Promise.all([
       db.query(
         `SELECT to_char(created_at AT TIME ZONE 'Europe/London', 'DD Mon YYYY, HH24:MI') AS last_run, workstation
          FROM bclog WHERE section = 'Amazon Update' ORDER BY created_at DESC LIMIT 1`
       ),
       readHistoryStatus(db),
+      readApiStatus(),
     ]);
     const row = result.rows[0];
-    return res.json({ return_code: 'SUCCESS', lastRun: row?.last_run || null, by: row?.workstation || null, history });
+    return res.json({ return_code: 'SUCCESS', lastRun: row?.last_run || null, by: row?.workstation || null, history, amazonApi });
   } catch (err) {
     logger.error('[amz-import-last] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load the last import time' });

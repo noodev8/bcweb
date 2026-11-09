@@ -19,7 +19,11 @@ THE RUN
                    F  CLEANUP   six housekeeping statements over orderstatus + localstock
                    one bclog row (section 'Order Sync', workstation = who pressed, or 'cron') — /order-sync-last reads it
          A run lands completely or not at all; a failure is "nothing written, safe to run again".
-    3  SHOPIFY STOCK  FIRST after the commit: Shopify's count for every live size set to our free local + FBA live stock (cap 5),
+    2b AMAZON STOCK  FIRST after the commit (2026-11-09): FBA stock CHANGED since the last good run, read from the Amazon SP-API onto
+                 amzfeed live / total + the size history (utils/amzStockSync.js — ~1-3 s). Before Shopify stock so step 3 (and eBay's
+                 step 4) send THIS run's FBA live, not the last Update Amazon upload's. Never fails the run; skipped while the SP-API
+                 keys aren't in .env; bclog section 'Amazon Stock' only when stock changed.
+    3  SHOPIFY STOCK  right after: Shopify's count for every live size set to our free local + FBA live stock (cap 5),
                  less Shopify orders not yet imported — only sizes that differ, refused if Shopify's count moved mid-run
                  (utils/shopifyStockSync.js; replaced the Python update_shopify_inventory.py at 3am, owner 2026-11-08). First, because
                  overselling is what it prevents: a pair just sold on eBay comes off Shopify now. Never fails the run; own bclog row.
@@ -55,6 +59,7 @@ const { withTransaction } = require('./transaction');
 const { CHANNELS } = require('./orderChannels');
 const { syncEbayStock } = require('./ebayStockSync');
 const { syncShopifyStock } = require('./shopifyStockSync');
+const { syncAmzStock, isConfigured: amzStockConfigured } = require('./amzStockSync');
 const { endSoldOut } = require('./sizePrice');
 const { pushIfLive: shopifyPushIfLive } = require('./shopify');
 const { logActivity } = require('./bclog');
@@ -362,7 +367,22 @@ async function runOrderSync({ by }) {
   logger.info(`[orderSync] ${by}: ${result.log}`);
   if (result.notes.length) logger.error(`[orderSync] notes: ${result.notes.join(' | ')}`);
 
-  // ---- 3. SHOPIFY STOCK (first after the commit — never fails the run) --------------------------------------------------------
+  // ---- 2b. AMAZON STOCK (first after the commit — never fails the run) --------------------------------------------------------
+  // FBA stock changed since the last good run, from the SP-API onto amzfeed (utils/amzStockSync.js). BEFORE Shopify / eBay stock, which
+  // read amzfeed.amzlive as "FBA live" — so they are sent this run's Amazon figure.
+  if (amzStockConfigured()) {
+    try {
+      const a = await syncAmzStock({ by: String(by || 'cron') });
+      result.amazonStock = a.skipped ? { skipped: a.skipped } : { read: a.read, changed: a.stockChanged, inserted: a.inserted };
+      if (a.skipped) logger.info(`[orderSync] Amazon stock skipped: ${a.skipped}`);
+      else if (a.stockChanged || a.inserted) logger.info(`[orderSync] Amazon stock: ${a.stockChanged} changed, ${a.inserted} new of ${a.read} read`);
+    } catch (err) {
+      result.amazonStock = { error: err.message };
+      logger.error(`[orderSync] Amazon stock read failed (orders are saved; retried next run): ${err.message}`);
+    }
+  }
+
+  // ---- 3. SHOPIFY STOCK (right after Amazon stock — never fails the run) ------------------------------------------------------
   // Shopify's counts brought in step with our free local + FBA live stock (utils/shopifyStockSync.js). First of the post-commit steps
   // because it is the one that stops overselling — this run's orders and picks are already saved, so it sees them.
   try {

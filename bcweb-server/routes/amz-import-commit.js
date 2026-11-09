@@ -53,9 +53,8 @@ const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { buildPlan, readUploads, SOLD_WINDOW_DAYS } = require('../utils/amzImport');
 // The three write phases live in a util so they can be rehearsed directly against a BEGIN...ROLLBACK client, without an HTTP layer.
-const { insertSales, retractCancelled, applyFees, logManualPriceChanges, applyStock, projectDerivedToAmzfeed, projectDerivedToSkumap } = require('../utils/amzImportApply');
+const { insertSales, retractCancelled, applyFees, applyInventoryReport, projectDerivedToAmzfeed, projectDerivedToSkumap } = require('../utils/amzImportApply');
 const { shapePlan } = require('../utils/amzImportShape');
-const { recordSizeHistory } = require('../utils/amzSizeHistory');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -118,30 +117,12 @@ router.post('/', (req, res) => {
         let stockResult = { upserted: 0, zeroed: 0 };
         let manualPrices = 0;
         let history = null;
+        // Since 2026-11-09 readUploads() refuses the FBA Inventory report (it arrives from the SP-API every night instead —
+        // scripts/amz-inventory-nightly.js), so this branch no longer runs from the screen. Kept through the ONE shared write,
+        // applyInventoryReport(), so the nightly job and this route can't drift if an upload is ever allowed back.
         if (parsed.INVENTORY) {
-          manualPrices = await logManualPriceChanges(client, plan.stock.manualPrices);
-          stockResult = await applyStock(client, parsed.INVENTORY.rows, plan.ref);
-          // Size history (utils/amzSizeHistory.js): today's price + FBA stock per size, change-only, read back from the amzfeed the
-          // stock phase just wrote. Only when that phase actually wrote rows — a report that matched nothing is not a reading.
-          if (stockResult.upserted > 0) {
-            const inbound = new Map();
-            for (const r of parsed.INVENTORY.rows) {
-              if (r.isVirtual) continue;
-              const m = plan.ref.bySku.get(r.sku);
-              if (m) inbound.set(m.code, r.inbound || 0);
-            }
-            // SAVEPOINT: the history must never stop the import itself (sales, stock, fees are the job). A failure is rolled back on
-            // its own, logged, and SAID — in the result line and the response — rather than silently skipped.
-            await client.query('SAVEPOINT size_history');
-            try {
-              history = await recordSizeHistory(client, { inbound, who: req.user.display_name });
-              await client.query('RELEASE SAVEPOINT size_history');
-            } catch (e) {
-              await client.query('ROLLBACK TO SAVEPOINT size_history');
-              logger.error('[amz-import-commit] size history failed:', e.message);
-              history = { failed: true, error: e.message };
-            }
-          }
+          await client.query(`SELECT pg_advisory_xact_lock(hashtext('amz_stock'))`);
+          ({ manualPrices, stockResult, history } = await applyInventoryReport(client, parsed.INVENTORY, plan, req.user.display_name, logger));
         }
 
         // --- PHASES 2 + 3: derive from sales, project onto amzfeed (PowerBuilder only) ---------------------------------------

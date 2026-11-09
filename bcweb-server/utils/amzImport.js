@@ -486,6 +486,16 @@ function readUploads(files) {
       rejected.push({ filename: f.originalname, reason: result.reason });
       continue;
     }
+    // The FBA Inventory report is no longer taken as an upload (owner, 2026-11-09): FBA stock is read from Amazon on every Update
+    // Orders (utils/amzStockSync.js) and the whole report arrives by itself every night (scripts/amz-inventory-nightly.js). Refused,
+    // not silently ignored — an older file uploaded out of habit would overwrite fresher stock.
+    if (result.type === 'INVENTORY') {
+      rejected.push({
+        filename: f.originalname,
+        reason: 'FBA Inventory is now read from Amazon automatically (every Update Orders, and the full report every night) — this file isn\'t needed any more.',
+      });
+      continue;
+    }
     if (parsed[result.type]) { duplicate = result.label; break; }
 
     parsed[result.type] = result;

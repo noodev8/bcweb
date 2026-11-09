@@ -3078,12 +3078,17 @@ export interface AmzSizeHistoryStatus {
   lastDay: string | null; firstDay: string | null; historyFrom: string | null; days: number; daysSince: number | null; rows: number; bytes: number;
   stale: boolean; staleAfterDays: number;
 }
-export interface AmzImportLast { lastRun: string | null; by: string | null; history: AmzSizeHistoryStatus | null }
+// SP-API stock reads (2026-11-09): stock = the quick read inside Update Orders, report = the nightly FBA Inventory report.
+export interface AmzApiJobStatus { lastOk: string | null; note: string | null; error: string | null; errorAt: string | null }
+// reconciliation = the nightly report's buckets (unknown SKUs + Delete file …) — the panel the inventory upload used to show.
+export interface AmzApiStatus { stock: AmzApiJobStatus | null; report: AmzApiJobStatus | null; reconciliation: AmzImportSummary['reconciliation'] | null }
+export interface AmzImportLast { lastRun: string | null; by: string | null; history: AmzSizeHistoryStatus | null; amazonApi: AmzApiStatus | null }
 export function getAmzImportLast() {
   return request<AmzImportLast>({ url: '/amz-import-last', method: 'GET' }, (b) => ({
     lastRun: (b.lastRun as string) || null,
     by: (b.by as string) || null,
     history: (b.history as AmzSizeHistoryStatus) || null,
+    amazonApi: (b.amazonApi as AmzApiStatus) || null,
   }));
 }
 

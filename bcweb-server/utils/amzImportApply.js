@@ -262,6 +262,44 @@ async function projectDerivedToSkumap(client) {
   return res.rowCount;
 }
 
+/**
+ * THE FBA Inventory report write, in order: Seller Central price changes -> amz_price_log 'Manual' (BEFORE the stock upsert — it
+ * compares against the amzfeed price that is about to be overwritten), then amzfeed stock + price (applyStock), then the size history
+ * behind a SAVEPOINT (a history failure is logged and returned, never fails the caller).
+ *
+ * Since 2026-11-09 the report arrives from the SP-API every night (scripts/amz-inventory-nightly.js) instead of being uploaded on
+ * Update Amazon (owner: the file came off the screen). Kept here as ONE copy so the nightly job writes exactly what the upload did.
+ *
+ * @param client  transaction client (the caller holds the 'amz_stock' advisory lock — utils/amzStockSync.js → STOCK_LOCK)
+ * @param parsed  parseReport() result of type INVENTORY
+ * @param plan    buildPlan() result for it (plan.stock.manualPrices, plan.ref)
+ * @param who     display name / 'cron', for the history run line
+ */
+async function applyInventoryReport(client, parsed, plan, who, log = console) {
+  const manualPrices = await logManualPriceChanges(client, plan.stock.manualPrices);
+  const stockResult = await applyStock(client, parsed.rows, plan.ref);
+  let history = null;
+  if (stockResult.upserted > 0) {
+    const inbound = new Map();
+    for (const r of parsed.rows) {
+      if (r.isVirtual) continue;
+      const m = plan.ref.bySku.get(r.sku);
+      if (m) inbound.set(m.code, r.inbound || 0);
+    }
+    await client.query('SAVEPOINT size_history');
+    try {
+      const { recordSizeHistory } = require('./amzSizeHistory');
+      history = await recordSizeHistory(client, { inbound, who });
+      await client.query('RELEASE SAVEPOINT size_history');
+    } catch (e) {
+      await client.query('ROLLBACK TO SAVEPOINT size_history');
+      log.error('[amz inventory] size history failed:', e.message);
+      history = { failed: true, error: e.message };
+    }
+  }
+  return { manualPrices, stockResult, history };
+}
+
 module.exports = {
   CHUNK,
   insertSales,
@@ -269,6 +307,7 @@ module.exports = {
   applyFees,
   logManualPriceChanges,
   applyStock,
+  applyInventoryReport,
   projectDerivedToAmzfeed,
   projectDerivedToSkumap,
 };

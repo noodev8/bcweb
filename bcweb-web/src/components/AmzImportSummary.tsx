@@ -324,9 +324,21 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
       )}
 
       {/* --- Reconciliation: three buckets, because only the first is a to-do list --------------------------------------- */}
-      {summary.stock.rowsInReport > 0 && (
+      {summary.stock.rowsInReport > 0 && <AmzReconciliation rec={rec} title="Reconciliation" />}
+    </div>
+  );
+}
+
+/**
+ * The FBA Inventory report's reconciliation — three buckets, only the first a to-do list (with the Delete file button). Exported
+ * (2026-11-09) because the inventory file no longer comes through this summary: Update Amazon shows the NIGHTLY report's buckets
+ * (scripts/amz-inventory-nightly.js keeps them in amz_api_sync.detail) with the same panel — owner: de-listing dead SKUs is rare
+ * but still done.
+ */
+export function AmzReconciliation({ rec, title }: { rec: Summary['reconciliation']; title: string }) {
+  return (
         <section>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Reconciliation</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</h2>
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border border-slate-200 bg-white p-4">
               <div className="text-lg font-semibold tabular-nums text-slate-900">{num(rec.unknownSkuCount)}</div>
@@ -359,7 +371,5 @@ export default function AmzImportSummary({ summary }: { summary: Summary }) {
             </div>
           </div>
         </section>
-      )}
-    </div>
   );
 }

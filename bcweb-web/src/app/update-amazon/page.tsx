@@ -17,7 +17,11 @@ Two things drive the whole shape of this screen, both inherited from how the leg
   2. FILENAMES ARE MEANINGLESS. Seller Central names these 118981020662.txt and the number changes every download. Files are therefore
      identified by their HEADER, server-side — the operator never has to tell us which report is which, and cannot get it wrong.
 
-Any subset of the four reports may be dropped; whatever is absent is left untouched. That is a real workflow (the fee report only
+FBA INVENTORY IS NOT UPLOADED ANY MORE (owner, 2026-11-09): FBA stock is read from the Amazon SP-API on every Update Orders
+(utils/amzStockSync.js) and the full FBA Inventory report arrives every night (scripts/amz-inventory-nightly.js) — prices, prices
+changed in Seller Central, new SKUs, zeros. The server refuses the file if one is dropped. The header shows both reads' status.
+
+Any subset of the three reports may be dropped; whatever is absent is left untouched. That is a real workflow (the fee report only
 arrives monthly), not an edge case.
 
 State is local and deliberately un-cached: an import is an action, not a view. There is nothing to re-fetch on mount, so no SWR here —
@@ -30,13 +34,16 @@ import {
   ArrowUpTrayIcon, CheckCircleIcon, DocumentTextIcon, ExclamationCircleIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import AmzImportSummary from '@/components/AmzImportSummary';
+import AmzImportSummary, { AmzReconciliation } from '@/components/AmzImportSummary';
 import {
   previewAmzImport, commitAmzImport, getAmzImportLast, AmzImportSummary as Summary, AmzRejectedFile, AmzImportCommit, AmzSizeHistoryStatus,
+  AmzApiStatus,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
-const MAX_FILES = 4;
+// Three reports since the FBA Inventory file came off this screen (2026-11-09 — it arrives from the SP-API instead; the server refuses
+// it with a message if one is dropped out of habit).
+const MAX_FILES = 3;
 
 type Stage = 'choose' | 'checked' | 'done';
 
@@ -139,6 +146,7 @@ export default function UpdateAmazonPage() {
         <p className="mt-1 text-xs text-slate-400">
           Last processed: {lastRun?.lastRun ? `${lastRun.lastRun}${lastRun.by ? ` — ${lastRun.by}` : ''}` : 'unknown'}
         </p>
+        <AmazonApiLine a={lastRun?.amazonApi ?? null} />
         <SizeHistoryLine h={lastRun?.history ?? null} />
       </div>
 
@@ -155,8 +163,9 @@ export default function UpdateAmazonPage() {
           <ArrowUpTrayIcon className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-2 text-sm font-medium text-slate-700">Drop the Amazon reports here</p>
           <p className="mt-1 text-xs text-slate-500">
-            Orders · FBA Inventory · FBA Returns · FBA Fee Preview — any combination, up to {MAX_FILES} files.
+            Orders · FBA Returns · FBA Fee Preview — any combination, up to {MAX_FILES} files.
           </p>
+          <p className="mt-1 text-xs text-slate-500">No FBA Inventory file any more — stock and prices now come from Amazon by themselves.</p>
           <p className="mt-1 text-xs text-slate-400">Safe to re-run any file as often as you like — reprocessing the same data won&apos;t cause issues.</p>
           <button
             type="button"
@@ -289,6 +298,16 @@ export default function UpdateAmazonPage() {
           <AmzImportSummary summary={summary} />
         </div>
       )}
+
+      {/* --- Last night's FBA Inventory report: the reconciliation the upload used to show (unknown SKUs + Delete file) ------ */}
+      {lastRun?.amazonApi?.reconciliation && (
+        <div className="mt-8">
+          <AmzReconciliation
+            rec={lastRun.amazonApi.reconciliation}
+            title={`Amazon listings check — last night's report${lastRun.amazonApi.report?.lastOk ? ` (${lastRun.amazonApi.report.lastOk})` : ''}`}
+          />
+        </div>
+      )}
     </AppShell>
   );
 }
@@ -301,16 +320,40 @@ function SizeHistoryLine({ h }: { h: AmzSizeHistoryStatus | null }) {
   // historyFrom can be earlier than the first import: days rebuilt from the Inventory Ledger (scripts/amz-ledger-backfill.js).
   const from = h.historyFrom ? ` · stock history from ${h.historyFrom}` : '';
   if (!h.lastDay) {
-    return <p className="mt-0.5 text-xs text-slate-400">Size history: recording starts with the next FBA Inventory import{from}.</p>;
+    return <p className="mt-0.5 text-xs text-slate-400">Size history: recording starts with the next Amazon stock read{from}.</p>;
   }
   const mb = (h.bytes / (1024 * 1024)).toFixed(1);
-  const kept = `${h.days.toLocaleString('en-GB')} import day${h.days === 1 ? '' : 's'} since ${h.firstDay}${from} · ${mb} MB`;
+  const kept = `${h.days.toLocaleString('en-GB')} day${h.days === 1 ? '' : 's'} recorded since ${h.firstDay}${from} · ${mb} MB`;
   if (h.stale) {
     return (
       <p className="mt-1 inline-block rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
-        Size history: no FBA Inventory report for {h.daysSince} days (last {h.lastDay}) — those days have no stock or price on record. {kept}
+        Size history: no Amazon stock reading for {h.daysSince} days (last {h.lastDay}) — those days have no stock or price on record. {kept}
       </p>
     );
   }
   return <p className="mt-0.5 text-xs text-slate-400">Size history: last saved {h.lastDay} · {kept}</p>;
+}
+
+/** FBA stock + prices come from Amazon by themselves since 2026-11-09 (the inventory file came off this screen — owner): the quick
+ *  stock read inside every Update Orders, and the full FBA Inventory report every night. One quiet line when both are fine; red when
+ *  the last attempt failed (the error stays until the next success clears it). Nothing while the table isn't there yet. */
+function AmazonApiLine({ a }: { a: AmzApiStatus | null }) {
+  if (!a) return null;
+  const failed = [
+    a.stock?.error ? `stock read failed ${a.stock.errorAt} (${a.stock.error})` : null,
+    a.report?.error ? `nightly report failed ${a.report.errorAt} (${a.report.error})` : null,
+  ].filter(Boolean);
+  if (failed.length) {
+    return (
+      <p className="mt-1 inline-block rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-800 ring-1 ring-red-200">
+        FBA stock from Amazon: {failed.join(' · ')}
+      </p>
+    );
+  }
+  return (
+    <p className="mt-0.5 text-xs text-slate-400">
+      FBA stock &amp; prices come from Amazon automatically — stock last read {a.stock?.lastOk || 'not yet'} (every Update Orders) ·
+      {' '}full report {a.report?.lastOk || 'not yet'} (nightly).
+    </p>
+  );
 }

@@ -46,40 +46,55 @@ const LOCK_KEY = 'amz_size_history';
  * @param inbound Map code -> inbound units, from the inventory report rows (sizes not in the report read 0, as applyStock zeroes them)
  * @param who     display name, for the run line
  */
-async function recordSizeHistory(client, { inbound, who }) {
+async function recordSizeHistory(client, { inbound, who, carryInbound = false }) {
+  // carryInbound (2026-11-09, the quick SP-API stock step in Update Orders — utils/amzStockSync.js): `inbound` then holds ONLY the
+  // sizes Amazon reported as changed, so a size NOT in the map keeps its previous row's inbound instead of reading 0 — otherwise every
+  // quick run would write a false "inbound went to 0" row for every unchanged size. The full readings (nightly report) pass false.
   await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [LOCK_KEY]);
   const d = await client.query(`SELECT ${LONDON_TODAY_SQL}::text AS day`);
   const day = d.rows[0].day;
 
+  // carryInbound: today's earlier rows are about to be deleted, but their inbound is the latest known for a size this run didn't see,
+  // so it is merged into the map first (a size the run DID see keeps the run's figure).
+  let inb = inbound;
+  if (carryInbound) {
+    inb = new Map(inbound);
+    const t = await client.query(`SELECT code, inbound FROM amz_size_history WHERE day = $1 AND inbound IS NOT NULL`, [day]);
+    for (const r of t.rows) if (!inb.has(r.code)) inb.set(r.code, Number(r.inbound));
+  }
+
   // Today is written again from scratch against the state BEFORE today — that is the whole one-row-per-day rule.
   await client.query(`DELETE FROM amz_size_history WHERE day = $1`, [day]);
 
-  const codes = [...inbound.keys()];
-  const qty = codes.map((c) => inbound.get(c));
+  const codes = [...inb.keys()];
+  const qty = codes.map((c) => inb.get(c));
   const ins = await client.query(
     `WITH inb AS (
        SELECT code, MAX(n) AS n FROM (SELECT UNNEST($2::text[]) AS code, UNNEST($3::int[]) AS n) x GROUP BY code
-     ),
-     cur AS (
-       SELECT a.code,
-              ROUND(${safeNumeric('a.amzprice')}, 2) AS price,
-              COALESCE(a.amzlive, 0)  AS live,
-              COALESCE(i.n, 0)        AS inbound,
-              COALESCE(a.amztotal, 0) AS total
-       FROM amzfeed a LEFT JOIN inb i ON i.code = a.code
-       WHERE a.code IS NOT NULL AND a.code <> ''
      ),
      prev AS (
        SELECT DISTINCT ON (code) code, price, live, inbound, total
        FROM amz_size_history WHERE day < $1::date
        ORDER BY code, day DESC
+     ),
+     cur AS (
+       SELECT a.code,
+              ROUND(${safeNumeric('a.amzprice')}, 2) AS price,
+              COALESCE(a.amzlive, 0)  AS live,
+              -- carried: a size not in the map keeps its last known inbound (today's earlier reading is already merged into the map)
+              COALESCE(i.n, CASE WHEN $4::boolean THEN p.inbound END, 0) AS inbound,
+              COALESCE(a.amztotal, 0) AS total
+       FROM amzfeed a
+       LEFT JOIN inb i ON i.code = a.code
+       LEFT JOIN prev p ON p.code = a.code
+       WHERE a.code IS NOT NULL AND a.code <> ''
      )
      INSERT INTO amz_size_history (code, day, price, live, inbound, total)
      SELECT c.code, $1::date, c.price, c.live, c.inbound, c.total
      FROM cur c LEFT JOIN prev p ON p.code = c.code
      WHERE p.code IS NULL
         OR (c.price, c.live, c.inbound, c.total) IS DISTINCT FROM (p.price, p.live, p.inbound, p.total)`,
-    [day, codes, qty]
+    [day, codes, qty, carryInbound]
   );
   const changed = ins.rowCount;
 

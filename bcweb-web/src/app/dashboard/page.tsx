@@ -337,8 +337,8 @@ function AmzHistoryWarning() {
       href="/update-amazon"
       className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900 outline-none transition hover:border-amber-400 focus-visible:ring-2 focus-visible:ring-amber-200"
     >
-      <span className="font-semibold">No Amazon stock report for {h.daysSince} days</span>
-      <span className="text-amber-800">Last {h.lastDay}. Import the FBA Inventory report on Update Amazon, or these days have no stock or price history.</span>
+      <span className="font-semibold">No Amazon stock reading for {h.daysSince} days</span>
+      <span className="text-amber-800">Last {h.lastDay}. The automatic Amazon stock read isn&apos;t running — see Update Amazon for the error. These days have no stock or price history.</span>
       <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-amber-600" />
     </Link>
   );
