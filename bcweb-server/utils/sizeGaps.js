@@ -7,12 +7,13 @@ Purpose: THE RULES of Size gaps (owner, 2026-11-08) — sizes missing from style
          sizes." Found from the Prospects screen (a "Size gaps · n" link → /prospects/size-gaps), ordered BY HAND from the supplier,
          then it arrives and is loaded onto the system as usual. Tables: migrations/20261108c_size_gap.sql (read its header).
 
-THE RANGE = a BRAND SETTING (size_gap_range, set by hand): Lunar UK 3–9 (2026-11-08); Rieker, Remonte, Strive EU 36–42 (2026-11-09,
-         owner: "these 3 in EU fit well for our next work" — in their OWN sizing). Every style of the brand is checked against every
+THE RANGE = a BRAND SETTING (size_gap_range, set by hand): Lunar UK 3–9 (2026-11-08); Rieker, Remonte, Strive Womens EU 36–42 (2026-11-09,
+         owner: "these 3 in EU fit well for our next work" — in their OWN sizing); then Free Spirit Womens UK 3–8, Rieker Mens EU 40–46,
+         Roamers / Goor Mens UK 6–14, Lazy Dogz Womens UK 3–8 (2026-11-09, migrations/20261109b — read its header for who was left out). Every style of the brand is checked against every
          whole size in it (owner chose a brand setting over "what the model's other colours carry", which can never suggest a size we
          never bought). A range is per BRAND + WHO — the first word of title.shopifytitle ('Womens' / 'Mens'), because Rieker's Mens
-         styles run EU 40–46 and a women's range would flag their 36–39 as gaps. Rieker Mens has no range yet (owner: later), so its
-         styles aren't checked. A brand + who with no range is simply not on the list.
+         styles run EU 40–46 and a women's range would flag their 36–39 as gaps — so Rieker has two ranges. A brand + who with no range
+         (Goor Boys, Mod Comfys, Caprice…) is simply not on the list.
 A SIZE = THE WHOLE NUMBER AT THE END OF THE CODE (…-38 → 38, Lunar …-03 → 3), for every brand (2026-11-09 — was skumap.uksize). The EU
          brands' codes end in whole EU sizes one-to-one with their UK size, but in UK their core sizes are halves (Rieker / Remonte
          EU 40 = 6.5, 41 = 7.5, no UK 7) and the brands convert differently (Strive EU 41 = UK 7), so the code is the one clean measure.
