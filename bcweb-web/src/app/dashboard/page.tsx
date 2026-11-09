@@ -56,7 +56,7 @@ import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
 import {
-  ShoppingCartIcon, TagIcon, Squares2X2Icon, ArrowUpTrayIcon,
+  ShoppingCartIcon, TagIcon, Squares2X2Icon, SignalIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
@@ -171,7 +171,7 @@ const GROUPS: Group[] = [
     icon: Cog6ToothIcon,
     tiles: [
       { title: 'Update Shopify', subtitle: 'Pull in new orders now', description: 'Run the Shopify order update now rather than waiting for the scheduled run.', href: '/customer-orders', icon: CloudArrowDownIcon, action: 'update-shopify' },
-      { title: 'Update Amazon', subtitle: 'Load Seller Central reports', description: 'Load the Seller Central reports — sales, returns, FBA stock and fees.', href: '/update-amazon', icon: ArrowUpTrayIcon },
+      { title: 'Amazon status', subtitle: 'Read from Amazon automatically', description: 'Amazon sales, FBA stock, prices, returns and fees come in by themselves — check they are, and last night’s listings check.', href: '/update-amazon', icon: SignalIcon },
       { title: 'Finance', subtitle: 'Close the month', description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.', href: '/finance', icon: CalculatorIcon },
       { title: 'Facebook', subtitle: 'Social post', description: 'Queue and publish the daily Facebook post.', href: '/social', icon: MegaphoneIcon },
       // Hidden while SKU_HEALTH is false (lib/features.ts, owner 2026-11-05).
@@ -198,6 +198,7 @@ export default function DashboardPage() {
 
       <Daily />
 
+      <AmzReadWarning />
       <AmzHistoryWarning />
       <BackupWarning />
 
@@ -331,7 +332,8 @@ function Daily() {
 function AmzHistoryWarning() {
   const last = useApiQuery('amz-import-last', getAmzImportLast);
   const h = last.data?.history ?? null;
-  if (!h || !h.stale) return null;
+  // The red Amazon read warning below says it first (a stale history means a read has stopped) — never both.
+  if (!h || !h.stale || (last.data?.amazonApi?.problems?.length ?? 0) > 0) return null;
   return (
     <Link
       href="/update-amazon"
@@ -340,6 +342,27 @@ function AmzHistoryWarning() {
       <span className="font-semibold">No Amazon stock reading for {h.daysSince} days</span>
       <span className="text-amber-800">Last {h.lastDay}. The automatic Amazon stock read isn&apos;t running — see Update Amazon for the error. These days have no stock or price history.</span>
       <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-amber-600" />
+    </Link>
+  );
+}
+
+/* =====================================================================================================================================
+   AMAZON READ WARNING — red, shown ONLY when an automatic Amazon read needs attention (owner, 2026-11-09, with the uploads gone):
+   its last attempt failed (stock / orders in Update orders, or a nightly report), or the nightly job hasn't run for 36 hours.
+   Server-side rule (routes/amz-import-last.js → problems); same read and SWR key as the Amazon status screen it links to.
+===================================================================================================================================== */
+function AmzReadWarning() {
+  const last = useApiQuery('amz-import-last', getAmzImportLast);
+  const problems = last.data?.amazonApi?.problems ?? [];
+  if (problems.length === 0) return null;
+  return (
+    <Link
+      href="/update-amazon"
+      className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1 rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-sm text-red-900 outline-none transition hover:border-red-400 focus-visible:ring-2 focus-visible:ring-red-200"
+    >
+      <span className="font-semibold">Amazon data not coming in</span>
+      <span className="text-red-800">{problems.join(' · ')}. See Amazon status for the error.</span>
+      <ChevronRightIcon className="ml-auto h-4 w-4 self-center text-red-600" />
     </Link>
   );
 }

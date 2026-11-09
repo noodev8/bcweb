@@ -3081,7 +3081,12 @@ export interface AmzSizeHistoryStatus {
 // SP-API stock reads (2026-11-09): stock = the quick read inside Update Orders, report = the nightly FBA Inventory report.
 export interface AmzApiJobStatus { lastOk: string | null; note: string | null; error: string | null; errorAt: string | null }
 // reconciliation = the nightly report's buckets (unknown SKUs + Delete file …) — the panel the inventory upload used to show.
-export interface AmzApiStatus { stock: AmzApiJobStatus | null; report: AmzApiJobStatus | null; reconciliation: AmzImportSummary['reconciliation'] | null }
+// problems = the dashboard's red warning lines (any read whose last attempt failed, or the nightly job not run for 36h).
+export interface AmzApiStatus {
+  stock: AmzApiJobStatus | null; orders: AmzApiJobStatus | null; report: AmzApiJobStatus | null;
+  returns: AmzApiJobStatus | null; fees: AmzApiJobStatus | null;
+  reconciliation: AmzImportSummary['reconciliation'] | null; problems: string[];
+}
 export interface AmzImportLast { lastRun: string | null; by: string | null; history: AmzSizeHistoryStatus | null; amazonApi: AmzApiStatus | null }
 export function getAmzImportLast() {
   return request<AmzImportLast>({ url: '/amz-import-last', method: 'GET' }, (b) => ({

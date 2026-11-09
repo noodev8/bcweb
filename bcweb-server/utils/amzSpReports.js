@@ -10,8 +10,10 @@ Purpose: Ask Amazon for a report, wait while it is prepared, download it, and ha
 
 Preparing a report takes minutes, which is why reports run NIGHTLY (scripts/amz-inventory-nightly.js) and never inside Update Orders.
 
-Report types used (2026-11-09):
-  GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA   the "Manage FBA Inventory" file Update Amazon used to take as an upload
+Report types used (2026-11-09 — each the file Update Amazon used to take as an upload, same columns, read by the same parser):
+  GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA     "Manage FBA Inventory"        nightly        (~40 s; ~1 request per 30 min allowed)
+  GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA   FBA customer returns          nightly, 30 days back (~30 s)
+  GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA         Fee Preview                   every 28 days (~30 s)
 =======================================================================================================================================
 */
 
@@ -36,9 +38,12 @@ function decode(buf, contentType) {
  * @returns {Promise<{ text: string, reportId: string, waitedSeconds: number }>}
  * Throws when Amazon reports CANCELLED / FATAL, or the wait passes timeoutMs.
  */
-async function fetchReport(reportType, { timeoutMs = DEFAULT_TIMEOUT_MS, onWait } = {}) {
+async function fetchReport(reportType, { timeoutMs = DEFAULT_TIMEOUT_MS, onWait, dataStartTime } = {}) {
   const started = Date.now();
-  const created = await sp.spPost('/reports/2021-06-30/reports', { reportType, marketplaceIds: [sp.marketplaceId()] });
+  // dataStartTime: the window's start for reports that take one (the returns report — 30 days back each night).
+  const created = await sp.spPost('/reports/2021-06-30/reports', {
+    reportType, marketplaceIds: [sp.marketplaceId()], ...(dataStartTime ? { dataStartTime } : {}),
+  });
   const reportId = created && created.reportId;
   if (!reportId) throw new Error(`Amazon did not return a report id for ${reportType}`);
 

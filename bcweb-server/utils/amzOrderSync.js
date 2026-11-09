@@ -190,7 +190,16 @@ const channel = {
   code: 'AMAZON',            // never on an orderstatus row (FBA — nothing to pick), so the Fulfil buttons never pick this channel
   isConfigured,
   setupHint: 'AMZ_SP_CLIENT_ID / AMZ_SP_CLIENT_SECRET / AMZ_SP_REFRESH_TOKEN in bcweb-server/.env',
-  fetch: () => fetchAmazonOrders(),
+  // A failed read is kept in amz_api_sync (the status page + the dashboard's red warning) — the run itself carries on without
+  // Amazon ("not checked"), and the next success clears it.
+  fetch: async () => {
+    try {
+      return await fetchAmazonOrders();
+    } catch (err) {
+      await require('./amzStockSync').recordError(JOB, err.message);
+      throw err;
+    }
+  },
   write: (client, fetched) => writeAmazonOrders(client, fetched),
 };
 
