@@ -87,7 +87,8 @@ router.post('/', async (req, res) => {
       await writeBcLog(client, {
         who,
         section: 'Size gaps',
-        log: `${LOG_WORD[choice]}${until ? ` until ${until}` : ''}: ${ok.map((s) => `${s.groupid} ${s.uk}`).join(', ')   // the size off the code: UK for Lunar, EU for Rieker…}`,
+        // The size off the code: UK for Lunar, EU for Rieker / Remonte / Strive (utils/sizeGaps.js).
+        log: `${LOG_WORD[choice]}${until ? ` until ${until}` : ''}: ${ok.map((s) => `${s.groupid} ${s.uk}`).join(', ')}`,
       });
     });
     return res.json({ return_code: 'SUCCESS', saved: ok.length, until, skipped });
