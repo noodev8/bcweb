@@ -14,7 +14,7 @@ Purpose: Turn an arbitrary origin path into a readable back-link label, for when
 // lists are named by their box (?band=), so a back link says where it goes.
 const RENAMED: Record<string, string> = {
   '/segments': 'Back', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow movers', '/amz-loaded': 'AMZ loaded',
-  '/ebay': 'eBay listings', '/analytics/slow-sizes': 'Range', '/analytics/deep-sizes': 'Deep sellers',
+  '/ebay': 'eBay listings', '/analytics/slow-sizes': 'Range', '/analytics/deep-sizes': 'Deep sellers', '/prospects/size-gaps': 'Size gaps',
 };
 
 export function prettyPathLabel(p: string): string {

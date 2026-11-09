@@ -1681,6 +1681,56 @@ export function clearListDecision(body: { list: DecisionList; groupids: string[]
   );
 }
 
+// SIZE GAPS (2026-11-08) — sizes missing from styles we sell, as SKU prospects (server: utils/sizeGaps.js — THE rules; routes
+// size-gaps / size-gap-mark / size-gap-release). Ordered by the style's best size's profit a pair (owner, 2026-11-09).
+export type SizeGapState = 'gap' | 'held' | 'onorder' | 'selling';
+export type SizeGapMarkKind = 'park' | 'notmade' | 'ordered';
+export type SizeGapChoice = 'park14' | 'park30' | 'park90' | 'notmade' | 'ordered';   // all in days (owner, 2026-11-09)
+export interface SizeGapSize {
+  uk: number;
+  code: string | null;          // null = not on our system yet
+  state: SizeGapState;          // gap = the work; the rest are shown grey
+  is_new: boolean;              // not on our system
+  units: number;                // local + Amazon (incl. inbound)
+  on_order: number;             // supplier lines not yet arrived
+  last_sale: string | null;     // YYYY-MM-DD, last NET sale
+  per_pair: number | null;      // 12-month net profit a pair, every channel; null = none sold (net)
+  mark: { mark: SizeGapMarkKind; until: string | null; marked_on: string; marked_by: string | null } | null;   // in force today; marked_on = London day
+}
+export interface SizeGapStyle {
+  groupid: string; title: string | null; brand: string | null; imagename: string | null; asin: string | null;
+  best: { per_pair: number; size: string } | null;   // the style's best size by 12-month profit a pair — THE ORDER
+  sizes: SizeGapSize[];         // every UK size of the brand's range, in order
+}
+export interface SizeGapsData {
+  today: string;
+  ranges: { brand: string; uk_from: number; uk_to: number }[];
+  styles: SizeGapStyle[];       // best size by profit a pair first; nothing sold in 12 months last
+  counts: { open_styles: number; open_sizes: number; park: number; ordered: number; notmade: number };
+}
+
+export function getSizeGaps() {
+  return request<SizeGapsData>(
+    { url: '/size-gaps', method: 'GET' },
+    (b) => ({ today: b.today, ranges: b.ranges || [], styles: b.styles || [],
+      counts: b.counts || { open_styles: 0, open_sizes: 0, park: 0, ordered: 0, notmade: 0 } })
+  );
+}
+
+export function markSizeGaps(body: { mark: SizeGapChoice; sizes: { groupid: string; uk: number }[] }) {
+  return request<{ saved: number; until: string | null; skipped: string[] }>(
+    { url: '/size-gap-mark', method: 'POST', data: body },
+    (b) => ({ saved: b.saved || 0, until: b.until ?? null, skipped: b.skipped || [] })
+  );
+}
+
+export function releaseSizeGaps(body: { sizes: { groupid: string; uk: number }[] }) {
+  return request<{ released: number }>(
+    { url: '/size-gap-release', method: 'POST', data: body },
+    (b) => ({ released: b.released || 0 })
+  );
+}
+
 // Slow Sizes -> click a style (its own screen): every size of the style (0-stock included), stock and last sale (server: routes/analytics-style-sizes.js).
 export interface StyleSizeRow {
   code: string;
@@ -4905,7 +4955,9 @@ export interface SkuHealthRow {
   notSold12m: number;
 }
 export function getSkuHealthHistory() {
-  return request<SkuHealthRow[]>({ url: '/sku-health-history', method: 'GET' }, (b) => (b.rows || []).map((r: any) => ({
+  // The raw row as the server sends it (counts can arrive as strings from pg), typed so nothing slips through as `any`.
+  type RawRow = { date: string; sellers90?: number | string | null; notSold12m?: number | string | null };
+  return request<SkuHealthRow[]>({ url: '/sku-health-history', method: 'GET' }, (b) => (b.rows || []).map((r: RawRow) => ({
     date: r.date, sellers90: Number(r.sellers90 || 0), notSold12m: Number(r.notSold12m || 0),
   })));
 }

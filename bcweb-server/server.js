@@ -400,6 +400,10 @@ app.use('/prospect-note-add', require('./routes/prospect-note-add'));       // P
 app.use('/prospect-delete', require('./routes/prospect-delete'));           // POST: delete a line / check / note for good — WRITES
 app.use('/prospect-archive', require('./routes/prospect-archive'));         // POST: archive a line as Ordered / Dropped (+ purge > 6 months) — WRITES
 app.use('/prospect-reopen', require('./routes/prospect-reopen'));           // POST: an archived line back onto the list — WRITES prospect
+// Size gaps (2026-11-08): sizes missing from styles we sell, as SKU prospects — rules utils/sizeGaps.js, reached from Prospects.
+app.use('/size-gaps', require('./routes/size-gaps'));                       // GET: the list + Prospects' link count — READ ONLY
+app.use('/size-gap-mark', require('./routes/size-gap-mark'));               // POST: Park 3/6 months · Not made · Ordered — WRITES size_gap_mark (+ bclog)
+app.use('/size-gap-release', require('./routes/size-gap-release'));         // POST: release marks — WRITES size_gap_mark (delete, + bclog)
 
 // --- New sizes (2026-10-25; built for the Today screen, removed 2026-10-26): Daily's New stuff / Prospects counts and New Additions'
 // list (utils/processMap.js has the rules).

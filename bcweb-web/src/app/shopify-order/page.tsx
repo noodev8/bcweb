@@ -818,12 +818,12 @@ function ShopifyOrderContent() {
     return { total, unpriced };
   }, [targets]);
 
-  // DRAFT LOAD — once, on mount, before autosave may write (loadedDraftRef gates it). The set-state-in-effect disable is the same
-  // deliberate carve-out Amazon Order documents: a mount-only read of localStorage, which doesn't exist during the server render, so
-  // it can't move into a lazy useState initialiser.
+  // DRAFT LOAD — once, on mount, before autosave may write (loadedDraftRef gates it). The same deliberate carve-out Amazon Order
+  // documents: a mount-only read of localStorage, which doesn't exist during the server render, so it can't move into a lazy
+  // useState initialiser. (Its set-state-in-effect eslint-disable was dropped 2026-11-09: the rule doesn't flag a setState inside
+  // try / if, so the directive was reported as unused.)
   const loadedDraftRef = useRef(false);
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
     try {
       const raw = localStorage.getItem(DRAFT_KEY);
       if (raw) {
@@ -835,7 +835,6 @@ function ShopifyOrderContent() {
       try { localStorage.removeItem(DRAFT_KEY); } catch { /* storage unavailable — the basket simply isn't saved */ }
     }
     loadedDraftRef.current = true;
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
 
   // AUTOSAVE — debounced; an empty basket removes the draft rather than saving an empty one.

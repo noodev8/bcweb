@@ -57,7 +57,6 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { imageFilename } = require('../utils/imageName');

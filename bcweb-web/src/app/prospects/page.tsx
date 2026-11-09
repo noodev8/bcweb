@@ -31,13 +31,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftIcon, ArrowPathIcon, ArrowTopRightOnSquareIcon, ChevronDownIcon, ChevronRightIcon, PlusIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  addProspectCheck, addProspectNote, archiveProspect, checkProspectAsin, deleteProspectItem, getProspects, reopenProspect, saveProspect,
+  addProspectCheck, addProspectNote, archiveProspect, checkProspectAsin, deleteProspectItem, getProspects, getSizeGaps, reopenProspect, saveProspect,
   Prospect, ProspectOutcome, ProspectRating,
 } from '@/lib/api';
 
@@ -166,6 +167,9 @@ export default function ProspectsPage() {
   const fromParam = useUrlParam('from');
   const backHref = fromParam && fromParam.startsWith('/') ? fromParam : undefined;
   const q = useApiQuery('prospect-list', getProspects);
+  // SIZE GAPS (2026-11-08) — its own request, so this list never waits on it; the same SWR key as the gaps screen, so a mark there
+  // moves this count. The count is STYLES with an open gap (owner: "we will do the whole style").
+  const gaps = useApiQuery('size-gaps', getSizeGaps);
   const rows = q.data ?? NO_ROWS;
 
   // The add form, open or not. seed = the Amazon link it was opened with (from the toolbar box); key remounts it for a new paste.
@@ -342,6 +346,14 @@ export default function ProspectsPage() {
             className={`${smallBtn} inline-flex items-center gap-1.5 py-1.5 text-sm`}>
             <ArrowPathIcon className={'h-4 w-4 ' + (refreshing ? 'animate-spin' : '')} /> Refresh
           </button>
+          {/* SIZE GAPS (owner, 2026-11-08) — sizes missing from styles we sell, a prospect of their own; a count to prompt the visit.
+              Its own screen (/prospects/size-gaps); hidden in the Archive and until the count has loaded. */}
+          {!archive && gaps.data && (
+            <Link href="/prospects/size-gaps" title="Sizes missing from styles we sell — not on our system, or empty with no sale in 90 days"
+              className={`${smallBtn} ml-auto py-1.5 text-sm`}>
+              Size gaps · {gaps.data.counts.open_styles}
+            </Link>
+          )}
         </div>
 
         {q.error ? (

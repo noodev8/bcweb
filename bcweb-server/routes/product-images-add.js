@@ -92,7 +92,7 @@ router.post('/', verifyToken, async (req, res) => {
       let processed;
       try {
         processed = await processImage(file.buffer);
-      } catch (e) {
+      } catch {
         failed.push({ name: file.originalname, message: 'Could not read that image file' });
         continue;
       }
