@@ -78,15 +78,22 @@ async function call(method, path, { query, body } = {}) {
   for (const [k, v] of Object.entries(query || {})) {
     if (v !== undefined && v !== null) url.searchParams.set(k, Array.isArray(v) ? v.join(',') : String(v));
   }
-  const res = await fetch(url, {
-    method,
-    headers: {
-      'x-amz-access-token': await accessToken(),
-      'Content-Type': 'application/json',
-      'User-Agent': 'BCWEB/1.0 (Language=JavaScript)',
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  // 429 = Amazon's rate limit for that operation (getOrders refills ~1 a minute after a burst of 20). Wait and retry a few times
+  // rather than failing the run — a button press straight after the cron is the usual cause.
+  let res;
+  for (let attempt = 0; ; attempt += 1) {
+    res = await fetch(url, {
+      method,
+      headers: {
+        'x-amz-access-token': await accessToken(),
+        'Content-Type': 'application/json',
+        'User-Agent': 'BCWEB/1.0 (Language=JavaScript)',
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (res.status !== 429 || attempt >= 3) break;
+    await sleep(2000 * (attempt + 1));
+  }
   const text = await res.text();
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }

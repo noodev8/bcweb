@@ -496,6 +496,15 @@ function readUploads(files) {
       });
       continue;
     }
+    // Amazon ORDERS likewise (owner, 2026-11-09 — no cross-check week): booked on every Update Orders by utils/amzOrderSync.js
+    // (the SP-API, the same planner and keys). Refused so the screen says so; re-uploading would only find "already there" anyway.
+    if (result.type === 'ORDERS') {
+      rejected.push({
+        filename: f.originalname,
+        reason: 'Amazon orders are now booked automatically on every Update orders — this file isn\'t needed any more.',
+      });
+      continue;
+    }
     if (parsed[result.type]) { duplicate = result.label; break; }
 
     parsed[result.type] = result;
@@ -511,6 +520,10 @@ module.exports = {
   SOLD_WINDOW_DAYS,
   SOLD_RECENT_DAYS,
   loadReference,
+  // planSales / planCancellations are also the Amazon channel of Update Orders' (utils/amzOrderSync.js, 2026-11-09): the SP-API's
+  // order lines go through the SAME planner the Orders report did.
+  planSales,
+  planCancellations,
   buildPlan,
   readUploads,
 };

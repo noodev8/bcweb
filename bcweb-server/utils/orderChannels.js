@@ -41,12 +41,16 @@ order from any channel is picked in the same run and two channels can never allo
 ADDING A CHANNEL (e.g. TikTok): write utils/<name>Orders.js (the API read) and utils/<name>OrderSync.js (write + `channel`, with its
 fulfil step), add one line below, add its sales.channel code to the Sales screen. The order of the list is only the order channels write in — phase E
 allocates over orderstatus as a whole once they all have.
+
+AMAZON (2026-11-09, utils/amzOrderSync.js): a channel that writes SALES ONLY — FBA orders need no picking, so no orderstatus rows,
+no fulfil step. Counted in the headline (owner: "Even though we dont have to pack them, its good to see").
 =======================================================================================================================================
 */
 
 const CHANNELS = [
   require('./shopifyOrderSync').channel,
   require('./ebayOrderSync').channel,
+  require('./amzOrderSync').channel,
 ];
 
 module.exports = { CHANNELS };

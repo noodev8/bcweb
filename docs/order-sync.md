@@ -69,7 +69,8 @@ and the port write-up (`docs/order-sync-port.md`, removed the same day).
   button** (owner: "Just the total number of orders without confusing the user"). If **no** channel can be read,
   the run returns `NO_CHANNEL_READ` and nothing is written.
 - **The button shows one line:** `3 new orders` / `No new orders`, distinct orders new to `orderstatus`, every
-  channel together.
+  channel together — **plus Amazon orders newly booked as sales** (2026-11-09, owner: "Even though we dont have to pack
+  them, its good to see").
 - **All or nothing.** If a write fails, the run rolls back, so it's safe to press again.
 - **"Last updated"** (`GET /order-sync-last`) reads the latest bclog row, so it covers cron runs too.
 
@@ -82,6 +83,13 @@ A channel is one file exporting `channel` (the shape is in the `utils/orderChann
 |---|---|---|---|---|
 | Shopify | `utils/shopifyOrders.js` (REST 2024-01, paginated) | `utils/shopifyOrderSync.js` | `channel 'SHOPIFY'`, ordernum `BC…` | `SHP`, `utils/shopifyProfit.js` |
 | eBay | `utils/ebayOrders.js` (Fulfillment API) | `utils/ebayOrderSync.js` | `channel 'EBAY'`, ordernum `EB…` | `EBY`, `utils/ebayProfit.js` |
+| Amazon (2026-11-09) | SP-API Orders API, in `utils/amzOrderSync.js` | `utils/amzOrderSync.js` → the import's `planSales` / `insertSales` / cancellations | **none** — FBA, nothing to pick | `AMZ`, `utils/amzProfit.js`, key `AMZ:O:<order>:<line>` |
+
+**Amazon writes sales only** (no orderstatus rows, no fulfil step). It replaced the Orders report upload on Update Amazon
+(owner, 2026-11-09). Orders updated since the last good run less an hour (`amz_api_sync` job 'orders'; first run 7 days);
+already-booked orders skipped before their lines are fetched; a Pending order (no price in the API) is booked on the first run
+after Amazon confirms it; Canceled → its sale rows deleted. Checked 2026-11-09: 40 of 40 lines identical to the uploaded rows.
+By hand: `scripts/amz-order-sync.js` (dry run; `--days=7 --compare`; `--commit`).
 
 **A channel's write owns its own rows and nothing else.** That means its orders, its sales (booked once per new
 line, plus a duplicate guard on `(channel, ordernum, code)`), and its posted and cancelled orders with their picks.

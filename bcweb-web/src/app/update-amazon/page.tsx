@@ -21,7 +21,10 @@ FBA INVENTORY IS NOT UPLOADED ANY MORE (owner, 2026-11-09): FBA stock is read fr
 (utils/amzStockSync.js) and the full FBA Inventory report arrives every night (scripts/amz-inventory-nightly.js) — prices, prices
 changed in Seller Central, new SKUs, zeros. The server refuses the file if one is dropped. The header shows both reads' status.
 
-Any subset of the three reports may be dropped; whatever is absent is left untouched. That is a real workflow (the fee report only
+AMAZON ORDERS likewise (owner, 2026-11-09, no cross-check week): booked as SALES ONLY on every Update orders by the Amazon channel
+(utils/amzOrderSync.js — the same planner and keys the Orders report used; nothing in orderstatus, FBA isn't picked here).
+
+Either or both of the two remaining reports (Returns, Fee Preview) may be dropped; whatever is absent is left untouched. That is a real workflow (the fee report only
 arrives monthly), not an edge case.
 
 State is local and deliberately un-cached: an import is an action, not a view. There is nothing to re-fetch on mount, so no SWR here —
@@ -41,9 +44,9 @@ import {
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
-// Three reports since the FBA Inventory file came off this screen (2026-11-09 — it arrives from the SP-API instead; the server refuses
-// it with a message if one is dropped out of habit).
-const MAX_FILES = 3;
+// Two reports since the FBA Inventory and Orders files came off this screen (2026-11-09 — both come from the SP-API instead: stock and
+// orders on every Update orders, the full inventory report nightly; the server refuses either with a message if dropped out of habit).
+const MAX_FILES = 2;
 
 type Stage = 'choose' | 'checked' | 'done';
 
@@ -163,9 +166,11 @@ export default function UpdateAmazonPage() {
           <ArrowUpTrayIcon className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-2 text-sm font-medium text-slate-700">Drop the Amazon reports here</p>
           <p className="mt-1 text-xs text-slate-500">
-            Orders · FBA Returns · FBA Fee Preview — any combination, up to {MAX_FILES} files.
+            FBA Returns · FBA Fee Preview — either or both.
           </p>
-          <p className="mt-1 text-xs text-slate-500">No FBA Inventory file any more — stock and prices now come from Amazon by themselves.</p>
+          <p className="mt-1 text-xs text-slate-500">
+            No Orders or FBA Inventory file any more — Amazon orders, stock and prices now come from Amazon by themselves (Update orders).
+          </p>
           <p className="mt-1 text-xs text-slate-400">Safe to re-run any file as often as you like — reprocessing the same data won&apos;t cause issues.</p>
           <button
             type="button"
