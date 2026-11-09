@@ -11,7 +11,8 @@ Purpose: Sizes missing from styles we already sell, as SKU-level PROSPECTS (owne
          won't be misplaced").
 
 THE ORDER = THE STYLE'S BEST SIZE BY PROFIT A PAIR (owner, 2026-11-09: "If a size can make good size profit, then maybe another size
-         can. Not interested in qty at this stage") — 12 months, every channel, net of returns; nothing sold in 12 months = last.
+         can. Not interested in qty at this stage") — 12 months, ONLINE channels (the shop / CM3 left out — its profit is gross, owner
+         2026-11-09), net of returns; nothing sold online in 12 months = last.
          SHOWN, because it is why a style is where it is (owner: "There's no indication of why you sorted that way"): the BEST SIZE
          column ("£6.12 a pair · 5 UK") and each size's own figure on its tile's hover. No success bar — the owner works top to
          bottom and parks the low ones.
@@ -22,7 +23,7 @@ THE ROW = Range's / New Additions' style row: picture, group id, title, the size
   WHITE tile  = a gap to work: a solid border = on our system but empty, a DASHED border + "new" = not on our system yet.
   GREY tile   = held, on order, selling (sold in 90 days) — or a gap already marked (a small dark dot; hover says which). Not worked here.
 
-MARKS, PER SIZE ONLY (owner): Park 14 · 30 · 90 days (owner, 2026-11-09: "use days so they are all the same" — 14 / 30 for a supplier
+MARKS, PER SIZE ONLY (owner): Park 14 · 30 · 90 · 180 days (180 put back 2026-11-09 for rarely ordered sizes — UK 3s / EU 36s; owner, 2026-11-09: "use days so they are all the same" — 14 / 30 for a supplier
          that is out of stock, so the season isn't missed; was 3 / 6 months) · Not made (no date; released by hand) · Ordered (90 days). EVERY mark
          ends when the size arrives (a Goods In since the mark) — server rule. "When working on it, we will do the whole style": a ROW CLICK picks every open gap of the style, a TILE
          CLICK picks or drops one size (Blaze 9 only, say). Ctrl / Shift are not needed — a click adds to the pick; Esc / Clear empties
@@ -43,6 +44,7 @@ import { Suspense, useMemo, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
 import { ArrowLeftIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import StyleThumb from '@/components/StyleThumb';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -55,14 +57,17 @@ type View = 'open' | SizeGapMarkKind;
 const VIEWS: View[] = ['open', 'park', 'ordered', 'notmade'];
 const VIEW_NAME: Record<SizeGapMarkKind, string> = { park: 'Parked', ordered: 'Ordered', notmade: 'Not made' };
 const VIEW_RULE: Record<SizeGapMarkKind, string> = {
-  park: 'Parked for 14, 30 or 90 days — each comes back by itself on its date.',
+  park: 'Parked for 14, 30, 90 or 180 days — each comes back by itself on its date.',
   ordered: 'Ordered from the supplier — each leaves when it arrives, or comes back after 90 days if nothing came.',
   notmade: 'Not made by the supplier — no date, so these stay off unless one arrives after all. Release one to put it back on the list.',
 };
-const CHOICES: { key: SizeGapChoice; label: string; tip: string }[] = [
-  { key: 'park14', label: 'Park 14 days', tip: 'Off the list for 14 days, then back by itself — e.g. the supplier is out, check again soon' },
-  { key: 'park30', label: 'Park 30 days', tip: 'Off the list for 30 days, then back by itself' },
-  { key: 'park90', label: 'Park 90 days', tip: 'Off the list for 90 days, then back by itself — not now' },
+// label = the full name (the saved message says it); short = the number shown in the compact Park group (owner, 2026-11-09:
+// "compact those park buttons ... park with just the numbers").
+const CHOICES: { key: SizeGapChoice; label: string; short?: string; tip: string }[] = [
+  { key: 'park14', label: 'Park 14 days', short: '14', tip: 'Off the list for 14 days, then back by itself — e.g. the supplier is out, check again soon' },
+  { key: 'park30', label: 'Park 30 days', short: '30', tip: 'Off the list for 30 days, then back by itself' },
+  { key: 'park90', label: 'Park 90 days', short: '90', tip: 'Off the list for 90 days, then back by itself — not now' },
+  { key: 'park180', label: 'Park 180 days', short: '180', tip: 'Off the list for 180 days (about 6 months), then back by itself — a size we rarely order, e.g. a 3' },
   { key: 'notmade', label: 'Not made', tip: 'The supplier doesn\'t make this size — off for good, until released' },
   { key: 'ordered', label: 'Ordered', tip: 'Ordered from the supplier — off until it arrives (back after 90 days if nothing came)' },
 ];
@@ -110,6 +115,11 @@ function SizeGapsBody() {
   const rows = useMemo(
     () => (data?.styles ?? []).filter((s) => s.sizes.some((z) => pickable(z, view))),
     [data, view]);
+
+  // Where a link leaves from (this view included), for the destination's Back.
+  const qs = sp.toString();
+  const here = encodeURIComponent(qs ? `${pathname}?${qs}` : pathname);
+  const hereBack = encodeURIComponent('Size gaps');
 
   const rangeLine = (data?.ranges ?? []).map((r) => `${r.brand} ${r.uk_from}–${r.uk_to} ${r.sizing ?? 'UK'}`).join(', ');
 
@@ -209,7 +219,20 @@ function SizeGapsBody() {
             </span>
             {/* A marked view offers EVERY choice as well as Release (owner, 2026-11-09: "is there a way to change the park length") —
                 marking again replaces the mark, so a 14-day park can become 90 days, or a parked size can become Not made / Ordered. */}
-            {(marked ? [...CHOICES, { key: 'release' as const, label: 'Release', tip: 'Back on the list (if it is still a gap)' }] : CHOICES).map((c) => (
+            {/* PARK — one compact group, just the days (owner, 2026-11-09); the hover names it in full. */}
+            <span className="inline-flex items-center gap-1.5">
+              <span className={'text-sm ' + (pickedHere.length && !busy ? 'text-slate-700' : 'text-slate-400')}>Park</span>
+              <span className="inline-flex divide-x divide-slate-300 overflow-hidden rounded-md border border-slate-300">
+                {CHOICES.filter((c) => c.short).map((c) => (
+                  <button key={c.key} type="button" onClick={() => act(c.key)} disabled={!pickedHere.length || busy} title={c.tip}
+                    className="bg-white px-2 py-0.5 text-sm font-medium tabular-nums text-slate-700 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white">
+                    {c.short}
+                  </button>
+                ))}
+              </span>
+              <span className={'text-sm ' + (pickedHere.length && !busy ? 'text-slate-500' : 'text-slate-400')}>days</span>
+            </span>
+            {(marked ? [...CHOICES, { key: 'release' as const, label: 'Release', tip: 'Back on the list (if it is still a gap)' }] : CHOICES).filter((c) => !('short' in c && c.short)).map((c) => (
               <button key={c.key} type="button" onClick={() => act(c.key)} disabled={!pickedHere.length || busy} title={c.tip}
                 className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:bg-white">
                 {c.label}
@@ -249,10 +272,10 @@ function SizeGapsBody() {
                     <th className="w-[30rem] py-2.5 pl-4 pr-3 text-left font-medium">Style</th>
                     <th className="w-32 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Brand</th>
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
-                      title="The style's best size: its profit a pair over the last 12 months, every channel, net of returns. The list runs highest first — qty plays no part. Hover a size for its own figure.">Best size</th>
+                      title="The style's best size: its profit a pair over the last 12 months, online channels (shop sales left out — their profit is gross), net of returns. The list runs highest first — qty plays no part. Hover a size for its own figure.">Best size</th>
                     {marked && <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Marked</th>}
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
-                      title="Our Amazon listing for the style — to check how a size ranks">Amazon</th>
+                      title="Our sales of the style, its Amazon Order, and our Amazon listing (to check how a size ranks)">Links</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -300,7 +323,16 @@ function SizeGapsBody() {
                             ))}
                           </td>
                         )}
+                        {/* LINKS (owner, 2026-11-09): our Sales and Amazon Order open on the style in this tab (the standard product-menu deep
+                            links, ?q= + from / back, so their Back returns here); the Amazon listing opens a new tab as before. */}
                         <td className="whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top">
+                          <div className="flex flex-col items-start gap-1">
+                          <Link href={`/analytics/sales?q=${encodeURIComponent(s.groupid)}&from=${here}&back=${hereBack}`}
+                            onClick={(e) => e.stopPropagation()} title="Our sales of this style — every channel, 12 months"
+                            className="font-medium text-brand-700 hover:underline">Sales</Link>
+                          <Link href={`/amazon-order?q=${encodeURIComponent(s.groupid)}&from=${here}&back=${hereBack}`}
+                            onClick={(e) => e.stopPropagation()} title="Amazon Order for this style — what to buy in and what to send to FBA"
+                            className="font-medium text-brand-700 hover:underline">Amazon order</Link>
                           {s.asin ? (
                             <a href={`https://www.amazon.co.uk/dp/${encodeURIComponent(s.asin)}`} target="_blank" rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()} title={`Our Amazon listing (${s.asin})`}
@@ -308,6 +340,7 @@ function SizeGapsBody() {
                               Amazon <ArrowTopRightOnSquareIcon className="h-3.5 w-3.5" />
                             </a>
                           ) : <span className="text-xs text-slate-400">Not on Amazon</span>}
+                          </div>
                         </td>
                       </tr>
                     );

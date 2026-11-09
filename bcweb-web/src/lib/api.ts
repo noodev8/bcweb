@@ -1685,7 +1685,7 @@ export function clearListDecision(body: { list: DecisionList; groupids: string[]
 // size-gaps / size-gap-mark / size-gap-release). Ordered by the style's best size's profit a pair (owner, 2026-11-09).
 export type SizeGapState = 'gap' | 'held' | 'onorder' | 'selling';
 export type SizeGapMarkKind = 'park' | 'notmade' | 'ordered';
-export type SizeGapChoice = 'park14' | 'park30' | 'park90' | 'notmade' | 'ordered';   // all in days (owner, 2026-11-09)
+export type SizeGapChoice = 'park14' | 'park30' | 'park90' | 'park180' | 'notmade' | 'ordered';   // all in days (owner, 2026-11-09)
 export interface SizeGapSize {
   uk: number;                   // THE size, off the end of the code — UK for Lunar, EU for Rieker / Remonte / Strive (style.sizing)
   code: string | null;          // null = not on our system yet
@@ -1694,7 +1694,7 @@ export interface SizeGapSize {
   units: number;                // local + Amazon (incl. inbound)
   on_order: number;             // supplier lines not yet arrived
   last_sale: string | null;     // YYYY-MM-DD, last NET sale
-  per_pair: number | null;      // 12-month net profit a pair, every channel; null = none sold (net)
+  per_pair: number | null;      // 12-month net profit a pair, online channels (no CM3); null = none sold online (net)
   mark: { mark: SizeGapMarkKind; until: string | null; marked_on: string; marked_by: string | null } | null;   // in force today; marked_on = London day
 }
 export interface SizeGapStyle {

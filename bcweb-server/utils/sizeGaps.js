@@ -34,15 +34,19 @@ LEFT OUT: Can't get styles (utils/noSupply.js — style-wide, lapses by itself, 
 
 THE ORDER = THE STYLE'S BEST SIZE, BY PROFIT A PAIR (owner, 2026-11-09 — replaced the style's total 12-month profit: "If a size can
          make good size profit, then maybe another size can. Not interested in qty at this stage"). For every size of the style (every
-         code, on the run or not): its 12-month net profit ÷ its 12-month net pairs, EVERY CHANNEL, NET OF RETURNS (returns are negative
-         sales rows, so both sums are net); a size whose net pairs are 0 or less has no figure. The style's BEST = its highest, and the
+         code, on the run or not): its 12-month net profit ÷ its 12-month net pairs, ONLINE CHANNELS (Shopify / Amazon / eBay), NET OF RETURNS (returns are
+         negative sales rows, so both sums are net). THE SHOP (CM3) IS LEFT OUT (owner, 2026-11-09: "leave them out"): its sales.profit
+         is price − VAT − cost only (routes/shop-sale-record.js — no fees, postage or refund haircut), ~£18 a pair against Shopify's
+         ~£9, so one counter sale put a style top (the first four rows on 2026-11-09 were all CM3-only figures). A shop sale still
+         counts as the size SELLING (the 90-day test above) — only the order ignores it; a size whose net pairs are 0 or less has no figure. The style's BEST = its highest, and the
          list runs highest first; a style with no size sold in 12 months goes last. QTY PLAYS NO PART — a size that sold one pair at
          £9 outranks one that sold 100 at £4. The figure IS SHOWN (owner: "There's no indication of why you sorted that way") — the
          Best size column, and each size's own figure on hover. No success bar: the owner works top to bottom and parks the low ones.
          A style with NOTHING held stays on the list (owner: "It is on the list so won't be misplaced").
 
 THE MARKS (size_gap_mark, one per groupid + size — a missing size has no code):
-  park      until = today + 14, 30 or 90 DAYS (owner, 2026-11-09 — all in days: "use days so they are all the same"; was 3 / 6 months. 14 / 30
+  park      until = today + 14, 30, 90 or 180 DAYS (owner, 2026-11-09 — all in days: "use days so they are all the same"; was 3 / 6 months.
+            180 put back the same day for sizes rarely ordered — the UK 3s / EU 36s the new brand ranges brought in. 14 / 30
             for "the supplier is out, check again before the season goes" — Chime Taupe, out at Lunar in winter; 6 months dropped);
             the size is back on the list ON that day
   notmade   no date — never ends by time (owner); released by hand
@@ -57,7 +61,7 @@ THE MARKS (size_gap_mark, one per groupid + size — a missing size has no code)
          READ-ONLY.
 =======================================================================================================================================
 Exports:
-  MARKS                      { park14: {mark:'park',days:14}, park30, park90, notmade: {days:null}, ordered: {days:90} }  — the choices
+  MARKS                      { park14: {mark:'park',days:14}, park30, park90, park180, notmade: {days:null}, ordered: {days:90} }  — the choices
   GAP_DAYS                   90
   readSizeGaps() -> { today, ranges: [{brand, who, uk_from, uk_to, sizing}], styles: [ {
         groupid, title, brand, imagename, asin, sizing,     // sizing = 'UK' | 'EU', the label for its sizes
@@ -82,6 +86,7 @@ const MARKS = {
   park14: { mark: 'park', days: 14 },
   park30: { mark: 'park', days: 30 },
   park90: { mark: 'park', days: 90 },
+  park180: { mark: 'park', days: 180 },   // ~6 months, for sizes rarely ordered (owner, 2026-11-09)
   notmade: { mark: 'notmade', days: null },
   ordered: { mark: 'ordered', days: 90 },
 };
@@ -145,12 +150,13 @@ async function readSizeGaps() {
       `SELECT DISTINCT ON (groupid) groupid, asin FROM amzfeed
         WHERE groupid = ANY($1::text[]) AND NULLIF(TRIM(asin), '') IS NOT NULL
         ORDER BY groupid, COALESCE(amztotal, 0) DESC, code`, [groupids]),
-    // THE ORDER (header): each size's 12-month NET profit and NET pairs, every channel. Every code the style sold, on the run or not.
+    // THE ORDER (header): each size's 12-month NET profit and NET pairs, online channels (no CM3). Every code the style sold, on the run or not.
     query(
       `SELECT x.groupid, x.code, SUM(x.profit)::float AS profit, SUM(x.qty)::int AS pairs,
               ${sizeSql('x.code')} AS uk
          FROM sales x
         WHERE x.groupid = ANY($1::text[]) AND x.code IS NOT NULL AND x.solddate > ${LONDON_TODAY_SQL} - 365
+          AND COALESCE(x.channel, '') <> 'CM3'   -- the shop's profit is gross (header) — online channels only
         GROUP BY x.groupid, x.code`, [groupids]),
   ]);
 

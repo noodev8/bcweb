@@ -3,9 +3,9 @@
 API Route: size_gap_mark
 =======================================================================================================================================
 Method: POST
-Purpose: Mark one or more GAP SIZES on Size gaps (owner, 2026-11-08): Park 14 · 30 · 90 days · Not made · Ordered. Rules in
+Purpose: Mark one or more GAP SIZES on Size gaps (owner, 2026-11-08): Park 14 · 30 · 90 · 180 days · Not made · Ordered. Rules in
          utils/sizeGaps.js (THE copy). Per size only — a whole style is dealt with by sending all its gap sizes.
-           park14/30/90    until = today + 14 / 30 / 90 days, back on the list on that day (owner 2026-11-09: all in days)
+           park14/30/90/180 until = today + 14 / 30 / 90 / 180 days, back on the list on that day (owner 2026-11-09: all in days)
            notmade         never ends; released by hand (POST /size-gap-release)
            ordered         until = today + 90 days
          Every mark also ends when the size ARRIVES (a Goods In since the mark) — utils/sizeGaps.js.
@@ -16,7 +16,7 @@ Purpose: Mark one or more GAP SIZES on Size gaps (owner, 2026-11-08): Park 14 ·
 =======================================================================================================================================
 Request Payload:
 {
-  "mark": "park14" | "park30" | "park90" | "notmade" | "ordered",
+  "mark": "park14" | "park30" | "park90" | "park180" | "notmade" | "ordered",
   "sizes": [ { "groupid": "JLH950-BLAZE-BLACK", "uk": 9 }, ... ]     // 1–500
 }
 
@@ -46,12 +46,12 @@ const logger = require('../utils/logger');
 router.use(verifyToken);
 
 // The bclog wording per choice.
-const LOG_WORD = { park14: 'Parked 14 days', park30: 'Parked 30 days', park90: 'Parked 90 days', notmade: 'Not made', ordered: 'Ordered' };
+const LOG_WORD = { park14: 'Parked 14 days', park30: 'Parked 30 days', park90: 'Parked 90 days', park180: 'Parked 180 days', notmade: 'Not made', ordered: 'Ordered' };
 
 router.post('/', async (req, res) => {
   const choice = req.body?.mark;
   const cfg = MARKS[choice];
-  if (!cfg) return res.json({ return_code: 'BAD_MARK', message: 'Pick Park 14, 30 or 90 days, Not made or Ordered' });
+  if (!cfg) return res.json({ return_code: 'BAD_MARK', message: 'Pick Park 14, 30, 90 or 180 days, Not made or Ordered' });
   const seen = new Set();
   const sizes = (Array.isArray(req.body?.sizes) ? req.body.sizes : [])
     .filter((s) => s && typeof s.groupid === 'string' && s.groupid.trim() && Number.isInteger(s.uk))

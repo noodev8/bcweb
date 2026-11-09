@@ -10,7 +10,7 @@
 -- size_gap_mark — ONE MARK PER SIZE (owner: per size only; a style is dealt with by marking all its gap sizes). Keyed by groupid + UK
 --   size, NOT by code: a size that isn't on our system yet has no code. Its OWN table — never the pricing review dates, never Can't
 --   get (style-wide), never shopify_dont_order (ends when the size sells on Shopify).
---     park      until = +14, +30 or +90 days, back by itself (was 3 / 6 months until 2026-11-09 — comment only, no schema change)
+--     park      until = +14, +30, +90 or +180 days, back by itself (was 3 / 6 months until 2026-11-09; 180 added back the same day — comment only, no schema change)
 --     notmade   until = NULL — never ends (owner chose it over a 12-month recheck); off until released by hand
 --     ordered   until = +90 days
 --   EVERY mark also ends when the size ARRIVES (Goods In on or after the mark day) — a decision about a size we don't have is spent
