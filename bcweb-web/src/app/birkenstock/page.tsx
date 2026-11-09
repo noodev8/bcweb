@@ -31,7 +31,7 @@ and on leaving its box, so the button had nothing left to do. See commitSteps. T
 STOCK/SOLD commands — this grid is read by eye down a short list, and a "STOCK LESS 10" here would just be the red colouring twice.
 
   3. SOLD (owner, 2026-10-24) — a third position on the same switch: the size columns show what each size SOLD over 365 days instead
-     of what we hold (hover a figure for its share of the style). Some sizes sell better than others and the Sold 365 total hides
+     of what we hold (no hover — owner, 2026-11-09). Some sizes sell better than others and the Sold 365 total hides
      it. Stock stays on LIVE in this mode, so the red rule and the planner's "+N" read exactly as they do there. No extra cost: these
      are the same skumap counters Sold 365 already adds up, shipped split by size.
 
@@ -41,6 +41,8 @@ clipboard, and gave that up for this): one row per month still to come, sizes un
 and thirty-two in August is a different season from thirty-five in May. The months are rows of THIS table, not a nested one, so each
 figure sits directly beneath the size it belongs to and beneath the stock we already hold in that size. See SEASON for why they run
 September -> August, and routes/birk-planner.js for why a delivery that has fully landed shows nothing at all.
+The drop-down's FIRST line (owner, 2026-11-09) is ALWAYS Sold 365 per size — under the stock on Live / Full, so stock and sales sit
+one above the other without flipping the switch; on Sold it repeats the row above, accepted (the Sold switch may go later).
 
 KEPT, AND THE PERFORMANCE LEVELS. One money column: what each style KEPT over the last 365 days — its net profit (VAT, cost, payment
 fee, packing, postage and the returns haircut all already out) LESS the Google ad spend that went on it. Four cumulative steps above
@@ -391,8 +393,15 @@ export default function BirkenstockPage() {
   // deliveries is not a statement about wanting to Cut or Park it.
   const onOpenPlanner = useCallback((e: React.MouseEvent, groupid: string) => {
     e.stopPropagation();
+    // OPENING A STYLE ALSO MARKS IT (owner, 2026-11-09 — "saves pressing the line again"): the drop-down is where the order is
+    // decided, so the Ordered — park buttons are live for it straight away. It marks this row ALONE, like a plain click. Closing
+    // leaves the marks as they are.
+    if (planned !== groupid) {
+      setSelected(new Set([groupid]));
+      setAnchor(groupid);
+    }
     setPlanned((cur) => (cur === groupid ? null : groupid));
-  }, []);
+  }, [planned]);
 
   // The whole catalogue, once. Re-read on Reset (which is the "start a fresh hunt" moment, so it doubles as refresh-from-DB — the
   // legacy screen's Reset did exactly this). `busy` rather than isLoading so a Reset re-fetch spins too.
@@ -954,19 +963,21 @@ export default function BirkenstockPage() {
                     }`}
                   >
                     <td className="whitespace-nowrap px-2 py-1.5 font-mono text-xs text-slate-600">
-                      {open ? (
-                        <ChevronDownIcon className="mr-1 inline h-3 w-3 text-slate-500" />
-                      ) : (
-                        <ChevronRightIcon className="mr-1 inline h-3 w-3 text-slate-300" />
-                      )}
+                      {/* THE ARROW OPENS TOO (owner, 2026-11-09 — it looked like a button and only marked the row). Arrow and groupid
+                          are ONE target, so either opens / closes the drop-down; the rest of the row still marks. */}
                       <span
                         role="button"
                         tabIndex={-1}
                         onClick={(e) => onOpenPlanner(e, r.groupid)}
-                        title={open ? 'Close deliveries' : 'Show deliveries still to come, by month'}
-                        className="rounded px-0.5 hover:text-slate-900 hover:underline"
+                        title={open ? 'Close' : 'Show sold by size and deliveries still to come'}
+                        className="group rounded px-0.5 hover:text-slate-900"
                       >
-                        {r.groupid}
+                        {open ? (
+                          <ChevronDownIcon className="mr-1 inline h-3 w-3 text-slate-500" />
+                        ) : (
+                          <ChevronRightIcon className="mr-1 inline h-3 w-3 text-slate-300 group-hover:text-slate-500" />
+                        )}
+                        <span className="group-hover:underline">{r.groupid}</span>
                       </span>
                     </td>
                     <td className="truncate px-2 py-1.5 text-slate-800" title={r.title || ''}>
@@ -1017,12 +1028,11 @@ export default function BirkenstockPage() {
                     </td>
                     {sizeCols.map((sz, i) => {
                       const q = sizeStockOf(r, sz, mode);
-                      // SOLD figures are drawn blue, so a glance at the grid says which numbers are on it; the share is on the hover.
+                      // SOLD figures are drawn blue, so a glance at the grid says which numbers are on it; no hover (owner, 2026-11-09).
                       const sold = mode === 'sold';
                       return (
                         <td
                           key={sz}
-                          title={sold && q && r.sold365 ? `${sz}: ${q} sold — ${Math.round((q / r.sold365) * 100)}% of the style` : undefined}
                           className={`py-1.5 text-center tabular-nums ${sold ? 'text-sky-700' : 'text-slate-700'} ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
                         >
                           {q ? q : ''}
@@ -1040,6 +1050,31 @@ export default function BirkenstockPage() {
                       Every figure here is STILL TO COME (requested − arrived), so a month totals up into exactly what the FULL switch
                       adds to the Stock cell above. A delivery that has fully landed is therefore absent: those units are on the shelf,
                       and the grid row above is already counting them. */}
+                  {/* ---- SOLD BY SIZE, FIRST LINE OF THE DROP-DOWN (owner, 2026-11-09) ----------------------------------------------
+                      "Switching between Sold and Full and struggling to see what I should be ordering." So the open style shows what
+                      each size SOLD in 365 days directly under its stock (blue, as in Sold mode; no hover). ALWAYS Sold,
+                      whatever the switch says — on the Sold switch it repeats the row above, accepted (owner: "Always have it as
+                      sold, even if duplicate"; the Sold switch may go later). Same payload (soldSizes) — no fetch. Display only. */}
+                  {open && (
+                    <tr className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50 text-slate-600">
+                      <td className="px-2 py-1 text-right text-[11px] uppercase tracking-wide text-slate-400">Sold</td>
+                      <td className="truncate px-2 py-1 text-xs font-semibold text-sky-700">Last 365 days</td>
+                      <td className="px-2 py-1" />
+                      <td className="px-2 py-1" />
+                      <td className={`${STOCK_PAD} py-1`} />
+                      {sizeCols.map((sz, i) => {
+                        const q = sz in r.liveSizes ? (r.soldSizes ?? {})[sz] || 0 : 0;
+                        return (
+                          <td
+                            key={sz}
+                            className={`py-1.5 text-center text-sm font-semibold tabular-nums text-sky-700 ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
+                          >
+                            {q ? q : ''}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  )}
                   {open && plannerBusy && plannerMonths.length === 0 && (
                     <tr className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50">
                       <td colSpan={5 + sizeCols.length} className="px-8 py-2 text-xs text-slate-400">Loading…</td>
@@ -1055,7 +1090,7 @@ export default function BirkenstockPage() {
                   {open && plannerMonths.map((m) => (
                     <tr key={m.due} className="[&>td]:border-b [&>td]:border-slate-100 bg-slate-50 text-slate-600">
                       <td className="px-2 py-1 text-right text-[11px] uppercase tracking-wide text-slate-400">Due</td>
-                      <td className="truncate px-2 py-1 text-xs font-medium text-slate-700">{monthLabel(m.due)}</td>
+                      <td className="truncate px-2 py-1 text-xs text-slate-400">{monthLabel(m.due)}</td>
                       <td className="px-2 py-1" />
                       <td className="px-2 py-1" />
                       {/* The month's total sits under STOCK, the column it ADDS TO — and so it is drawn in LIVE only (owner,
@@ -1063,13 +1098,13 @@ export default function BirkenstockPage() {
                           between what you have and what you will have. In FULL that seven is already inside the number above it, and
                           printing it again beneath invites it to be added twice. The per-size figures stay in both modes — they are
                           the month's SHAPE, which no single total can carry. */}
-                      <td className={`${STOCK_PAD} py-1 text-right text-xs font-semibold tabular-nums text-slate-700`}>
+                      <td className={`${STOCK_PAD} py-1 text-right text-xs tabular-nums text-slate-400`}>
                         {mode !== 'full' && <span className="inline-block px-1.5">+{m.units}</span>}
                       </td>
                       {sizeCols.map((sz, i) => (
                         <td
                           key={sz}
-                          className={`py-1 text-center text-xs tabular-nums text-slate-600 ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
+                          className={`py-1 text-center text-xs tabular-nums text-slate-400 ${cellPad(i, sizeCols.length)} ${sizeBand(i)} ${sizeEdge(i)}`}
                         >
                           {m.sizes[sz] ? m.sizes[sz] : ''}
                         </td>
