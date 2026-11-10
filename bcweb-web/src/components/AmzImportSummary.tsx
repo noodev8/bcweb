@@ -362,7 +362,7 @@ export function AmzReconciliation({ rec, title }: { rec: Summary['reconciliation
             <div className="rounded-lg border border-slate-200 bg-white p-4">
               <div className={`text-lg font-semibold tabular-nums ${rec.goneFromAmazonCount ? 'text-slate-900' : 'text-slate-400'}`}>{num(rec.goneFromAmazonCount)}</div>
               <div className="text-xs text-slate-500">gone from Amazon</div>
-              <p className="mt-1 text-[11px] text-slate-400">In our records but absent from this report — the listing has gone. Stock is zeroed, the SKU is kept.</p>
+              <p className="mt-1 text-[11px] text-slate-400">Left over from a product we deleted in BCWEB: its Amazon SKUs are no longer in this report, so Amazon has removed them. Their stock is zeroed and the rows are kept. Products still in BCWEB are not counted here, even with zero Amazon stock.</p>
               <Disclosure label="show" count={rec.goneFromAmazon.length}>
                 <ul className="space-y-0.5 font-mono text-[11px]">
                   {rec.goneFromAmazon.slice(0, 50).map((g) => <li key={g.code}>{g.code}</li>)}

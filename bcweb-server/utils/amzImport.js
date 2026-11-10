@@ -358,8 +358,13 @@ async function planStock(db, stockRows, ref) {
   const out = { rows: stockRows.length, matched: 0, unknownSku: [], virtual: [], goneFromAmazon: [], liveUnits: 0, totalUnits: 0, manualPrices: [] };
   if (stockRows.length === 0) return out;
 
-  // What amzfeed holds today — any code missing from this report has gone from Amazon (goneFromAmazon, below).
-  const current = await db.query(`SELECT code, sku FROM amzfeed`);
+  // What amzfeed holds today, for the "gone from Amazon" bucket. Only rows whose STYLE is no longer in skusummary are reported (2026-11-10,
+  // owner): a size we still hold with zero Amazon stock is not a problem to chase, and counting it every night buried the real ones.
+  // Those rows are still zeroed below (applyStock), so the stock picture is unchanged; only the count and list narrow.
+  const current = await db.query(`
+    SELECT f.code, f.sku FROM amzfeed f
+    WHERE NOT EXISTS (SELECT 1 FROM skusummary s WHERE s.groupid = f.groupid)
+  `);
 
   const seenCodes = new Set();
   for (const row of stockRows) {
