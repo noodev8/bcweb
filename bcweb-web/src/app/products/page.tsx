@@ -811,11 +811,32 @@ function ProductsContent() {
                           onChanged={(shopify) => setDetail((prev) => (prev ? { ...prev, shopify } : prev))}
                         />
                       </div>
-                      {/* Amazon upload file — builds the Seller Central .xlsm for this product (downstream, separate from Shopify). */}
+                      {/* AMAZON (2026-11-10). List on Amazon (FBA) via SP-API; the old Seller Central .xlsm button is the backup behind its
+                          ⋯ (owner: "not in ur face all the time"). Both go once EVERY size with a barcode is on Amazon — green AMZ, i.e. in
+                          amzfeed. Never on grey "sent": an old .xlsm press marks sizes sent even when the file was never uploaded
+                          (72581-00), and hiding on that would leave such a style with no way to list it. */}
                       <div className="mt-4 border-t border-slate-100 pt-4">
-                        <AmazonExport key={detail.groupid} groupid={detail.groupid} sizesCount={detail.sizes.length} />
-                        {/* List on Amazon (FBA) via SP-API (2026-11-10) — the file button above stays as the fallback. */}
-                        <AmazonListFba key={`fba-${detail.groupid}`} groupid={detail.groupid} sizesCount={detail.sizes.length} />
+                        {(() => {
+                          const withBarcode = detail.sizes.filter((s) => s.barcode);
+                          if (withBarcode.length > 0 && withBarcode.every((s) => s.amz === 'on')) {
+                            return (
+                              <div className="flex items-baseline justify-between">
+                                <h3 className="text-xs font-medium uppercase tracking-wide text-slate-400">Amazon</h3>
+                                <span className="text-xs font-medium text-green-700">All sizes on Amazon</span>
+                              </div>
+                            );
+                          }
+                          return (
+                            <AmazonListFba
+                              key={`fba-${detail.groupid}`}
+                              groupid={detail.groupid}
+                              sizesCount={detail.sizes.length}
+                              // Sizes Amazon accepted show the grey "sent" AMZ tag straight away (green once Amazon's FBA read has them).
+                              onListed={(codes) => setDetail((prev) => (prev ? { ...prev, sizes: prev.sizes.map((s) => (codes.includes(s.code) && s.amz !== 'on' ? { ...s, amz: 'sent' } : s)) } : prev))}
+                              backup={<AmazonExport key={detail.groupid} groupid={detail.groupid} sizesCount={detail.sizes.length} quiet />}
+                            />
+                          );
+                        })()}
                       </div>
                     </div>
                   </section>
@@ -831,7 +852,12 @@ function ProductsContent() {
                         sizes={detail.sizes}
                         brand={edit?.brand ?? detail.brand ?? ''}
                         gender={edit?.gender ?? detail.gender ?? ''}
-                        onSaved={(sizes) => setDetail((prev) => (prev ? { ...prev, sizes } : prev))}
+                        onSaved={(sizes) => setDetail((prev) => {
+                          if (!prev) return prev;
+                          // product-sizes doesn't return the Amazon tag — keep each size's from the loaded detail.
+                          const amz = new Map(prev.sizes.map((s) => [s.code, s]));
+                          return { ...prev, sizes: sizes.map((s) => ({ ...s, amz: amz.get(s.code)?.amz ?? null, amzLive: amz.get(s.code)?.amzLive ?? null, amzTotal: amz.get(s.code)?.amzTotal ?? null })) };
+                        })}
                       />
                     </div>
                   </section>

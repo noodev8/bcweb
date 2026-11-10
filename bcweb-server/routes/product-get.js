@@ -109,13 +109,17 @@ router.get('/', async (req, res) => {
     // Ordered by that numeric sequence prefix = the legacy screen's size order.
     const sizeResult = await query(`
       SELECT
-        code,
-        NULLIF(regexp_replace(ean, 'B$', ''), '')        AS barcode,
-        regexp_replace(optionsize, '^[0-9]+--', '')      AS sizedisplay,
-        uksize
-      FROM skumap
-      WHERE groupid = $1 AND COALESCE(deleted, 0) = 0
-      ORDER BY (split_part(optionsize, '--', 1))::int
+        m.code,
+        NULLIF(regexp_replace(m.ean, 'B$', ''), '')      AS barcode,
+        regexp_replace(m.optionsize, '^[0-9]+--', '')    AS sizedisplay,
+        m.uksize,
+        (f.code IS NOT NULL)                             AS on_amz,
+        COALESCE(m.status, '') = '1'                     AS amz_sent,
+        f.amzlive, f.amztotal
+      FROM skumap m
+      LEFT JOIN amzfeed f ON f.code = m.code
+      WHERE m.groupid = $1 AND COALESCE(m.deleted, 0) = 0
+      ORDER BY (split_part(m.optionsize, '--', 1))::int
     `, [groupid]);
 
     // Current sellable stock (total units) — used by the "Delete product" guard (can't delete while stock remains). Per CLAUDE.md,
@@ -131,7 +135,14 @@ router.get('/', async (req, res) => {
       barcode: s.barcode || null,
       sizeDisplay: s.sizedisplay || null,
       // uksize feeds the Google Merchant feed (size / size_system=UK) — carried through so new sizes can populate it.
-      uksize: s.uksize || null
+      uksize: s.uksize || null,
+      // Amazon tag on the Sizes table (2026-11-10, owner: "so if we come back to the page later we dont need to go to amz to check"):
+      //   'on'   = in amzfeed — Amazon's own FBA read has it (added by Update Orders / the nightly report); amzLive/amzTotal = FBA stock
+      //   'sent' = skumap.status '1' but not in amzfeed yet — sent (List on Amazon button, or an old .xlsm press), not seen back yet
+      //   null   = never sent
+      amz: s.on_amz ? 'on' : s.amz_sent ? 'sent' : null,
+      amzLive: s.on_amz ? Number(s.amzlive || 0) : null,
+      amzTotal: s.on_amz ? Number(s.amztotal || 0) : null
     }));
 
     const r = result.rows[0];

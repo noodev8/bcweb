@@ -259,7 +259,11 @@ export interface SaleRow { solddate: string | null; ordertime: string | null; si
 export interface SalesData { rows: SaleRow[]; limit: number; truncated: boolean; }
 export interface FindRow { groupid: string; title: string | null; segment: string | null; now: number | null; }
 export interface ProductRow { groupid: string; title: string | null; }
-export interface ProductSize { code: string; barcode: string | null; sizeDisplay: string | null; uksize: string | null; }
+// amz (2026-11-10, product-get only): 'on' = in amzfeed (Amazon's FBA read has it), 'sent' = sent but not seen back yet, null = never.
+export interface ProductSize {
+  code: string; barcode: string | null; sizeDisplay: string | null; uksize: string | null;
+  amz?: 'on' | 'sent' | null; amzLive?: number | null; amzTotal?: number | null;
+}
 export interface ProductLookups {
   brands: string[]; colours: string[]; productTypes: string[]; segments: string[]; genders: string[]; seasons: string[];
 }

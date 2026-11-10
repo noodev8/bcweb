@@ -64,6 +64,21 @@ function CodingToggle({ value, onChange, brand, gender }: { value: SizeCoding; o
   );
 }
 
+// AMAZON TAG after each barcode (2026-11-10, owner: "so if we come back to the page later we dont need to go to amz to check").
+// Read only, from product-get: green AMZ = in amzfeed (Amazon's own FBA read has it, FBA stock on hover); grey AMZ = sent (List on
+// Amazon, or an old .xlsm press) but not seen back yet — it turns green after the next Update Orders once Amazon has it; nothing = never
+// sent. A fixed-width slot so the barcode boxes line up.
+function AmzTag({ size }: { size?: ProductSize }) {
+  const base = 'inline-block w-10 shrink-0 rounded px-1 py-0.5 text-center text-[10px] font-semibold';
+  if (size?.amz === 'on') {
+    return <span className={`${base} bg-green-100 text-green-700`} title={`On Amazon (FBA) · ${size.amzLive ?? 0} live · ${size.amzTotal ?? 0} total at FBA`}>AMZ</span>;
+  }
+  if (size?.amz === 'sent') {
+    return <span className={`${base} bg-slate-100 text-slate-400`} title="Sent to Amazon — not seen back yet. Turns green after the next Update Orders once Amazon has it.">AMZ</span>;
+  }
+  return <span className="inline-block w-10 shrink-0" />;
+}
+
 // Map API sizes (nulls -> '') into editable rows.
 function toRows(sizes: ProductSize[]): Row[] {
   return sizes.map((s) => ({ code: s.code, sizeDisplay: s.sizeDisplay || '', barcode: s.barcode || '', uksize: s.uksize || '' }));
@@ -81,6 +96,8 @@ const rowsKey = (rows: Row[]) => JSON.stringify(rows.map((r) => [r.code, r.sizeD
 
 export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: { groupid: string; sizes: ProductSize[]; brand?: string; gender?: string; onSaved?: (sizes: ProductSize[]) => void }) {
   const { logout } = useAuth();
+  // The Amazon tag per size comes from the loaded sizes (product-get), keyed by code — the editable rows don't carry it.
+  const amzByCode = new Map(sizes.map((s) => [s.code, s]));
   // Auto-fill: a product with NO sizes (e.g. just created) starts pre-populated with the brand/gender template so there's one less
   // step — the user reviews/tweaks and Saves. A product that already has sizes loads them as-is. Baseline stays the LOADED state
   // (empty for a new product), so an auto-filled grid shows as unsaved until the user saves it.
@@ -245,7 +262,10 @@ export default function SizeEditor({ groupid, sizes, brand, gender, onSaved }: {
                 <td className="px-3 py-1.5">
                   {/* Barcode is a numeric EAN — strip any non-digit as the user types. A full 13-digit entry auto-advances to the
                       next barcode field (see onBarcodeChange); Enter does the same. */}
-                  <input ref={(el) => { barcodeRefs.current[i] = el; }} value={r.barcode} onChange={(e) => onBarcodeChange(i, e.target.value)} onKeyDown={(e) => onBarcodeKeyDown(i, e)} inputMode="numeric" placeholder="—" className={inputCls} />
+                  <div className="flex items-center gap-2">
+                    <input ref={(el) => { barcodeRefs.current[i] = el; }} value={r.barcode} onChange={(e) => onBarcodeChange(i, e.target.value)} onKeyDown={(e) => onBarcodeKeyDown(i, e)} inputMode="numeric" placeholder="—" className={inputCls} />
+                    <AmzTag size={amzByCode.get(r.code)} />
+                  </div>
                 </td>
                 <td className="px-3 py-1.5">
                   {/* This is the customer-facing DISPLAY SIZE, shown verbatim on the public site and across the internal screens.
