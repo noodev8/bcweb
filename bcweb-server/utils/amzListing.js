@@ -167,17 +167,25 @@ async function run(groupid, { commit, who }) {
     }));
   }
 
+  // The bclog rows are ALSO the record Add / Modify reads for its grey "sent" AMZ tag (routes/product-get.js — keep the wording):
+  //   "Listed <groupid> on Amazon as FBA at £x: 37, 38"  marks those sizes sent;
+  //   "Not listed <groupid> on Amazon: 39"               clears them — a press Amazon refused, or a size it can't find, so an old
+  //                                                      grey / amber tag never gets stuck (owner, 2026-11-10: "dont want it stuck").
   const listed = sizes.filter((s) => s.state === 'listed');
-  if (commit && listed.length) {
+  const notListed = sizes.filter((s) => s.state === 'refused' || s.state === 'not_in_catalogue');
+  const short = (list) => list.map((s) => s.code.slice(groupid.length + 1) || s.code).join(', ');
+  if (commit && (listed.length || notListed.length)) {
     const today = londonDate();
     await withTransaction(async (client) => {
       for (const s of listed) {
         await client.query(`UPDATE skumap SET sku = $1, status = '1', updated = $2 WHERE code = $3`, [s.sku, today, s.code]);
       }
-      await writeBcLog(client, {
-        who, section: SECTION,
-        log: `Listed ${groupid} on Amazon as FBA at £${price.toFixed(2)}: ${listed.map((s) => s.code.slice(groupid.length + 1) || s.code).join(', ')}`,
-      });
+      if (listed.length) {
+        await writeBcLog(client, { who, section: SECTION, log: `Listed ${groupid} on Amazon as FBA at £${price.toFixed(2)}: ${short(listed)}` });
+      }
+      if (notListed.length) {
+        await writeBcLog(client, { who, section: SECTION, log: `Not listed ${groupid} on Amazon: ${short(notListed)}` });
+      }
     });
   }
 

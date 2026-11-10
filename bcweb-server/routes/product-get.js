@@ -131,18 +131,24 @@ router.get('/', async (req, res) => {
 
     // Sizes SENT by "List on Amazon (FBA)" — read from its own bclog rows (section 'Amazon Listing', utils/amzListing.js writes
     // "Listed <groupid> on Amazon as FBA at £x: 37, 38, 38.5"). The button's log is the one trustworthy record of a send: the old .xlsm
-    // button stamps skumap.status when the file is MADE, uploaded or not, and writes no such row. Latest send per size wins.
+    // button stamps skumap.status when the file is MADE, uploaded or not, and writes no such row. Read in time order: a "Listed" row
+    // marks its sizes sent (latest wins), a later "Not listed <groupid> on Amazon: 39" row (a press Amazon refused / couldn't find)
+    // clears them, so a grey / amber tag is never stuck.
     const sentResult = await query(`
       SELECT log, created_at FROM bclog
-      WHERE section = 'Amazon Listing' AND log LIKE 'Listed ' || $1 || ' on Amazon %'
+      WHERE section = 'Amazon Listing'
+        AND (log LIKE 'Listed ' || $1 || ' on Amazon %' OR log LIKE 'Not listed ' || $1 || ' on Amazon%')
       ORDER BY created_at
     `, [groupid]);
     const sentAt = new Map(); // code -> Date
     for (const row of sentResult.rows) {
-      if (!row.log.startsWith(`Listed ${groupid} on Amazon `)) continue; // LIKE treats _ in a groupid as a wildcard
+      // Exact prefix check: LIKE treats _ in a groupid as a wildcard.
+      const isListed = row.log.startsWith(`Listed ${groupid} on Amazon `);
+      if (!isListed && !row.log.startsWith(`Not listed ${groupid} on Amazon`)) continue;
       const list = row.log.slice(row.log.lastIndexOf(': ') + 2);
       for (const suffix of list.split(', ').map((x) => x.trim()).filter(Boolean)) {
-        sentAt.set(suffix.startsWith(`${groupid}-`) ? suffix : `${groupid}-${suffix}`, row.created_at);
+        const code = suffix.startsWith(`${groupid}-`) ? suffix : `${groupid}-${suffix}`;
+        if (isListed) sentAt.set(code, row.created_at); else sentAt.delete(code);
       }
     }
 
