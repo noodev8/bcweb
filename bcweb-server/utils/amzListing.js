@@ -156,13 +156,15 @@ async function run(groupid, { commit, who }) {
   const { price, sizes } = await loadStyle(groupid);
   await findAsins(sizes);
 
-  let first = true;
-  for (const s of sizes.filter((x) => !x.state)) {
-    if (!first) await sp.sleep(250);
-    first = false;
-    const r = await putSize(s, price, !commit);
-    s.state = r.ok ? (commit ? 'listed' : LISTABLE) : 'refused';
-    s.message = r.message;
+  // In batches of 5 at once (putListingsItem allows ~5 a second): one at a time took ~3 s a size, past the screen's wait (2026-11-10).
+  const open = sizes.filter((x) => !x.state);
+  for (let i = 0; i < open.length; i += 5) {
+    if (i) await sp.sleep(1000);
+    await Promise.all(open.slice(i, i + 5).map(async (s) => {
+      const r = await putSize(s, price, !commit);
+      s.state = r.ok ? (commit ? 'listed' : LISTABLE) : 'refused';
+      s.message = r.message;
+    }));
   }
 
   const listed = sizes.filter((s) => s.state === 'listed');

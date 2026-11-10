@@ -1132,7 +1132,8 @@ export interface AmzListSize {
 export interface AmzListData { groupid: string; committed: boolean; price: number; sizes: AmzListSize[]; counts: Partial<Record<AmzListState, number>> }
 export function amazonList(groupid: string, commit: boolean) {
   return request<AmzListData>(
-    { url: '/amz-list', method: 'POST', data: { groupid, commit } },
+    // Amazon validates each size (~3 s each, 5 at a time) — past the shared 15s timeout.
+    { url: '/amz-list', method: 'POST', data: { groupid, commit }, timeout: 120000 },
     (b) => ({ groupid: b.groupid, committed: b.committed, price: b.price, sizes: b.sizes || [], counts: b.counts || {} })
   );
 }
