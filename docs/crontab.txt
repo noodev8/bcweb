@@ -35,9 +35,6 @@
 # 2:45 AM - Count the stock for the BCWEB stock position screen
 45 1 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/stock-daily.js
 
-# 3:00 AM - Shopify stock, full check (every live size against Shopify — catches hand edits in Shopify admin; after the stock count)
-0 2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/shopify-stock-sync.js --full --commit
-
 # 3:30 AM - Google Merchant feed (after prices/inventory updated)
 30 2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/merchant-feed.js --upload
 

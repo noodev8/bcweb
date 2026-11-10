@@ -6,15 +6,17 @@ Purpose: Bring Amazon's report-based data in by itself every night, instead of t
 uploading them on Update Amazon (owner, 2026-11-09 — the uploads all came off that screen; it is now a status page). The name is
 kept from its first job (inventory) so the crontab line didn't change.
 
-THREE STEPS, one after another, EACH ITS OWN TRANSACTION AND STATUS (amz_api_sync job) — a failure in one never stops the others:
+FOUR STEPS, one after another, EACH ITS OWN TRANSACTION AND STATUS (amz_api_sync job) — a failure in one never stops the others:
   1 INVENTORY  GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA ("Manage FBA Inventory") -> utils/amzImportApply.applyInventoryReport:
                prices changed in Seller Central -> amz_price_log 'Manual' (seen next morning — owner OK'd), amzfeed price + stock,
                new FBA SKUs, zeros, the size history — the FULL stock check (Update Orders' quick read only sees changes).
                Keeps the reconciliation (unknown SKUs + Delete file) for the status page.                  job 'inventory_report'
-  2 RETURNS    GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA, the last 30 days EVERY night -> planReturns + insertSales: negative sales
+  2 SHOPIFY    every live size against Shopify (utils/shopifyStockSync.js --full), right after the FBA read so it uses tonight's
+               Amazon figures. Catches hand edits in Shopify admin.                                       job 'shopify_stock_full'
+  3 RETURNS    GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA, the last 30 days EVERY night -> planReturns + insertSales: negative sales
                rows with the real cost of the return (utils/amzProfit.js → returnProfit). Keyed on Amazon's license-plate-number,
                so a return read on 30 nights is booked ONCE.                                              job 'returns_report'
-  3 FEES       GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA (Fee Preview) — ONLY when the last good read is 28+ days old (owner: "only really
+  4 FEES       GET_FBA_ESTIMATED_FBA_FEES_TXT_DATA (Fee Preview) — ONLY when the last good read is 28+ days old (owner: "only really
                needed once a month. why waste time and bother the amazon api"; a SKU with no fee yet uses the £3.39 fallback, so
                nothing is missed meanwhile), or with --fees. -> planFees + applyFees: skumap.fbafee where it changed; a SKU
                missing from the report keeps its fee. A failed monthly read is simply tried again the next night.  job 'fees_report'
@@ -28,7 +30,7 @@ Usage (from bcweb-server/):
     node scripts/amz-inventory-nightly.js                   dry run — fetch + plan every due step, print what it would do
     node scripts/amz-inventory-nightly.js --commit          the cron line
     node scripts/amz-inventory-nightly.js --commit --fees   force the fee read (e.g. after Amazon changes its fee rates)
-    --only=inventory|returns|fees                           run one step
+    --only=inventory|shopify|returns|fees                   run one step
 =======================================================================================================================================
 */
 
@@ -41,6 +43,7 @@ const { buildPlan } = require('../utils/amzImport');
 const { applyInventoryReport, insertSales, applyFees } = require('../utils/amzImportApply');
 const { STOCK_LOCK, recordError } = require('../utils/amzStockSync');
 const { shapePlan } = require('../utils/amzImportShape');
+const { syncShopifyStock } = require('../utils/shopifyStockSync');
 const logger = require('../utils/logger');
 
 const commit = process.argv.includes('--commit');
@@ -88,6 +91,19 @@ async function stepInventory() {
   });
 }
 
+// ---- 1b. SHOPIFY STOCK, FULL CHECK (added 2026-11-10) -------------------------------------------------------------------------
+// Right after the FBA read above, so Shopify is set from tonight's Amazon figures. Checks EVERY live size against Shopify
+// (utils/shopifyStockSync.js full) — catches hand edits in Shopify admin, which the everyday Update Orders run doesn't see.
+// Writes its own status (job shopify_stock_full); a size Shopify refuses fails the step, the others still run.
+async function stepShopify() {
+  const r = await syncShopifyStock({ commit, full: true, by: 'cron' });
+  if (!commit) return `shopify (dry): ${r.checked} sizes checked, ${r.changes.length} would change`;
+  const note = `${r.checked} sizes checked, ${r.sent.length} set, ${r.stale.length} moved meanwhile, ${r.failed.length} failed`;
+  if (r.failed.length) throw new Error(`${note} — ${r.failed.slice(0, 3).map((f) => `${f.code}: ${f.error}`).join('; ')}`);
+  await withTransaction((client) => saveOk(client, 'shopify_stock_full', note, null));
+  return `shopify: ${note}`;
+}
+
 // ---- 2. RETURNS -----------------------------------------------------------------------------------------------------------------
 async function stepReturns() {
   const dataStartTime = new Date(Date.now() - RETURNS_DAYS * 24 * 3600 * 1000).toISOString();
@@ -133,7 +149,7 @@ async function stepFees() {
 (async () => {
   const t = Date.now();
   console.log(`Amazon nightly — ${commit ? 'WRITING' : 'dry run (nothing written)'}`);
-  const steps = [['inventory', 'inventory_report', stepInventory], ['returns', 'returns_report', stepReturns], ['fees', 'fees_report', stepFees]];
+  const steps = [['inventory', 'inventory_report', stepInventory], ['shopify', 'shopify_stock_full', stepShopify], ['returns', 'returns_report', stepReturns], ['fees', 'fees_report', stepFees]];
   const lines = [];
   let failed = 0;
   for (const [name, job, run] of steps) {
