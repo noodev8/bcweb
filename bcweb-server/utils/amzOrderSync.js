@@ -174,10 +174,13 @@ async function writeAmazonOrders(client, fetched, { commit = true } = {}) {
     ...fetched.skipped.map((s) => `Not booked yet: ${s}`),
   ];
   return {
-    newOrders,
+    // 0 on purpose: the button and the headline count only orders that need PACKING (owner, 2026-11-10). Amazon FBA orders are
+    // shipped by Amazon, so their count is kept in detail + the channel log, never in the total.
+    newOrders: 0,
     notes,
     log: `${newOrders} new, ${plan.insert.length} sales, ${cancelPlan.rows} cancelled`,
     detail: {
+      amazonNewOrders: newOrders,
       ordersRead: fetched.ordersRead, alreadyBooked: fetched.alreadyBooked, sales: plan.insert.length, inserted,
       duplicate: plan.duplicate, unknownSku: plan.unknownSku.length, cancelled: cancelPlan.rows, retracted,
       lines: plan.insert.map((r) => `${r.ordernum} ${r.code} x${r.qty} £${r.soldprice.toFixed(2)} ${r.solddate} ${r.ordertime}`),

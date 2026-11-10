@@ -43,7 +43,8 @@ fulfil step), add one line below, add its sales.channel code to the Sales screen
 allocates over orderstatus as a whole once they all have.
 
 AMAZON (2026-11-09, utils/amzOrderSync.js): a channel that writes SALES ONLY — FBA orders need no picking, so no orderstatus rows,
-no fulfil step. Counted in the headline (owner: "Even though we dont have to pack them, its good to see").
+no fulfil step. NOT counted in the headline since 2026-11-10 (owner: the button shows only orders to pack); its count sits in
+detail.amazonNewOrders and the channel log.
 =======================================================================================================================================
 */
 
