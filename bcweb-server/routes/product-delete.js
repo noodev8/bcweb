@@ -13,10 +13,12 @@ Purpose: PERMANENTLY delete a product (one groupid) — the legacy "Delete" butt
              - skusummary, title, attributes, skumap — the four tables product-create / product-sizes write. One transaction.
              - shopify_description (cached Shopify description, keyed by handle) — same transaction.
              - product_images rows — same transaction.
+             - amzfeed rows for the style (2026-11-10) — same transaction. Guarded: refused with HAS_FBA_STOCK while FBA stock is
+               still on Amazon. Without this the nightly FBA import reported these SKUs as "gone from Amazon" forever.
              - the image files on one.com, main + gallery (best-effort cleanup, like a re-image).
            KEPT (owner rule — "keep all sales and report data"):
              - sales / offlinesold / shopifysold / performance* / snapshots / price_change_log / amz_price_log / shopprices… (price_track was dropped 2026-11-08)
-             - live-stock & operational tables (localstock, incoming_stock, orderstatus, amzfeed, …) — owned by the owner's Python + nightly
+             - live-stock & operational tables (localstock, incoming_stock, orderstatus, …) — owned by the owner's Python + nightly
                jobs, not this app; by the time a product is deleted it's expected to be clear of stock.
 
          SAFETY: a product is easy to nuke by mistake, so the client makes the operator TYPE the Group ID to confirm. We re-check that
@@ -45,6 +47,7 @@ Return Codes:
 "MISSING_FIELDS"          // groupid or confirm missing
 "CONFIRM_MISMATCH"        // confirm != groupid (the typed value didn't match)
 "HAS_STOCK"               // still has sellable stock — clear it physically first (carries `units`)
+"HAS_FBA_STOCK"           // still has FBA stock on Amazon — clear it at Amazon first (carries `units`)
 "NOT_FOUND"               // no such product
 "SHOPIFY_DELETE_FAILED"   // the Shopify listing couldn't be removed — DB left intact, operator can retry
 "UNAUTHORIZED"
@@ -112,6 +115,17 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'HAS_STOCK', units, message: `This product still has ${units} in stock — clear the local stock before deleting.` });
     }
 
+    // FBA GUARD (2026-11-10): the same rule for Amazon. amzfeed's live/total columns are FBA stock read from Amazon. A style with FBA
+    // stock still on Amazon must not lose its amzfeed rows here (that would hide the stock from BCWEB), so refuse until it's cleared.
+    const fbaRes = await query(`
+      SELECT COALESCE(SUM(GREATEST(COALESCE(amzlive, 0), 0) + GREATEST(COALESCE(amztotal, 0), 0)), 0)::int AS fba
+      FROM amzfeed WHERE groupid = $1
+    `, [groupid]);
+    const fbaUnits = fbaRes.rows[0].fba;
+    if (fbaUnits > 0) {
+      return res.json({ return_code: 'HAS_FBA_STOCK', units: fbaUnits, message: `This product still has FBA stock on Amazon (${fbaUnits}) — clear it at Amazon before deleting.` });
+    }
+
     // 1) SHOPIFY FIRST — remove the live listing so deleting our rows can never orphan it. Skip if Shopify isn't configured (nothing we
     //    can do; the DB delete still proceeds). A real API failure aborts the whole delete with the DB untouched, so the operator retries.
     let shopifyDeleted = false;
@@ -134,6 +148,10 @@ router.post('/', async (req, res) => {
       await client.query(`DELETE FROM title      WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM skusummary WHERE groupid = $1`, [groupid]);
       await client.query(`DELETE FROM product_images WHERE groupid = $1`, [groupid]);
+      // amzfeed (2026-11-10): the Amazon listing rows for this style. The team deletes a finished style here and removes the SKUs
+      // from Amazon later on its own schedule. Without this, the nightly FBA import reads the rows as "gone from Amazon" forever.
+      // Guarded above (no FBA stock). Price history lives in amz_price_log / sales, which are kept.
+      await client.query(`DELETE FROM amzfeed WHERE groupid = $1`, [groupid]);
       // shopify_description (cached Shopify body HTML) is keyed by HANDLE, not groupid — handles are unique per product. Skip on a blank
       // handle so we never match other blank-handle rows.
       if (handle) {
