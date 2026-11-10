@@ -129,6 +129,23 @@ router.get('/', async (req, res) => {
     `, [groupid]);
     const stock = stockResult.rows[0].units;
 
+    // Sizes SENT by "List on Amazon (FBA)" — read from its own bclog rows (section 'Amazon Listing', utils/amzListing.js writes
+    // "Listed <groupid> on Amazon as FBA at £x: 37, 38, 38.5"). The button's log is the one trustworthy record of a send: the old .xlsm
+    // button stamps skumap.status when the file is MADE, uploaded or not, and writes no such row. Latest send per size wins.
+    const sentResult = await query(`
+      SELECT log, created_at FROM bclog
+      WHERE section = 'Amazon Listing' AND log LIKE 'Listed ' || $1 || ' on Amazon %'
+      ORDER BY created_at
+    `, [groupid]);
+    const sentAt = new Map(); // code -> Date
+    for (const row of sentResult.rows) {
+      if (!row.log.startsWith(`Listed ${groupid} on Amazon `)) continue; // LIKE treats _ in a groupid as a wildcard
+      const list = row.log.slice(row.log.lastIndexOf(': ') + 2);
+      for (const suffix of list.split(', ').map((x) => x.trim()).filter(Boolean)) {
+        sentAt.set(suffix.startsWith(`${groupid}-`) ? suffix : `${groupid}-${suffix}`, row.created_at);
+      }
+    }
+
     const sizes = sizeResult.rows.map((s) => ({
       code: s.code,
       barcode: s.barcode || null,
@@ -137,11 +154,12 @@ router.get('/', async (req, res) => {
       uksize: s.uksize || null,
       // Amazon tag on the Sizes table (2026-11-10, owner: "so if we come back to the page later we dont need to go to amz to check"):
       //   'on'   = in amzfeed — Amazon's own FBA read has it (added by Update Orders / the nightly report); amzLive/amzTotal = FBA stock
+      //   'sent' = List on Amazon (FBA) sent it (its bclog row, above) but it isn't in amzfeed yet; amzSentAt = when
       //   null   = not on Amazon
-      // No 'sent' from the DB: skumap.status '1' is stamped by the OLD .xlsm button the moment the file is MADE, uploaded or not —
-      // 147 live sizes carry it without being on Amazon (72581-00, pressed 2026-10-27, never uploaded). The grey 'sent' tag is set
-      // only on the page, right after List on Amazon (FBA).
-      amz: s.on_amz ? 'on' : null,
+      // Never 'sent' from skumap.status '1': the OLD .xlsm button stamps it the moment the file is MADE, uploaded or not — 147 live
+      // sizes carry it without being on Amazon (72581-00, pressed 2026-10-27, never uploaded).
+      amz: s.on_amz ? 'on' : sentAt.has(s.code) ? 'sent' : null,
+      amzSentAt: !s.on_amz && sentAt.has(s.code) ? new Date(sentAt.get(s.code)).toISOString() : null,
       amzLive: s.on_amz ? Number(s.amzlive || 0) : null,
       amzTotal: s.on_amz ? Number(s.amztotal || 0) : null
     }));

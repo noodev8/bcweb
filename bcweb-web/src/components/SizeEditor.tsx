@@ -66,16 +66,25 @@ function CodingToggle({ value, onChange, brand, gender }: { value: SizeCoding; o
 
 // AMAZON TAG after each barcode (2026-11-10, owner: "so if we come back to the page later we dont need to go to amz to check").
 // Read only, from product-get: green AMZ = in amzfeed (Amazon's own FBA read has it, FBA stock on hover); nothing = not on Amazon.
-// Grey AMZ = just sent by List on Amazon (FBA) on this page — set by the page only, never from the DB (the old .xlsm button stamps
-// skumap.status when the file is MADE, uploaded or not). It turns green after the next Update Orders once Amazon has it.
-// A fixed-width slot so the barcode boxes line up.
+// Grey AMZ = sent by List on Amazon (FBA) — from that button's own log rows, never skumap.status (the old .xlsm button stamps it when
+// the file is MADE, uploaded or not) — and not confirmed by Amazon yet; it turns green after the next Update Orders once Amazon has it.
+// Still unconfirmed after SENT_STALE_DAYS = AMBER (owner, 2026-11-10), so a listing that quietly failed on Amazon's side doesn't sit
+// grey for ever. A fixed-width slot so the barcode boxes line up.
+const SENT_STALE_DAYS = 2;
 function AmzTag({ size }: { size?: ProductSize }) {
   const base = 'inline-block w-10 shrink-0 rounded px-1 py-0.5 text-center text-[10px] font-semibold';
   if (size?.amz === 'on') {
     return <span className={`${base} bg-green-100 text-green-700`} title={`On Amazon (FBA) · ${size.amzLive ?? 0} live · ${size.amzTotal ?? 0} total at FBA`}>AMZ</span>;
   }
   if (size?.amz === 'sent') {
-    return <span className={`${base} bg-slate-100 text-slate-400`} title="Sent to Amazon — not seen back yet. Turns green after the next Update Orders once Amazon has it.">AMZ</span>;
+    const at = size.amzSentAt ? new Date(size.amzSentAt) : null;
+    const when = at ? at.toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'just now';
+    const stale = at !== null && Date.now() - at.getTime() > SENT_STALE_DAYS * 86400000;
+    return stale ? (
+      <span className={`${base} bg-amber-100 text-amber-700`} title={`Sent to Amazon ${when} but still not seen back — check it in Seller Central (Manage All Inventory).`}>AMZ</span>
+    ) : (
+      <span className={`${base} bg-slate-100 text-slate-400`} title={`Sent to Amazon ${when} — not seen back yet. Turns green after the next Update Orders once Amazon has it.`}>AMZ</span>
+    );
   }
   return <span className="inline-block w-10 shrink-0" />;
 }
