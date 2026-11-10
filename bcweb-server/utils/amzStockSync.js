@@ -48,8 +48,35 @@ function isConfigured() {
   return Boolean(process.env.AMZ_SP_CLIENT_ID && process.env.AMZ_SP_CLIENT_SECRET && process.env.AMZ_SP_REFRESH_TOKEN);
 }
 
-/** Every inventory summary (changed since startDateTime when given), normalised. */
-async function fetchInventorySummaries({ startDateTime, onPage } = {}) {
+// NEWLY LISTED SIZES (2026-11-10). A brand-new FBA SKU holding 0 has a BLANK lastUpdatedTime on Amazon, so the quick read ("changed
+// since") never returns it — checked on M9502-42-019 the day "List on Amazon (FBA)" (utils/amzListing.js) first ran: FBA, FNSKU, offer
+// all done on Amazon, still not in amzfeed. So the quick read also asks Amazon BY SKU for every size SENT in the last PENDING_DAYS
+// (skumap.status '1' + sku, stamped by that button — or by the old .xlsm button, harmless: a SKU Amazon doesn't have just isn't
+// returned) that isn't in amzfeed yet. Once Amazon has it as FBA it comes back with its FNSKU and is added like any new SKU.
+const PENDING_DAYS = 14;
+const SKUS_PER_CALL = 50; // getInventorySummaries takes up to 50 sellerSkus
+
+async function pendingSkus(db = { query }) {
+  const r = await db.query(
+    `SELECT m.sku FROM skumap m LEFT JOIN amzfeed f ON f.code = m.code
+      WHERE f.code IS NULL AND COALESCE(m.deleted, 0) = 0 AND m.status = '1' AND NULLIF(TRIM(m.sku), '') IS NOT NULL
+        AND m.updated ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}' AND LEFT(m.updated, 10)::date >= CURRENT_DATE - $1::int`,
+    [PENDING_DAYS]
+  );
+  return r.rows.map((x) => x.sku.trim());
+}
+
+async function fetchPending(skus) {
+  const rows = [];
+  for (let i = 0; i < skus.length; i += SKUS_PER_CALL) {
+    if (i) await sp.sleep(PAGE_PAUSE_MS);
+    rows.push(...await fetchInventorySummaries({ sellerSkus: skus.slice(i, i + SKUS_PER_CALL) }));
+  }
+  return rows;
+}
+
+/** Every inventory summary (changed since startDateTime, or just the given sellerSkus, when given), normalised. */
+async function fetchInventorySummaries({ startDateTime, sellerSkus, onPage } = {}) {
   const rows = [];
   let nextToken;
   let page = 0;
@@ -60,7 +87,8 @@ async function fetchInventorySummaries({ startDateTime, onPage } = {}) {
       granularityId: sp.marketplaceId(),
       marketplaceIds: sp.marketplaceId(),
     };
-    if (startDateTime) q.startDateTime = startDateTime;
+    if (sellerSkus) q.sellerSkus = sellerSkus;
+    else if (startDateTime) q.startDateTime = startDateTime;
     if (nextToken) q.nextToken = nextToken;
     const res = await sp.spGet('/fba/inventory/v1/summaries', q);
     for (const r of (res && res.payload && res.payload.inventorySummaries) || []) {
@@ -191,8 +219,19 @@ async function syncAmzStock({ by = 'cron', full = false, commit = true, onPage }
   const since = full ? null : new Date(new Date(state.cursor_at).getTime() - OVERLAP_MS).toISOString();
 
   let rows;
+  let pending = 0;
   try {
     rows = await fetchInventorySummaries({ startDateTime: since, onPage });
+    if (!full) {
+      // Newly listed sizes the "changed since" read can't see (see PENDING_DAYS). The full read already has every SKU.
+      const have = new Set(rows.map((r) => r.sku));
+      const skus = (await pendingSkus()).filter((s) => !have.has(s));
+      if (skus.length) {
+        const found = await fetchPending(skus);
+        pending = found.length;
+        rows = rows.concat(found);
+      }
+    }
   } catch (err) {
     if (commit) await recordError(JOB, err.message);
     throw err;
@@ -202,6 +241,7 @@ async function syncAmzStock({ by = 'cron', full = false, commit = true, onPage }
     mode: full ? 'full' : 'quick',
     since,
     read: rows.length,
+    pendingFound: pending,   // of `read`: newly listed sizes found by asking by SKU
     matched: plan.matched,
     unknown: plan.unknown,
     virtual: plan.virtual,
