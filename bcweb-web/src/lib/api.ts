@@ -259,7 +259,8 @@ export interface SaleRow { solddate: string | null; ordertime: string | null; si
 export interface SalesData { rows: SaleRow[]; limit: number; truncated: boolean; }
 export interface FindRow { groupid: string; title: string | null; segment: string | null; now: number | null; }
 export interface ProductRow { groupid: string; title: string | null; }
-// amz (2026-11-10, product-get only): 'on' = in amzfeed (Amazon's FBA read has it), 'sent' = sent but not seen back yet, null = never.
+// amz (2026-11-10, product-get only): 'on' = in amzfeed (Amazon's FBA read has it), null = not. 'sent' is set only on the page,
+// right after List on Amazon (FBA) — never from the DB (the old .xlsm stamps skumap.status even when the file isn't uploaded).
 export interface ProductSize {
   code: string; barcode: string | null; sizeDisplay: string | null; uksize: string | null;
   amz?: 'on' | 'sent' | null; amzLive?: number | null; amzTotal?: number | null;

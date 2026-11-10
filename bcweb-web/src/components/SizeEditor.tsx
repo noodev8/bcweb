@@ -65,9 +65,10 @@ function CodingToggle({ value, onChange, brand, gender }: { value: SizeCoding; o
 }
 
 // AMAZON TAG after each barcode (2026-11-10, owner: "so if we come back to the page later we dont need to go to amz to check").
-// Read only, from product-get: green AMZ = in amzfeed (Amazon's own FBA read has it, FBA stock on hover); grey AMZ = sent (List on
-// Amazon, or an old .xlsm press) but not seen back yet — it turns green after the next Update Orders once Amazon has it; nothing = never
-// sent. A fixed-width slot so the barcode boxes line up.
+// Read only, from product-get: green AMZ = in amzfeed (Amazon's own FBA read has it, FBA stock on hover); nothing = not on Amazon.
+// Grey AMZ = just sent by List on Amazon (FBA) on this page — set by the page only, never from the DB (the old .xlsm button stamps
+// skumap.status when the file is MADE, uploaded or not). It turns green after the next Update Orders once Amazon has it.
+// A fixed-width slot so the barcode boxes line up.
 function AmzTag({ size }: { size?: ProductSize }) {
   const base = 'inline-block w-10 shrink-0 rounded px-1 py-0.5 text-center text-[10px] font-semibold';
   if (size?.amz === 'on') {

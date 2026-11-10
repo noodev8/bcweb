@@ -114,7 +114,6 @@ router.get('/', async (req, res) => {
         regexp_replace(m.optionsize, '^[0-9]+--', '')    AS sizedisplay,
         m.uksize,
         (f.code IS NOT NULL)                             AS on_amz,
-        COALESCE(m.status, '') = '1'                     AS amz_sent,
         f.amzlive, f.amztotal
       FROM skumap m
       LEFT JOIN amzfeed f ON f.code = m.code
@@ -138,9 +137,11 @@ router.get('/', async (req, res) => {
       uksize: s.uksize || null,
       // Amazon tag on the Sizes table (2026-11-10, owner: "so if we come back to the page later we dont need to go to amz to check"):
       //   'on'   = in amzfeed — Amazon's own FBA read has it (added by Update Orders / the nightly report); amzLive/amzTotal = FBA stock
-      //   'sent' = skumap.status '1' but not in amzfeed yet — sent (List on Amazon button, or an old .xlsm press), not seen back yet
-      //   null   = never sent
-      amz: s.on_amz ? 'on' : s.amz_sent ? 'sent' : null,
+      //   null   = not on Amazon
+      // No 'sent' from the DB: skumap.status '1' is stamped by the OLD .xlsm button the moment the file is MADE, uploaded or not —
+      // 147 live sizes carry it without being on Amazon (72581-00, pressed 2026-10-27, never uploaded). The grey 'sent' tag is set
+      // only on the page, right after List on Amazon (FBA).
+      amz: s.on_amz ? 'on' : null,
       amzLive: s.on_amz ? Number(s.amzlive || 0) : null,
       amzTotal: s.on_amz ? Number(s.amztotal || 0) : null
     }));
