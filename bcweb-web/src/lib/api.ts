@@ -1121,6 +1121,22 @@ export function generateAmazonUpload(groupid: string) {
   );
 }
 
+// List on Amazon (FBA), 2026-11-10 (server utils/amzListing.js): commit false = Amazon CHECKS each size (nothing created); true = lists
+// them for real at the RRP, Fulfilled by Amazon, and stamps the accepted sizes in skumap. One style per press.
+// Non-SUCCESS codes: MISSING_FIELDS, NOT_FOUND, INVALID_RRP, NO_SIZES, NOT_CONFIGURED, AMAZON_ERROR.
+export type AmzListState = 'on_amazon' | 'no_barcode' | 'not_in_catalogue' | 'ready' | 'listed' | 'refused';
+export interface AmzListSize {
+  code: string; ean: string | null; sku: string; asin: string | null; productType: string | null; title: string | null;
+  state: AmzListState; message: string | null;
+}
+export interface AmzListData { groupid: string; committed: boolean; price: number; sizes: AmzListSize[]; counts: Partial<Record<AmzListState, number>> }
+export function amazonList(groupid: string, commit: boolean) {
+  return request<AmzListData>(
+    { url: '/amz-list', method: 'POST', data: { groupid, commit } },
+    (b) => ({ groupid: b.groupid, committed: b.committed, price: b.price, sizes: b.sizes || [], counts: b.counts || {} })
+  );
+}
+
 // Build the Seller Central .xlsm that DE-LISTS the given SKUs — the counterpart to generateAmazonUpload above, for the zero-stock
 // "on Amazon, unknown to us" listings the Update Amazon import turns up. Writes NOTHING: the server is a pure formatter and the delete
 // only happens when the operator uploads the file to Seller Central. Caller decodes `file` to a Blob to trigger a download.

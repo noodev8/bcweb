@@ -153,6 +153,7 @@ app.use('/product-images-single-ok', require('./routes/product-images-single-ok'
 app.use('/images-missing', require('./routes/images-missing'));               // GET: Missing Images screen (single-image products)
 app.use('/product-shopify', require('./routes/product-shopify')); // toggle Shopify on/off; on enable, push the product via Admin API
 app.use('/product-amazon', require('./routes/product-amazon'));   // produce the Amazon Seller Central upload .xlsm for one groupid
+app.use('/amz-list', require('./routes/amz-list'));               // List on Amazon (FBA) — check, then list one style via SP-API (2026-11-10)
 
 // Product hub (/product) — the product-FIRST front door (owner, 2026-09-22). Read-only: find the style, read the four numbers that
 // decide which screen you actually want, then jump there with the groupid already in hand. Deliberately NOT a replacement for

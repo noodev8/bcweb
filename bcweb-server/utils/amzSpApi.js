@@ -109,6 +109,17 @@ async function call(method, path, { query, body } = {}) {
 
 const spGet = (path, query) => call('GET', path, { query });
 const spPost = (path, body, query) => call('POST', path, { body, query });
+// PUT = Listings Items putListingsItem (2026-11-10, the "List on Amazon (FBA)" work). With query mode=VALIDATION_PREVIEW Amazon only
+// checks the listing and creates nothing.
+const spPut = (path, body, query) => call('PUT', path, { body, query });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-module.exports = { accessToken, spGet, spPost, sleep, marketplaceId: () => config().marketplaceId };
+// AMZ_SP_SELLER_ID = our Merchant Token (Seller Central → Settings → Account Info → Your Merchant Token). The Listings Items API puts it
+// in the URL; nothing else needs it. Optional until a caller asks.
+function sellerId() {
+  const v = (process.env.AMZ_SP_SELLER_ID || '').trim();
+  if (!v) throw new Error('SP-API seller id not configured — add AMZ_SP_SELLER_ID (Merchant Token) to bcweb-server/.env');
+  return v;
+}
+
+module.exports = { accessToken, spGet, spPost, spPut, sleep, marketplaceId: () => config().marketplaceId, sellerId };

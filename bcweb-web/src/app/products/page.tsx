@@ -31,6 +31,7 @@ import ProductGallery from '@/components/ProductGallery';
 import ShopifyToggle from '@/components/ShopifyToggle';
 import ShopifyPushNote from '@/components/ShopifyPushNote';
 import AmazonExport from '@/components/AmazonExport';
+import AmazonListFba from '@/components/AmazonListFba';
 import CopyToNewProduct from '@/components/CopyToNewProduct';
 import DeleteProduct from '@/components/DeleteProduct';
 import {
@@ -62,7 +63,7 @@ function EditSelect({
 
 // MATERIAL (owner, 2026-11-01) — free text, saved to skusummary.material; eBay requires it as "Upper Material". The list suggests eBay's
 // standard words (buyers filter on them); anything else is still accepted.
-const MATERIAL_SUGGESTIONS = ['Leather', 'Suede', 'Nubuck', 'Patent Leather', 'Synthetic', 'Faux Leather', 'Faux Suede', 'Textile', 'Canvas', 'Mesh', 'Rubber', 'Cork'];
+const MATERIAL_SUGGESTIONS = ['Leather', 'Suede', 'Nubuck', 'Patent Leather', 'Synthetic', 'Faux Leather', 'Faux Suede', 'Sheepskin', 'Textile', 'Canvas', 'Mesh', 'Rubber', 'Cork'];
 
 function MaterialInput({ value, onChange, id }: { value: string; onChange: (v: string) => void; id: string }) {
   return (
@@ -813,6 +814,8 @@ function ProductsContent() {
                       {/* Amazon upload file — builds the Seller Central .xlsm for this product (downstream, separate from Shopify). */}
                       <div className="mt-4 border-t border-slate-100 pt-4">
                         <AmazonExport key={detail.groupid} groupid={detail.groupid} sizesCount={detail.sizes.length} />
+                        {/* List on Amazon (FBA) via SP-API (2026-11-10) — the file button above stays as the fallback. */}
+                        <AmazonListFba key={`fba-${detail.groupid}`} groupid={detail.groupid} sizesCount={detail.sizes.length} />
                       </div>
                     </div>
                   </section>
