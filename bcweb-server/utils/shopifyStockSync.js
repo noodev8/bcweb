@@ -17,11 +17,18 @@ THE RULE (same as the Python, minus its dead UK-distributor source — owner, 20
   - capped at 5, as the Python did: Shopify shows "plenty" the same either way, and it keeps the changes (and API calls) down;
   - every size of a style flagged live in BCWEB (skusummary.shopify = 1), matched to Shopify by SKU = our code.
 
+CHANGED SIZES ONLY (2026-11-10, owner: "narrow the Shopify step to changed sizes"). Every run works out the figure for every live size
+(local SQL, cheap), but only checks Shopify for a size whose figure differs from the count Shopify was last CONFIRMED to show
+(`shopify_stock_sent`, one row per size, kept to the live sizes). A size changes when stock moves here — an order, Goods In, a move to
+FBA, an Amazon read — or when a Shopify order not yet imported changes its pending count. Shopify's own count is read per SKU for
+the changed sizes only, not the whole store (~10,000 sizes). Sizes not checked keep their last confirmed count. Drift from a hand edit
+in Shopify admin is NOT seen by the everyday run — the by-hand full check does that (`scripts/shopify-stock-sync.js --full --commit`).
+
 ORDER OF WORK closes the race the Python had (it could set a count straight back up over an order Shopify took mid-run):
-  1. read Shopify's "available" for every variant at our location;
+  1. read Shopify's "available" for the changed sizes (per SKU), and the orders on hand (provisional, to choose those sizes);
   2. THEN read Shopify's unfulfilled orders and keep the ones BCWEB hasn't imported (not in orderstatus) — their pairs aren't in our
      stock figures yet, but Shopify has already taken them off its count;
-  3. THEN work out what each size should show;
+  3. THEN work out what each changed size should show;
   4. send only the sizes that differ, each with compareQuantity = the count read in step 1. If Shopify's count moved since (an order
      landed), Shopify refuses that size and the next run picks it up with the order imported. Nothing is ever forced.
 If the orders in step 2 can't be read, only DECREASES are sent that run (never raise a count without knowing what's on order).
@@ -46,10 +53,11 @@ const BATCH = 100;             // sizes per inventorySetQuantities call
 
 const locationGid = () => `gid://shopify/Location/${config.shopify.locationId}`;
 
-// Every variant on the store with its inventory item and "available" count at our location (null = no stock record there).
-const VARIANTS_QUERY = `
-  query stock($after: String, $loc: ID!) {
-    productVariants(first: 250, after: $after) {
+// Variants matching a list of SKUs, with inventory item and "available" count at our location (null = no stock record there).
+// Read in chunks by SKU search — NOT the whole store (about 10,000 sizes), which was the cost of every run before 2026-11-10.
+const VARIANTS_BY_SKU_QUERY = `
+  query stockBySku($q: String!, $after: String, $loc: ID!) {
+    productVariants(first: 100, after: $after, query: $q) {
       pageInfo { hasNextPage endCursor }
       nodes {
         sku
@@ -58,23 +66,35 @@ const VARIANTS_QUERY = `
     }
   }
 `;
+const SKU_CHUNK = 40;          // SKUs per search query
 
-async function readShopifyStock() {
+const skuClause = (codes) => codes.map((c) => `sku:"${String(c).replace(/["\\]/g, '')}"`).join(' OR ');
+
+async function readShopifyFor(codes) {
   const bySku = new Map();
-  let after = null;
-  do {
-    const data = await shopify.shopifyGraphQL(VARIANTS_QUERY, { after, loc: locationGid() });
-    for (const v of data.productVariants.nodes) {
-      if (!v.sku) continue;                                                      // the gift card — not a stock item
-      const level = v.inventoryItem && v.inventoryItem.inventoryLevel;
-      bySku.set(v.sku, {
-        inventoryItemId: v.inventoryItem ? v.inventoryItem.id : null,
-        available: level && level.quantities.length ? level.quantities[0].quantity : null,
-      });
-    }
-    after = data.productVariants.pageInfo.hasNextPage ? data.productVariants.pageInfo.endCursor : null;
-  } while (after);
+  for (let i = 0; i < codes.length; i += SKU_CHUNK) {
+    const q = skuClause(codes.slice(i, i + SKU_CHUNK));
+    let after = null;
+    do {
+      const data = await shopify.shopifyGraphQL(VARIANTS_BY_SKU_QUERY, { q, after, loc: locationGid() });
+      for (const v of data.productVariants.nodes) {
+        if (!v.sku) continue;
+        const level = v.inventoryItem && v.inventoryItem.inventoryLevel;
+        bySku.set(v.sku, {
+          inventoryItemId: v.inventoryItem ? v.inventoryItem.id : null,
+          available: level && level.quantities.length ? level.quantities[0].quantity : null,
+        });
+      }
+      after = data.productVariants.pageInfo.hasNextPage ? data.productVariants.pageInfo.endCursor : null;
+    } while (after);
+  }
   return bySku;
+}
+
+// The count Shopify was last confirmed to show per size (shopify_stock_sent). Map code -> want.
+async function readConfirmed() {
+  const r = await query(`SELECT code, want FROM shopify_stock_sent`);
+  return new Map(r.rows.map((x) => [x.code, Number(x.want)]));
 }
 
 // Pairs per SKU on open, unfulfilled Shopify orders that BCWEB hasn't imported yet. null = couldn't read (the caller then only lowers).
@@ -115,31 +135,63 @@ async function readOurStock() {
   return r.rows;
 }
 
+// What a size should show: the cap, less pairs on orders Shopify has taken but BCWEB hasn't imported.
+const wantFor = (r, onOrder) => Math.max(Math.min(r.local + r.fba, CAP) - onOrder, 0);
+
 /*
- * planShopifyStock() -> { changes, checked, notOnShopify, noLevel, ordersRead, pendingOrders }
- * READ ONLY. changes = [{ code, inventoryItemId, shopify, want, local, fba, pending }] — only sizes whose Shopify count differs, and
- * with ordersRead false, only the ones that go DOWN.
+ * planShopifyStock({ full }) -> { changes, confirmedNow, checked, unchanged, notOnShopify, noLevel, ordersRead, pendingOrders, liveCodes }
+ * READ ONLY. Only the CHANGED sizes are read from Shopify: a size whose figure equals the count Shopify was last confirmed to show
+ * (shopify_stock_sent) is skipped — `unchanged`. full = true checks every live size (the by-hand full check).
+ *   changes      = [{ code, inventoryItemId, shopify, want, local, fba, pending }] — sizes whose Shopify count differs (with ordersRead
+ *                  false, only the ones that go DOWN)
+ *   confirmedNow = [{ code, want }] — checked and already equal on Shopify
  */
-async function planShopifyStock() {
-  const shop = await readShopifyStock();          // 1. Shopify's counts first …
-  const pending = await readPendingOrders();      // 2. … then what's on order but not imported …
-  const ours = await readOurStock();              // 3. … then ours.
+async function planShopifyStock({ full = false } = {}) {
+  // Provisional read of what's on order — only to pick which sizes changed. The decision below uses a second read taken AFTER Shopify.
+  const pendingA = await readPendingOrders();
+  const ours = await readOurStock();
+  const confirmed = full ? new Map() : await readConfirmed();
+  const candidates = ours.filter((r) => {
+    const onOrder = pendingA ? (pendingA.get(r.code) || 0) : 0;
+    return !(confirmed.has(r.code) && confirmed.get(r.code) === wantFor(r, onOrder));
+  });
+
+  // Order matters (as before 2026-11-10): Shopify's count is read BEFORE the orders on hand used for the decision. An order that
+  // lands between the two is then either in the count we read (and so lower) or not yet in the pending list — never a raise over it.
+  const shop = await readShopifyFor(candidates.map((r) => r.code));
+  const pending = await readPendingOrders();
   const ordersRead = pending !== null;
+
   const changes = [];
-  let checked = 0, notOnShopify = 0, noLevel = 0;
-  for (const r of ours) {
+  const confirmedNow = [];
+  let notOnShopify = 0, noLevel = 0;
+  for (const r of candidates) {
     const s = shop.get(r.code);
     if (!s) { notOnShopify += 1; continue; }
     if (s.available === null || !s.inventoryItemId) { noLevel += 1; continue; }
-    checked += 1;
     const onOrder = ordersRead ? (pending.get(r.code) || 0) : 0;
-    const want = Math.max(Math.min(r.local + r.fba, CAP) - onOrder, 0);
-    if (want === s.available) continue;
+    const want = wantFor(r, onOrder);
+    if (want === s.available) { confirmedNow.push({ code: r.code, want }); continue; }
     if (!ordersRead && want > s.available) continue;                             // don't raise blind
     changes.push({ code: r.code, inventoryItemId: s.inventoryItemId, shopify: s.available, want, local: r.local, fba: r.fba, pending: onOrder });
   }
   const pendingOrders = ordersRead ? [...pending.values()].reduce((a, b) => a + b, 0) : null;
-  return { changes, checked, notOnShopify, noLevel, ordersRead, pendingOrders };
+  return {
+    changes, confirmedNow, checked: candidates.length, unchanged: ours.length - candidates.length,
+    notOnShopify, noLevel, ordersRead, pendingOrders, liveCodes: ours.map((r) => r.code),
+  };
+}
+
+// Keep shopify_stock_sent to the live sizes and record what Shopify is now confirmed to show for the rest.
+async function recordConfirmed(liveCodes, rows) {
+  await query(`DELETE FROM shopify_stock_sent WHERE NOT (code = ANY($1::text[]))`, [liveCodes]);
+  if (!rows.length) return;
+  await query(
+    `INSERT INTO shopify_stock_sent (code, want, confirmed_at)
+     SELECT u.code, u.want, now() FROM UNNEST($1::text[], $2::int[]) AS u(code, want)
+     ON CONFLICT (code) DO UPDATE SET want = EXCLUDED.want, confirmed_at = now()`,
+    [rows.map((r) => r.code), rows.map((r) => r.want)]
+  );
 }
 
 const SET_MUTATION = `
@@ -169,10 +221,10 @@ async function send(items) {
  *   commit false = plan only (nothing sent). Sends in groups; if a group is refused (one size's count moved — Shopify may refuse the
  *   whole call), its sizes are sent one by one so only the moved ones wait for the next run.
  */
-async function syncShopifyStock({ commit = true, by = null } = {}) {
+async function syncShopifyStock({ commit = true, by = null, full = false } = {}) {
   if (!shopify.isConfigured()) throw new Error('Shopify is not configured');
   if (!config.shopify.locationId) throw new Error('SHOPIFY_LOCATION_ID is not set');
-  const plan = await planShopifyStock();
+  const plan = await planShopifyStock({ full });
   const out = { ...plan, sent: [], stale: [], failed: [] };
   if (!commit) return out;
 
@@ -195,6 +247,13 @@ async function syncShopifyStock({ commit = true, by = null } = {}) {
       }
     }
   }
+  // Record what Shopify now shows: sizes already equal, and the ones accepted just now. Stale or failed sizes stay unrecorded, so the
+  // next run checks them again. Never fails the run — at worst the next run re-checks sizes already correct.
+  try {
+    await recordConfirmed(plan.liveCodes, [...plan.confirmedNow, ...out.sent]);
+  } catch (err) {
+    logger.error(`[shopifyStock] couldn't record confirmed counts (next run re-checks): ${err.message}`);
+  }
   if (by && (out.sent.length || out.stale.length || out.failed.length)) {
     const parts = [];
     if (out.sent.length) parts.push(`${out.sent.length} sizes set (${out.sent.slice(0, 8).map((c) => `${c.code} ${c.shopify}→${c.want}`).join(', ')}${out.sent.length > 8 ? ' …' : ''})`);
@@ -205,4 +264,4 @@ async function syncShopifyStock({ commit = true, by = null } = {}) {
   return out;
 }
 
-module.exports = { CAP, planShopifyStock, syncShopifyStock };
+module.exports = { CAP, planShopifyStock, syncShopifyStock, wantFor };

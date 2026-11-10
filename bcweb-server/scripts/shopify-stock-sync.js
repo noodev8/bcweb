@@ -6,8 +6,11 @@ Purpose: Run the Shopify stock sync (utils/shopifyStockSync.js — the rule is d
          send it. The same sync runs at the end of Update Orders.
 
 Usage (from bcweb-server/):
-    node scripts/shopify-stock-sync.js            dry run — every size that would change, and why
+    node scripts/shopify-stock-sync.js            dry run — every changed size that would be sent, and why
     node scripts/shopify-stock-sync.js --commit   send the changes to Shopify
+    node scripts/shopify-stock-sync.js --full --commit
+                                                  check EVERY live size against Shopify (catches hand edits in Shopify admin).
+                                                  Ignores the confirmed-count record; use by hand, not on a timer.
 =======================================================================================================================================
 */
 
@@ -17,8 +20,9 @@ const { syncShopifyStock } = require('../utils/shopifyStockSync');
 
 async function main() {
   const commit = process.argv.includes('--commit');
-  const r = await syncShopifyStock({ commit });
-  console.log(`${r.checked} live sizes checked — ${r.changes.length} differ`
+  const full = process.argv.includes('--full');
+  const r = await syncShopifyStock({ commit, full });
+  console.log(`${full ? 'FULL: ' : ''}${r.checked} sizes checked on Shopify (${r.unchanged} unchanged since last confirmed) — ${r.changes.length} differ`
     + ` · unfulfilled Shopify orders not yet in BCWEB: ${r.ordersRead ? `${r.pendingOrders} pair(s)` : 'COULD NOT READ (decreases only)'}`
     + (r.notOnShopify ? ` · ${r.notOnShopify} not on Shopify` : '') + (r.noLevel ? ` · ${r.noLevel} with no stock record at the location` : ''));
   for (const c of r.changes) {
