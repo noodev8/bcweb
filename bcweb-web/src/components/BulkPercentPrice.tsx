@@ -46,7 +46,7 @@ export interface BulkPlan {
 
 const CHANNEL = {
   shopify: { name: 'Shopify', unit: 'style', banner: 'border-emerald-200 bg-emerald-50', note: 'Apply changes the live Shopify store immediately' },
-  amazon: { name: 'Amazon', unit: 'size', banner: 'border-amber-200 bg-amber-50', note: 'Apply queues a Seller Central upload — no live change' },
+  amazon: { name: 'Amazon', unit: 'size', banner: 'border-amber-200 bg-amber-50', note: 'Apply sends the price to Amazon — live in a few minutes' },
 } as const;
 
 const gbp = (n: number) => `£${n.toFixed(2)}`;

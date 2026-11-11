@@ -90,7 +90,7 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
           top nav) to kill the "I thought I was changing the other platform" mix-up. Amber = Amazon throughout; Apply here only QUEUES. */}
       <div className="-mx-5 -mt-5 mb-4 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 rounded-t-xl border-b border-amber-200 bg-amber-50 px-5 py-2.5">
         <ChannelBadge channel="amazon" label="Amazon price" />
-        <span className="text-xs text-amber-700/90">Apply queues a Seller Central upload — no live change</span>
+        <span className="text-xs text-amber-700/90">Apply sends the price to Amazon — live in a few minutes</span>
         {header.next_review && (() => {
           // Same wording as the Shopify card: a review date that has arrived is Due, not parked.
           const today = new Date().toLocaleDateString('en-CA'); // local YYYY-MM-DD, same shape as next_review
@@ -209,7 +209,7 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
           disabled={applyDisabled}
           className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
         >
-          {applying ? 'Applying…' : queuedPrice != null ? 'Update Amazon price → basket' : 'Apply to Amazon → basket'}
+          {applying ? 'Sending…' : 'Apply to Amazon'}
         </button>
         {/* Set a review date WITHOUT changing the price (mirrors Shopify's "just set review"). Needs a real period, so it's disabled while
             None is selected. No price change = nothing queued to the basket. */}
@@ -228,7 +228,8 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
         >
           Cancel
         </button>
-        {queuedPrice != null && <span className="text-xs text-emerald-700">✓ queued → £{queuedPrice.toFixed(2)}</span>}
+        {/* queuedPrice = a price saved but NOT on Amazon yet (since 2026-11-11 the basket holds only those) — Send to Amazon at the top retries. */}
+        {queuedPrice != null && <span className="text-xs font-medium text-red-600">£{queuedPrice.toFixed(2)} not sent to Amazon yet — press Send to Amazon at the top</span>}
       </div>
     </div>
   );

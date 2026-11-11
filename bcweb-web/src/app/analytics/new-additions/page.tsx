@@ -486,15 +486,15 @@ function NewAdditionsPageInner() {
     return `Changed ${ok} on Shopify${notPushed ? ` · ${notPushed} saved but didn't reach Shopify — open and re-Apply` : ''}${failed ? ` · ${failed} failed` : ''}`;
   };
   const applyAmazon = async (items: BulkPlanItem[], p: number, onProgress: (done: number) => void) => {
-    let ok = 0, failed = 0;
+    let ok = 0, failed = 0, notSent = 0;
     for (let i = 0; i < items.length; i++) {
       const res = await applyAmzPrice(items[i].key, items[i].next, bulkNote(p), items[i].reviewDays);
       if (res.return_code === 'UNAUTHORIZED') { logout(); throw new Error('Signed out — sign in and check the prices'); }
-      if (res.success) ok++; else failed++;
+      if (res.success) { ok++; if (res.data?.amazon && !res.data.amazon.sent) notSent++; } else failed++;
       onProgress(i + 1);
     }
     await refresh();
-    return `Changed ${ok} on Amazon → upload basket${failed ? ` · ${failed} failed` : ''}`;
+    return `Changed ${ok} on Amazon${notSent ? ` · ${notSent} saved but NOT sent to Amazon — Send to Amazon on Amazon Pricing` : ' · sent to Amazon'}${failed ? ` · ${failed} failed` : ''}`;
   };
 
   const soldPct = pct(totals.sold, totals.skus);

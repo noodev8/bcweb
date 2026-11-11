@@ -128,7 +128,7 @@ export default function AmzFastSellersPage() {
 
   // Set this visit, by code — the price now queued and the Last priced line, so a row reads "done" at once without a reload (the
   // next load reads both back from the log). Review dates likewise, so a second Set judges the rule against the date just written.
-  const [setHere, setSetHere] = useState<Record<string, { price: number; last: AmzFastLastPriced; nextReview: string | null; steps: AmzFastStep[] }>>({});
+  const [setHere, setSetHere] = useState<Record<string, { price: number; sent: boolean; last: AmzFastLastPriced; nextReview: string | null; steps: AmzFastStep[] }>>({});
 
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('priced_to_sold');
@@ -177,7 +177,7 @@ export default function AmzFastSellersPage() {
     else { setSortKey(col.key); setAsc(col.asc); }
   }
 
-  async function onSetPrice(r: AmzFastRow, price: number): Promise<{ error: string | null; aboveRrp: boolean }> {
+  async function onSetPrice(r: AmzFastRow, price: number): Promise<{ error: string | null; aboveRrp: boolean; notSent?: string | null }> {
     const nextReview = setHere[r.code]?.nextReview ?? r.next_review;
     const res = await applyAmzPrice(r.code, price, NOTE, reviewDaysFor(nextReview));
     if (res.return_code === 'UNAUTHORIZED') { logout(); return { error: 'Session expired', aboveRrp: false }; }
@@ -189,13 +189,14 @@ export default function AmzFastSellersPage() {
       ...prev,
       [r.code]: {
         price: d.new_price,
-        last: { on: TODAY, by: displayName, note: NOTE, price: d.new_price, uploaded: false },
+        sent: d.amazon ? d.amazon.sent : true,
+        last: { on: TODAY, by: displayName, note: NOTE, price: d.new_price, uploaded: d.amazon ? d.amazon.sent : true },
         nextReview: d.next_review ?? nextReview,
         steps: [{ on: TODAY, old: d.old_price, new: d.new_price, by: displayName, note: NOTE, uploaded: false, current: true, days: 0, sold: 0 },
           ...prevSteps].slice(0, 3),
       },
     }));
-    return { error: null, aboveRrp: d.warnings.includes('ABOVE_RRP') };
+    return { error: null, aboveRrp: d.warnings.includes('ABOVE_RRP'), notSent: d.amazon && !d.amazon.sent ? (d.amazon.message || 'unknown error') : null };
   }
 
   return (
@@ -257,6 +258,8 @@ export default function AmzFastSellersPage() {
               {visible.map((r) => {
                 const here = setHere[r.code];
                 const queued = here?.price ?? r.queued_price;
+                // Not on Amazon yet: set this visit and refused, or saved earlier and still pending (the server's queued_price).
+                const notSent = here ? !here.sent : r.queued_price !== null;
                 const last = here?.last ?? r.last_priced;
                 const isOpen = open === r.code;
                 return (
@@ -285,9 +288,9 @@ export default function AmzFastSellersPage() {
                         {money(r.unit_profit)}
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700"
-                        title={queued !== null ? `Queued for upload — live is ${money(r.price)}` : 'Live'}>
+                        title={notSent ? `Not sent to Amazon yet — live is ${money(r.price)}` : 'Live'}>
                         {money(queued ?? r.price)}
-                        {queued !== null && <span className="ml-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}
+                        {notSent && <span className="ml-1 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">not sent</span>}
                       </td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700">{money(r.rrp)}</td>
                       <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-700" title={`Live + inbound ${r.fba_total}`}>{r.fba_live}</td>
@@ -404,7 +407,7 @@ interface PriceBoxProps {
   row: AmzFastRow;
   queued: number | null;
   nextReview: string | null;
-  onSetPrice: (price: number) => Promise<{ error: string | null; aboveRrp: boolean }>;
+  onSetPrice: (price: number) => Promise<{ error: string | null; aboveRrp: boolean; notSent?: string | null }>;
 }
 function PriceBox({ row, queued, nextReview, onSetPrice }: PriceBoxProps) {
   const current = queued ?? row.price;
@@ -429,8 +432,9 @@ function PriceBox({ row, queued, nextReview, onSetPrice }: PriceBoxProps) {
     const res = await onSetPrice(price);
     setBusy(false);
     setMsg(res.error ? { tone: 'err', text: res.error }
+      : res.notSent ? { tone: 'err', text: `Set to ${money(price)} but NOT sent to Amazon: ${res.notSent}` }
       : res.aboveRrp ? { tone: 'warn', text: `Set to ${money(price)} — above RRP` }
-      : { tone: 'ok', text: `Set to ${money(price)} → basket` });
+      : { tone: 'ok', text: `Set to ${money(price)} · sent to Amazon` });
   }
 
   const stepBtn = 'flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40';
@@ -482,7 +486,7 @@ function PriceBox({ row, queued, nextReview, onSetPrice }: PriceBoxProps) {
       <div className="mt-1.5 space-y-0.5 text-xs text-slate-500">
         {/* Live and floor left out (owner, 2026-10-22): the row shows the price, and the below-floor warning still appears when it matters. */}
         <div>
-          {queued !== null && <span>Queued {money(queued)} · </span>}
+          {queued !== null && <span>Set {money(queued)} · </span>}
           {row.rrp !== null ? <span>RRP {money(row.rrp)}</span> : <span>No RRP</span>}
         </div>
         <div>

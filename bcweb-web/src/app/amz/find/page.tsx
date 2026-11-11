@@ -41,6 +41,9 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
 import { REVIEW_PERIODS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
+
+// The bulk result's Amazon half (2026-11-11 — each Apply is sent to Amazon by the server): how many didn't reach it.
+const amazonNote = (notSent: number) => (notSent ? ` · ${notSent} NOT sent to Amazon — press Send to Amazon` : ' · sent to Amazon');
 // Same look as Shopify's bulk bar (owner, 2026-09-24). The channel is still unmistakable once the bar opens: its banner carries the
 // Amazon logo and "Apply queues a Seller Central upload — no live change" (components/BulkActionBar CHANNEL_BANNER).
 const AMZ_TONE: BulkTone = {
@@ -148,7 +151,7 @@ function AmzFindContent() {
     if (targets.length === 0 || Math.abs(delta) < 0.005) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
-    let applied = 0, skipped = 0, aboveRrp = 0;
+    let notSent = 0; let applied = 0, skipped = 0, aboveRrp = 0;
     for (let i = 0; i < targets.length; i++) {
       const row = targets[i];
       if (row.price === null) { skipped++; setProgress({ done: i + 1, total: targets.length }); continue; }
@@ -160,13 +163,13 @@ function AmzFindContent() {
         // Over-RRP is allowed (a deliberate harvest move, not an error) but worth counting — a blanket bump can tip a size past RRP without
         // the operator noticing. Surface it in the summary; the write itself is unaffected. Mirrors the drill's "Above RRP — allowed" flag.
         if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
-        applied++;
+        applied++; if (d.amazon && !d.amazon.sent) notSent++;
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
       else { skipped++; }
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    setResultSummary(`Applied ${applied}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setResultSummary(`Applied ${applied}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${amazonNote(notSent)}`);
     setSelected(new Set());
   }
 
@@ -179,7 +182,7 @@ function AmzFindContent() {
     if (targets.length === 0 || !(price > 0)) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
-    let applied = 0, skipped = 0, aboveRrp = 0;
+    let notSent = 0; let applied = 0, skipped = 0, aboveRrp = 0;
     for (let i = 0; i < targets.length; i++) {
       const row = targets[i];
       const res = await applyAmzPrice(row.code, price, note, reviewDays);
@@ -187,13 +190,13 @@ function AmzFindContent() {
         const d = res.data;
         add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: row.segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
         if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
-        applied++;
+        applied++; if (d.amazon && !d.amazon.sent) notSent++;
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
       else { skipped++; }
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    setResultSummary(`Set ${applied} to £${price.toFixed(2)}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setResultSummary(`Set ${applied} to £${price.toFixed(2)}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${amazonNote(notSent)}`);
     setSelected(new Set());
   }
 
@@ -205,7 +208,7 @@ function AmzFindContent() {
     if (targets.length === 0) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
-    let applied = 0, noRrp = 0, already = 0, skipped = 0;
+    let notSent = 0; let applied = 0, noRrp = 0, already = 0, skipped = 0;
     for (let i = 0; i < targets.length; i++) {
       const row = targets[i];
       if (row.rrp === null) noRrp++;
@@ -215,14 +218,14 @@ function AmzFindContent() {
         if (res.success && res.data) {
           const d = res.data;
           add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: row.segment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
-          applied++;
+          applied++; if (d.amazon && !d.amazon.sent) notSent++;
         } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
         else { skipped++; }
       }
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    setResultSummary(`Reset ${applied} to RRP${already ? ` · ${already} already at RRP` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setResultSummary(`Reset ${applied} to RRP${already ? ` · ${already} already at RRP` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${amazonNote(notSent)}`);
     setSelected(new Set());
   }
 

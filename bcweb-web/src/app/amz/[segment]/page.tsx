@@ -63,6 +63,9 @@ const AMZ_NUDGES: Nudge[] = [
 ];
 import { REVIEW_PERIODS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
+// The bulk result's Amazon half (2026-11-11 — each Apply is sent to Amazon by the server): how many didn't reach it.
+const amazonNote = (notSent: number) => (notSent ? ` · ${notSent} NOT sent to Amazon — press Send to Amazon` : ' · sent to Amazon');
+
 // Stable "nothing ticked" identity for useScopedState (it requires a stable initial). Never mutated — every toggle builds a new Set.
 const NO_SELECTION: Set<string> = new Set();
 // Same look as Shopify's bulk bar (owner, 2026-09-24). The channel is still unmistakable once the bar opens: its banner carries the
@@ -274,7 +277,7 @@ function SegmentContent() {
     if (targets.length === 0 || Math.abs(delta) < 0.005) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
-    let applied = 0, skipped = 0, aboveRrp = 0;
+    let notSent = 0; let applied = 0, skipped = 0, aboveRrp = 0;
     for (let i = 0; i < targets.length; i++) {
       const row = targets[i];
       if (row.price === null) { skipped++; setProgress({ done: i + 1, total: targets.length }); continue; }
@@ -287,13 +290,13 @@ function SegmentContent() {
         // Over-RRP is allowed (a deliberate harvest move, not an error) but worth counting — a blanket bump can tip a size past RRP without
         // the operator noticing. Surface it in the summary; the write itself is unaffected. Mirrors the drill's "Above RRP — allowed" flag.
         if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
-        applied++;
+        applied++; if (d.amazon && !d.amazon.sent) notSent++;
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
       else { skipped++; }
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    setResultSummary(`Applied ${applied}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setResultSummary(`Applied ${applied}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${amazonNote(notSent)}`);
     setSelected(new Set());
     await loadLists();
   }
@@ -306,7 +309,7 @@ function SegmentContent() {
     if (targets.length === 0 || !(price > 0)) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
-    let applied = 0, skipped = 0, aboveRrp = 0;
+    let notSent = 0; let applied = 0, skipped = 0, aboveRrp = 0;
     for (let i = 0; i < targets.length; i++) {
       const row = targets[i];
       const res = await applyAmzPrice(row.code, price, note, reviewDays);
@@ -314,13 +317,13 @@ function SegmentContent() {
         const d = res.data;
         add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: basketSegment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
         if (d.warnings.includes('ABOVE_RRP')) aboveRrp++;
-        applied++;
+        applied++; if (d.amazon && !d.amazon.sent) notSent++;
       } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
       else { skipped++; }
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    setResultSummary(`Set ${applied} to £${price.toFixed(2)}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setResultSummary(`Set ${applied} to £${price.toFixed(2)}${aboveRrp ? ` · ${aboveRrp} above RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${amazonNote(notSent)}`);
     setSelected(new Set());
     await loadLists();
   }
@@ -332,7 +335,7 @@ function SegmentContent() {
     if (targets.length === 0) return;
     setMarking(true); setMarkError(null); setResultSummary(null);
     setProgress({ done: 0, total: targets.length });
-    let applied = 0, noRrp = 0, already = 0, skipped = 0;
+    let notSent = 0; let applied = 0, noRrp = 0, already = 0, skipped = 0;
     for (let i = 0; i < targets.length; i++) {
       const row = targets[i];
       if (row.rrp === null) noRrp++;
@@ -342,14 +345,14 @@ function SegmentContent() {
         if (res.success && res.data) {
           const d = res.data;
           add({ id: d.log_id, code: d.code, amz_sku: d.amz_sku, size: row.size, title: row.title, segment: basketSegment, old_price: d.old_price, new_price: d.new_price, rrp: d.rrp });
-          applied++;
+          applied++; if (d.amazon && !d.amazon.sent) notSent++;
         } else if (res.return_code === 'UNAUTHORIZED') { setMarking(false); setProgress(null); logout(); return; }
         else { skipped++; }
       }
       setProgress({ done: i + 1, total: targets.length });
     }
     setProgress(null); setMarking(false);
-    setResultSummary(`Reset ${applied} to RRP${already ? ` · ${already} already at RRP` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''} → basket`);
+    setResultSummary(`Reset ${applied} to RRP${already ? ` · ${already} already at RRP` : ''}${noRrp ? ` · ${noRrp} no RRP` : ''}${skipped ? ` · ${skipped} skipped` : ''}${amazonNote(notSent)}`);
     setSelected(new Set());
     await loadLists();
   }
@@ -538,7 +541,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                 {/* The product name is this cell's tooltip — only here, not the whole row (mirrors Shopify, owner 2026-09-25). */}
                 <td className="truncate whitespace-nowrap px-4 py-2 font-mono text-xs text-slate-500" title={r.title ?? undefined}>
                   {r.code}
-                  {!!queued[r.code] && <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">queued</span>}
+                  {!!queued[r.code] && <span title="Saved but not on Amazon yet — press Send to Amazon at the top" className="ml-2 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">not sent</span>}
                 </td>
                 <td className={'truncate px-4 py-2 ' + tone}>{r.brand || <span className="text-slate-400">—</span>}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>

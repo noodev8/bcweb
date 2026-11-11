@@ -174,6 +174,7 @@ app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a n
 app.use('/amz-review', require('./routes/amz-review'));      // W-A2: batch mark-reviewed — park a selection of un-changed SKUs at once
 app.use('/amz-basket', require('./routes/amz-basket'));      // rebuild today's upload basket from amz_price_log (survives browser close)
 app.use('/amz-mark-uploaded', require('./routes/amz-mark-uploaded')); // confirm a Seller Central upload -> stamp those rows uploaded_at (clears them from the basket, team-wide)
+app.use('/amz-price-push', require('./routes/amz-price-push'));     // Send to Amazon — pending Amazon prices sent live via SP-API (2026-11-11)
 
 // --- Amazon Order module (landing list only, so far) — flat "every product" view of REALISED Amazon profit (sales.profit, 30d), NOT
 // the live price-cost-fbafee margin Amazon Pricing shows. Its own module/tile rather than a corner of Amazon Pricing since it's a

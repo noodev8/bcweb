@@ -1,7 +1,10 @@
 'use client';
 /*
 =======================================================================================================================================
-Component: AmzBasketBar + AmzUploadButton  (the Amazon upload basket, on every /amz page)
+Component: AmzBasketBar + AmzUploadButton  (Send to Amazon + the backup upload file, on every /amz page)
+=======================================================================================================================================
+2026-11-11: AmzUploadButton is now SEND TO AMAZON (prices go live through the SP-API — utils/amzPricePush.js); the upload file it used to
+be sits behind its ⋯ as the backup. The notes below describe the file flow, which still works the same from there.
 =======================================================================================================================================
 Purpose: Surfaces the Amazon upload basket (AmzBasketContext). Amazon prices don't push live — they're recorded as you apply them,
          downloaded as ONE Seller Central file, then confirmed as uploaded.
@@ -24,25 +27,73 @@ Purpose: Surfaces the Amazon upload basket (AmzBasketContext). Amazon prices don
 */
 
 import { useState } from 'react';
-import { ArrowDownTrayIcon, ExclamationTriangleIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ArrowDownTrayIcon, ExclamationTriangleIcon, CheckCircleIcon, EllipsisHorizontalIcon, PaperAirplaneIcon } from '@heroicons/react/24/outline';
 import { useAmzBasket } from '@/contexts/AmzBasketContext';
 
-// STATE 1 — the compact download button for the page's title row. Nothing when the basket is empty, or while a downloaded file awaits
-// confirmation (the banner below owns that moment, with its own re-download).
+// STATE 1 — SEND TO AMAZON (2026-11-11, in the old "Upload file · N" place — owner: "have the new button in the old ones place"). An
+// Apply already sends its price; this is for whatever hasn't reached Amazon (a refusal, a failed send). Its result shows beside it —
+// "3 sent · 1 not sent", hover for Amazon's reasons — and is not stored (owner). The old upload FILE is behind the ⋯ (owner: "hide the
+// old button behind a 3 dot menu ... like we did for other hidden ones"), leading into the same confirm banner as before.
+// Nothing at all when nothing is waiting and no result to show, or while a downloaded file awaits confirmation (the banner owns that).
 export function AmzUploadButton() {
-  const { count, pending, download } = useAmzBasket();
-  if (count === 0 || pending) return null;
+  const { count, pending, download, send, sending, lastSend } = useAmzBasket();
+  const [menu, setMenu] = useState(false);
+  if (pending || (count === 0 && !lastSend && !sending)) return null;
+
+  const failedText = lastSend ? lastSend.failed.map((f) => `${f.code} £${f.price.toFixed(2)}: ${f.message}`).join('\n') : '';
+  const resultParts = lastSend
+    ? [lastSend.sent ? `${lastSend.sent} sent` : '', lastSend.failed.length ? `${lastSend.failed.length} not sent` : ''].filter(Boolean)
+    : [];
+
   return (
-    <button
-      type="button"
-      onClick={download}
-      // A quiet white control like Repricing's "Update now", not a purple call to action (owner, 2026-09-25: "blend the design in").
-      // The count carries the weight: a dark chip, so waiting changes are still easy to spot.
-      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1.5 pl-3 pr-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50"
-    >
-      <ArrowDownTrayIcon className="h-4 w-4 text-slate-400" aria-hidden="true" /> Upload file
-      <span className="rounded-md bg-slate-800 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-white">{count}</span>
-    </button>
+    <div className="relative flex items-center gap-2">
+      {lastSend && (
+        lastSend.error
+          ? <span className="text-xs font-medium text-red-600">{lastSend.error}</span>
+          : <span
+              title={failedText || undefined}
+              className={`text-xs font-medium ${lastSend.failed.length ? 'cursor-help text-red-600' : 'text-green-700'}`}
+            >
+              {resultParts.join(' · ') || 'Nothing to send'}
+            </span>
+      )}
+      {(count > 0 || sending) && (
+        <button
+          type="button"
+          onClick={send}
+          disabled={sending}
+          title="Sends these prices to Amazon now — live within a few minutes"
+          // A quiet white control like Repricing's "Update now" (owner, 2026-09-25: "blend the design in"); the count chip carries the weight.
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1.5 pl-3 pr-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
+        >
+          <PaperAirplaneIcon className="h-4 w-4 text-slate-400" aria-hidden="true" /> {sending ? 'Sending…' : 'Send to Amazon'}
+          <span className="rounded-md bg-slate-800 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-white">{count}</span>
+        </button>
+      )}
+      {count > 0 && (
+        <button
+          type="button"
+          onClick={() => setMenu((v) => !v)}
+          title="Backup: the Seller Central upload file"
+          aria-label="More Amazon options"
+          className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        >
+          <EllipsisHorizontalIcon className="h-5 w-5" />
+        </button>
+      )}
+      {menu && count > 0 && (
+        <div className="absolute right-0 top-full z-20 mt-1 w-64 rounded-md border border-slate-200 bg-white p-2 shadow-lg">
+          <p className="mb-1.5 text-[11px] text-slate-400">Backup — the old Seller Central upload file:</p>
+          <button
+            type="button"
+            onClick={() => { setMenu(false); download(); }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm hover:border-brand-500 hover:text-brand-700"
+          >
+            <ArrowDownTrayIcon className="h-4 w-4" /> Upload file · {count}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

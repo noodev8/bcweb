@@ -112,6 +112,9 @@ const spPost = (path, body, query) => call('POST', path, { body, query });
 // PUT = Listings Items putListingsItem (2026-11-10, the "List on Amazon (FBA)" work). With query mode=VALIDATION_PREVIEW Amazon only
 // checks the listing and creates nothing.
 const spPut = (path, body, query) => call('PUT', path, { body, query });
+// PATCH = Listings Items patchListingsItem (2026-11-11, the live Amazon price push): changes only the attributes it names — the price —
+// and leaves the rest of the listing alone. mode=VALIDATION_PREVIEW checks it without changing anything.
+const spPatch = (path, body, query) => call('PATCH', path, { body, query });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // AMZ_SP_SELLER_ID = our Merchant Token (Seller Central → Settings → Account Info → Your Merchant Token). The Listings Items API puts it
@@ -122,4 +125,4 @@ function sellerId() {
   return v;
 }
 
-module.exports = { accessToken, spGet, spPost, spPut, sleep, marketplaceId: () => config().marketplaceId, sellerId };
+module.exports = { accessToken, spGet, spPost, spPut, spPatch, sleep, marketplaceId: () => config().marketplaceId, sellerId };

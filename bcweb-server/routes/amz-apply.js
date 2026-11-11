@@ -48,6 +48,7 @@ const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { writeAmzPrice } = require('../utils/priceWrite');
+const { pushAmzPrices } = require('../utils/amzPricePush');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -102,7 +103,21 @@ router.post('/', async (req, res) => {
       nextReviewIso = `${nr.getFullYear()}-${String(nr.getMonth() + 1).padStart(2, '0')}-${String(nr.getDate()).padStart(2, '0')}`;
     }
 
-    return res.json({ return_code: 'SUCCESS', log_id: logId, code, amz_sku: amzSku, new_price: rounded, old_price: oldPrice, rrp, next_review: nextReviewIso, warnings });
+    // SENT TO AMAZON straight after the commit (2026-11-11, utils/amzPricePush.js) — like Shopify's live push, a failure never undoes the
+    // saved price: the row stays pending, the screen shows Amazon's reason, Send to Amazon / Update Orders try again. A hold (same as
+    // Amazon's price) has nothing to send. amazon = { sent: true } | { sent: false, message } | null when nothing needed sending.
+    let amazon = null;
+    try {
+      const p = await pushAmzPrices({ codes: [code], who: changedBy });
+      if (p.sent.length) amazon = { sent: true };
+      else if (p.failed.length) amazon = { sent: false, message: p.failed[0].message };
+      else if (p.skipped) amazon = { sent: false, message: p.skipped };
+    } catch (err) {
+      logger.error('[amz-apply] Amazon push failed:', err.message);
+      amazon = { sent: false, message: 'Not sent to Amazon — press Send to Amazon to try again' };
+    }
+
+    return res.json({ return_code: 'SUCCESS', log_id: logId, code, amz_sku: amzSku, new_price: rounded, old_price: oldPrice, rrp, next_review: nextReviewIso, warnings, amazon });
   } catch (err) {
     logger.error('[amz-apply] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to apply Amazon price' });

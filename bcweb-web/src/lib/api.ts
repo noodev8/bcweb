@@ -210,7 +210,9 @@ export interface AmzFindData {
 }
 // Apply result (W-A1). Writes amz_price_log only; the price reaches Amazon via the client-built upload file, not this call.
 // amz_sku + rrp let the session basket build that file straight from this response.
-export interface AmzApplyResult { log_id: number; code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; next_review: string | null; warnings: string[]; }
+// amazon = what happened when the price was sent to Amazon straight after the save (2026-11-11): null when nothing needed sending (a hold).
+export interface AmzSendOutcome { sent: boolean; message?: string; }
+export interface AmzApplyResult { log_id: number; code: string; amz_sku: string; new_price: number; old_price: number | null; rrp: number | null; next_review: string | null; warnings: string[]; amazon: AmzSendOutcome | null; }
 
 export interface DrillHeader {
   groupid: string; title: string | null;
@@ -804,15 +806,15 @@ export function findAmzSkus(steps: AmzFindStep[]) {
   );
 }
 
-// Amazon Pricing — record a new price for one SKU (W-A1). Audit-only write; the price reaches Amazon via the client upload file, not
-// this call. Optionally parks the SKU (skumap.next_amz_price_review) so it drops off the winners/losers queue — reviewDays mirrors
+// Amazon Pricing — record a new price for one SKU (W-A1). Since 2026-11-11 the server then SENDS it to Amazon (utils/amzPricePush.js);
+// the result is in `amazon`. Optionally parks the SKU (skumap.next_amz_price_review) so it drops off the winners/losers queue — reviewDays mirrors
 // Shopify W1: null/omitted = "None" (leave the review date untouched, SKU stays in the list); an integer >= 1 parks until today+N.
 // Returns amz_sku + rrp (so the session basket can build the upload file straight from the response) + next_review (null when None).
 export function applyAmzPrice(code: string, newPrice: number, note?: string, reviewDays?: number | null) {
   return request<AmzApplyResult>(
     // Only send reviewDays when it's a real period, so a "None" never reaches the server as a stray value (matches updateProductPrice).
     { url: '/amz-apply', method: 'POST', data: { code, newPrice, note, ...(reviewDays != null ? { reviewDays } : {}) } },
-    (b) => ({ log_id: b.log_id, code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, next_review: b.next_review ?? null, warnings: b.warnings || [] })
+    (b) => ({ log_id: b.log_id, code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, next_review: b.next_review ?? null, warnings: b.warnings || [], amazon: (b.amazon ?? null) as AmzSendOutcome | null })
   );
 }
 
@@ -823,6 +825,16 @@ export interface AmzBasketFetchItem { id: number; code: string; amz_sku: string 
 // The last confirmed Seller Central upload (any operator): when, who, how many SKUs — so the UI can reassure "already uploaded" even when
 // the basket is empty. null if nothing has ever been marked uploaded.
 export interface AmzLastUpload { at: string; by: string | null; count: number; }
+// Amazon Pricing — "Send to Amazon": send every pending price (the basket) live through the SP-API. Nothing is stored about a failure —
+// the reasons come back here for the screen (owner, 2026-11-11).
+export interface AmzPushFailure { code: string; price: number; message: string; }
+export function pushAmzPrices(codes?: string[]) {
+  return request<{ sent: { code: string; price: number }[]; failed: AmzPushFailure[] }>(
+    { url: '/amz-price-push', method: 'POST', data: codes && codes.length ? { codes } : {}, timeout: 180000 },
+    (b) => ({ sent: b.sent || [], failed: (b.failed || []) as AmzPushFailure[] })
+  );
+}
+
 export function getAmzBasket() {
   return request<{ items: AmzBasketFetchItem[]; lastUpload: AmzLastUpload | null }>(
     { url: '/amz-basket', method: 'GET' },

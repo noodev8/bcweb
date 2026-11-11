@@ -3,8 +3,13 @@
 =======================================================================================================================================
 Context: AmzBasketContext  (the Amazon Pricing upload basket)
 =======================================================================================================================================
-Purpose: Amazon has no live price push — a price change is logged (POST /amz-apply) and only reaches Amazon when the operator uploads ONE
-         tab-separated file to Seller Central. This context is that basket: the set of price changes queued during the current sitting.
+Purpose: SINCE 2026-11-11 PRICES ARE SENT TO AMAZON LIVE (owner: "price on bcweb and it updates amz automatically"): an Apply saves the
+         price and the server sends it at once (utils/amzPricePush.js); Update Orders retries. The basket is now what HASN'T reached Amazon —
+         normally empty — and the header's "Send to Amazon · N" sends it again, showing Amazon's reasons for any it refuses (nothing stored).
+         The old Seller Central upload file below stays as the BACKUP, behind the button's ⋯ (download → "I've uploaded" as before).
+
+         Before: Amazon had no live price push — a price change was logged (POST /amz-apply) and only reached Amazon when the operator
+         uploaded ONE tab-separated file to Seller Central. This context is that basket: the set of price changes not yet on Amazon.
 
 Why a context (not per-page state): the flow is multi-page (apply on a SKU's detail page, navigate back to the list, apply another). The
 provider lives in the module layout (src/app/amz/layout.tsx), above every /amz page, so the basket survives client-side navigation between
@@ -32,7 +37,7 @@ importantly, for what to do when Amazon rejects the template version again.
 
 import { createContext, useContext, useCallback, useMemo, useState, ReactNode } from 'react';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getAmzBasket, markAmzUploaded, AmzLastUpload } from '@/lib/api';
+import { getAmzBasket, markAmzUploaded, pushAmzPrices, AmzLastUpload, AmzPushFailure } from '@/lib/api';
 
 // One queued change. Everything the Seller Central file needs lives on the item (amz_sku, new_price, rrp) so it's built without a fetch.
 export interface AmzBasketItem {
@@ -65,7 +70,13 @@ interface AmzBasketValue {
   redownload: () => void;                   // re-download the identical pending file (same snapshot)
   confirmUploaded: () => Promise<void>;     // stamp the downloaded rows uploaded -> they leave the basket (team-wide)
   cancelPending: () => void;                // dismiss the confirm prompt without marking (rows stay pending)
+  send: () => Promise<void>;                // Send to Amazon — every pending price, live through the SP-API (2026-11-11)
+  sending: boolean;
+  lastSend: SendResult | null;              // the last press's result, shown by the button (nothing stored server-side — owner)
 }
+
+// What the last "Send to Amazon" press did — the failures carry Amazon's reasons for the screen.
+export interface SendResult { sent: number; failed: AmzPushFailure[]; error?: string; }
 
 const AmzBasketContext = createContext<AmzBasketValue | null>(null);
 
@@ -312,12 +323,30 @@ export function AmzBasketProvider({ children }: { children: ReactNode }) {
 
   // An applied price is already on the server (that's what /amz-apply just did) — this only reflects it in the basket immediately, so
   // it's a cache write with no revalidation rather than a fetch.
+  // SINCE 2026-11-11 THE SERVER SENDS IT TO AMAZON on Apply, so the basket is re-read straight after: a sent price isn't pending any more
+  // and drops out; one Amazon refused stays, counting on the Send to Amazon button.
   const add = useCallback((item: AmzBasketItem) => {
-    mutate(
+    void mutate(
       (prev) => ({ items: { ...(prev?.items ?? NO_ITEMS), [item.code]: item }, lastUpload: prev?.lastUpload ?? null }),
-      { revalidate: false },
+      { revalidate: true },
     );
   }, [mutate]);
+
+  // SEND TO AMAZON — every pending price, then re-read the basket (sent rows are stamped and leave it).
+  const [sending, setSending] = useState(false);
+  const [lastSend, setLastSend] = useState<SendResult | null>(null);
+  const send = useCallback(async () => {
+    setSending(true);
+    setLastSend(null);
+    try {
+      const res = await pushAmzPrices();
+      if (res.success && res.data) setLastSend({ sent: res.data.sent.length, failed: res.data.failed });
+      else setLastSend({ sent: 0, failed: [], error: res.error || 'Not sent to Amazon' });
+    } finally {
+      setSending(false);
+      await refresh();
+    }
+  }, [refresh]);
 
   // Download the file AND snapshot exactly what it contained, so the confirm step marks only those rows (not anything applied afterwards).
   const download = useCallback(() => {
@@ -347,9 +376,9 @@ export function AmzBasketProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AmzBasketValue>(
     () => ({
       items, count: Object.keys(items).length, lastUpload, pending,
-      add, refresh, download, redownload, confirmUploaded, cancelPending,
+      add, refresh, download, redownload, confirmUploaded, cancelPending, send, sending, lastSend,
     }),
-    [items, lastUpload, pending, add, refresh, download, redownload, confirmUploaded, cancelPending]
+    [items, lastUpload, pending, add, refresh, download, redownload, confirmUploaded, cancelPending, send, sending, lastSend]
   );
 
   return <AmzBasketContext.Provider value={value}>{children}</AmzBasketContext.Provider>;

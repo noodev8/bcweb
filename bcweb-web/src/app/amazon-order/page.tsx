@@ -291,10 +291,11 @@ function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string
 interface PriceControlProps {
   row: AmazonOrderRow;
   queued: number | null;
+  notSent: boolean;   // saved but not on Amazon yet (2026-11-11 — prices are sent live; the basket holds only refusals / failed sends)
   warmMin: number;
-  onSetPrice: (code: string, price: number) => Promise<{ error: string | null; aboveRrp: boolean }>;
+  onSetPrice: (code: string, price: number) => Promise<{ error: string | null; aboveRrp: boolean; notSent?: string | null }>;
 }
-function PriceControl({ row, queued, warmMin, onSetPrice }: PriceControlProps) {
+function PriceControl({ row, queued, notSent, warmMin, onSetPrice }: PriceControlProps) {
   const current = queued ?? row.price;
   const [draft, setDraft] = useState(current !== null ? current.toFixed(2) : '');
   const [busy, setBusy] = useState(false);
@@ -319,9 +320,10 @@ function PriceControl({ row, queued, warmMin, onSetPrice }: PriceControlProps) {
     setBusy(false);
     if (res.error) { setMsg({ tone: 'err', text: res.error }); return; }
     setDraft(price.toFixed(2));
+    if (res.notSent) { setMsg({ tone: 'err', text: `Set to ${money(price)} but NOT sent to Amazon: ${res.notSent}` }); return; }
     setMsg(res.aboveRrp
       ? { tone: 'warn', text: `Set to ${money(price)} — above RRP` }
-      : { tone: 'ok', text: `Set to ${money(price)}` });
+      : { tone: 'ok', text: `Set to ${money(price)} · sent to Amazon` });
   }
 
   const stepBtn = 'flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-40';
@@ -382,9 +384,9 @@ function PriceControl({ row, queued, warmMin, onSetPrice }: PriceControlProps) {
         {msg && (
           <div className={msg.tone === 'err' ? 'text-red-600' : msg.tone === 'warn' ? 'text-amber-700' : 'text-emerald-700'}>{msg.text}</div>
         )}
-        {queued !== null && (
-          <div className="text-amber-700">
-            {money(queued)} waiting to upload ·{' '}
+        {queued !== null && notSent && (
+          <div className="text-red-600">
+            {money(queued)} not sent to Amazon yet — Send to Amazon on{' '}
             <Link href="/amz" className="font-medium text-brand-600 hover:underline">Amazon Pricing</Link>
           </div>
         )}
@@ -1678,13 +1680,17 @@ function AmazonOrderContent() {
   // line are right at once without reloading ~520 rows; the server's queued_price says the same after the next load. The note names
   // this screen in the audit log so a change can be traced back to where it was made.
   const [queuedByCode, setQueuedByCode] = useState<Record<string, number>>({});
-  async function onSetPrice(code: string, price: number): Promise<{ error: string | null; aboveRrp: boolean }> {
+  // Set this visit and refused by Amazon (true) / sent (false) — overrides the server's queued_price until the next load.
+  const [notSentByCode, setNotSentByCode] = useState<Record<string, boolean>>({});
+  async function onSetPrice(code: string, price: number): Promise<{ error: string | null; aboveRrp: boolean; notSent?: string | null }> {
     const res = await applyAmzPrice(code, price, 'Amazon Order');
     if (res.return_code === 'UNAUTHORIZED') { logout(); return { error: 'Session expired', aboveRrp: false }; }
     if (!res.success || !res.data) return { error: res.error || 'Couldn’t set the price', aboveRrp: false };
     const set = res.data.new_price;
     setQueuedByCode((prev) => ({ ...prev, [code]: set }));
-    return { error: null, aboveRrp: res.data.warnings.includes('ABOVE_RRP') };
+    const amazon = res.data.amazon;
+    setNotSentByCode((prev) => ({ ...prev, [code]: !!amazon && !amazon.sent }));
+    return { error: null, aboveRrp: res.data.warnings.includes('ABOVE_RRP'), notSent: amazon && !amazon.sent ? (amazon.message || 'unknown error') : null };
   }
 
   // CAN'T GET — the two writes, for the row-1 button (the selected rows' styles) and the detail row (SupplyControl, one style). Each
@@ -2806,7 +2812,7 @@ function AmazonOrderContent() {
                         {/* Unlisted: nothing to price yet — the job is the listing, so the Amazon upload file leads the action line
                             below instead (owner, 2026-10-26: the buttons were "scattered and floating"). */}
                         {r.on_amazon && (
-                          <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} warmMin={warmMin} onSetPrice={onSetPrice} />
+                          <PriceControl row={r} queued={queuedByCode[r.code] ?? r.queued_price} notSent={notSentByCode[r.code] ?? r.queued_price !== null} warmMin={warmMin} onSetPrice={onSetPrice} />
                         )}
                         <dl className="grid grid-cols-[auto_auto] gap-x-4 gap-y-1 text-sm">
                           <dt className="text-slate-500">RRP</dt>

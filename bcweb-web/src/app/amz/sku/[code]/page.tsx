@@ -122,7 +122,14 @@ function DrillContent() {
       // Plain "Saved", mirroring the Shopify drill — plus the next review date (or "No review set"). The basket bar above owns the
       // "download the file" affordance, so we don't restate it on every apply.
       const reviewMsg = d.next_review ? ` Next review ${d.next_review}.` : ' No review set.';
-      setNotice({ kind: 'ok', text: `Saved £${d.new_price.toFixed(2)}.${reviewMsg}${warn}` });
+      // Sent to Amazon straight after the save (2026-11-11). A refusal is shown here with Amazon's reason (nothing stored — owner); the
+      // price is saved and stays on the header's Send to Amazon button.
+      if (d.amazon && !d.amazon.sent) {
+        setNotice({ kind: 'err', text: `Saved £${d.new_price.toFixed(2)}, but NOT sent to Amazon: ${d.amazon.message || 'unknown error'}${warn}` });
+      } else {
+        const sentMsg = d.amazon?.sent ? ' Sent to Amazon — live in a few minutes.' : '';
+        setNotice({ kind: 'ok', text: `Saved £${d.new_price.toFixed(2)}.${sentMsg}${reviewMsg}${warn}` });
+      }
       await refresh();
       setReloadKey((k) => k + 1);
     } else {

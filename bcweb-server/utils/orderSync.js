@@ -60,6 +60,7 @@ const { CHANNELS } = require('./orderChannels');
 const { syncEbayStock } = require('./ebayStockSync');
 const { syncShopifyStock } = require('./shopifyStockSync');
 const { syncAmzStock, isConfigured: amzStockConfigured } = require('./amzStockSync');
+const { pushAmzPrices } = require('./amzPricePush');
 const { endSoldOut } = require('./sizePrice');
 const { pushIfLive: shopifyPushIfLive } = require('./shopify');
 const { logActivity } = require('./bclog');
@@ -379,6 +380,21 @@ async function runOrderSync({ by }) {
     } catch (err) {
       result.amazonStock = { error: err.message };
       logger.error(`[orderSync] Amazon stock read failed (orders are saved; retried next run): ${err.message}`);
+    }
+  }
+
+  // ---- 2c. AMAZON PRICES NOT YET SENT (never fails the run) ------------------------------------------------------------------
+  // An Apply sends its price to Amazon at once (utils/amzPricePush.js, 2026-11-11); this picks up any that didn't go — a failed send, a
+  // bulk run cut short. A price Amazon refuses stays pending and is tried again each run until it ages out of the 72h basket; nothing is
+  // stored about it (owner), the reason is in the server log.
+  if (amzStockConfigured()) {
+    try {
+      const p = await pushAmzPrices({ who: String(by || 'cron') });
+      result.amazonPrices = { sent: p.sent.length, failed: p.failed.length };
+      if (p.sent.length) logger.info(`[orderSync] Amazon prices sent: ${p.sent.map((x) => `${x.code} £${x.price.toFixed(2)}`).join(', ')}`);
+    } catch (err) {
+      result.amazonPrices = { error: err.message };
+      logger.error(`[orderSync] Amazon price send failed (orders are saved): ${err.message}`);
     }
   }
 

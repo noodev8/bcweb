@@ -35,7 +35,7 @@ const NOTE_MAX = 80;
 // the individual price-setters use (the two screens look near-identical). Amber = Amazon (queued upload), green = Shopify (live push).
 const CHANNEL_BANNER: Record<'shopify' | 'amazon', { wrap: string; note: string; noteClass: string }> = {
   shopify: { wrap: 'border-emerald-200 bg-emerald-50', note: 'Apply updates the live Shopify store immediately', noteClass: 'text-emerald-700/80' },
-  amazon: { wrap: 'border-amber-200 bg-amber-50', note: 'Apply queues a Seller Central upload — no live change', noteClass: 'text-amber-700/90' },
+  amazon: { wrap: 'border-amber-200 bg-amber-50', note: 'Apply sends the price to Amazon — live in a few minutes', noteClass: 'text-amber-700/90' },
 };
 
 // Per-channel theming so the bar reads as the right platform (green = Shopify / live, amber = Amazon / queued), matching the drills.
