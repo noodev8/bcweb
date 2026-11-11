@@ -28,7 +28,7 @@ import ChannelBadge from '@/components/ChannelBadge';
 import { AmzDrillHeader } from '@/lib/api';
 
 // Park-period pills after an apply — the SAME day set as the Shopify setter (owner: keep the two drills identical). Raw days, None default.
-import { REVIEW_PERIODS as REVIEW_CHIPS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
+import { REVIEW_PERIODS as REVIEW_CHIPS, seasonPark } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Max length of the optional price-change note. Front-end only — kept short so notes stay to one tidy line on the Price Changes /
 // history reports (matches the Shopify setter and the bulk bar). The amz_price_log column is untouched.
@@ -55,6 +55,7 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
   const [note, setNote] = useState('');
   // Review period the apply will park for. null = None (the default, mirroring Shopify) — don't park, leave the SKU in the list.
   const [reviewDays, setReviewDays] = useState<number | null>(null);
+  const season = seasonPark();   // the "Season" chip — park until the next season starts (lib/reviewPeriods.ts)
 
   const price = useMemo(() => {
     const p = parseFloat(priceStr);
@@ -200,6 +201,17 @@ export default function AmzPriceSetter({ header, applying, queuedPrice, onApply,
           );
         })}
         <span className="text-sm text-slate-400">days</span>
+        {/* Park for the season (lib/reviewPeriods.ts → seasonPark): to the next 1 Aug / 1 Mar, a month before the season. */}
+        <button
+          onClick={() => setReviewDays(season.days)}
+          title={season.title}
+          className={
+            'rounded-full border px-3.5 py-1.5 text-sm ' +
+            (reviewDays === season.days ? 'border-amber-600 bg-amber-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+          }
+        >
+          {season.label}
+        </button>
       </div>
 
       {/* Actions */}

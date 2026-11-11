@@ -30,7 +30,7 @@ import { useMemo, useState } from 'react';
 import ChannelBadge from '@/components/ChannelBadge';
 import { DrillHeader, SizeRow } from '@/lib/api';
 
-import { REVIEW_PERIODS as REVIEW_CHIPS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
+import { REVIEW_PERIODS as REVIEW_CHIPS, seasonPark } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Core Birkenstock sizes — our at-a-glance "is the run intact?" guardrail. Full core = it'll sell through, so a raise is safe; a
 // gappy core is the classic "looks dead but it's just sold-out cores" trap before a cut (CLAUDE.md size-curve principle).
@@ -63,6 +63,7 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
   const [priceStr, setPriceStr] = useState<string>(now !== null ? now.toFixed(2) : '');
   // Review period: null = None (the default — no auto-suggested pick; the user chooses). An optional note rides the audit row.
   const [reviewDays, setReviewDays] = useState<number | null>(null);
+  const season = seasonPark();   // the "Season" chip — park until the next season starts (lib/reviewPeriods.ts)
   const [note, setNote] = useState('');
 
   const price = useMemo(() => {
@@ -349,6 +350,17 @@ export default function PriceSetter({ header, sizes, applying, onApply, onPark, 
           );
         })}
         <span className="text-sm text-slate-400">days</span>
+        {/* Park for the season (lib/reviewPeriods.ts → seasonPark): to the next 1 Aug / 1 Mar, a month before the season. */}
+        <button
+          onClick={() => pickReview(season.days)}
+          title={season.title}
+          className={
+            'rounded-full border px-3.5 py-1.5 text-sm ' +
+            (reviewDays === season.days ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-50')
+          }
+        >
+          {season.label}
+        </button>
       </div>
 
       {/* Actions */}

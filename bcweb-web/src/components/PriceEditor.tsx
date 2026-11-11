@@ -26,7 +26,7 @@ import ShopifyPushNote from '@/components/ShopifyPushNote';
 import GooglePushNote from '@/components/GooglePushNote';
 
 // Same review options as the pricing screen's PriceSetter (kept in sync deliberately).
-import { REVIEW_PERIODS as REVIEW_CHIPS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
+import { REVIEW_PERIODS as REVIEW_CHIPS, seasonPark } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
 
 // Max length of the optional price-change note. Front-end only — kept short so notes stay to one tidy line on the Price Changes /
 // history reports (matches the pricing setters + bulk bar, which write to the same price_change_log). The DB column is untouched.
@@ -99,6 +99,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
   const [savedInfo, setSavedInfo] = useState<{ logged: boolean; nextReview: string | null; sizesEnded: string[] } | null>(null);
   // Optional extras (see header). reviewDays null = no review chosen; note '' = none.
   const [reviewDays, setReviewDays] = useState<number | null>(null);
+  const season = seasonPark();   // the "Season" chip — park until the next season starts (lib/reviewPeriods.ts)
   const [note, setNote] = useState('');
 
   // Has the Shopify price actually changed from what loaded? Drives whether a note is allowed (the note rides an audit row, which is
@@ -267,6 +268,18 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
               );
             })}
             <span className="text-xs text-slate-400">days</span>
+            {/* Park for the season (lib/reviewPeriods.ts → seasonPark): to the next 1 Aug / 1 Mar, a month before the season. */}
+            <button
+              type="button"
+              onClick={() => pickReview(season.days)}
+              title={season.title}
+              className={
+                'rounded-full border px-3 py-1 text-xs ' +
+                (reviewDays === season.days ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
+              }
+            >
+              {season.label}
+            </button>
           </div>
         </div>
       </div>

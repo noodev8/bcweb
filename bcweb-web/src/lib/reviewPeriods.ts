@@ -20,3 +20,23 @@ NOT here on purpose (they are not pricing): AMZ loaded's review (components/Revi
 */
 
 export const REVIEW_PERIODS: number[] = [3, 7, 14, 30];
+
+/*
+SEASON PARK (owner, 2026-11-11: "if im seeing for example a boot in summer i can park it for the season") — one more chip beside the
+days: park until a few weeks BEFORE the next season starts, so the style is priced ready for it (owner, same day: "make it a few weeks
+early"). The seasons are the code's own (utils/portfolioStatus.js): Summer = April–August, Winter = September–March, so the chip parks
+to the next 1 MARCH (a month before summer) or 1 AUGUST (a month before winter), whichever comes first. Sent as a whole number of days
+like every other chip (the server takes any integer ≥ 1), counted from today's date in the browser (UK).
+*/
+export function seasonPark(today: Date = new Date()): { days: number; label: string; title: string } {
+  const y = today.getFullYear();
+  const m = today.getMonth() + 1;                       // 1-based
+  // Next 1 Mar / 1 Aug strictly after today: Jan–Feb → 1 Mar; Mar–Jul → 1 Aug; Aug–Dec → 1 Mar next year.
+  const forSummer = m <= 2 || m >= 8;
+  const target = forSummer ? new Date(m >= 8 ? y + 1 : y, 2, 1) : new Date(y, 7, 1);
+  const start = new Date(y, today.getMonth(), today.getDate());
+  const days = Math.round((target.getTime() - start.getTime()) / 86400000);
+  const when = forSummer ? '1 Mar' : '1 Aug';
+  return { days, label: `Season · ${when}`, title: `Park until ${when}, a month before ${forSummer ? 'summer' : 'winter'} (${days} days)` };
+}
+

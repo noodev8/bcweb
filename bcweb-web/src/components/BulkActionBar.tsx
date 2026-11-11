@@ -23,6 +23,7 @@ Purpose: The collapsible bulk editor that sits above a Winners/Losers table once
 
 import { useMemo, useState } from 'react';
 import ChannelBadge from '@/components/ChannelBadge';
+import { seasonPark } from '@/lib/reviewPeriods';
 
 // One nudge button = a labelled signed £ delta (the drill's denominations, passed in per channel so the two stay identical).
 export interface Nudge { label: string; delta: number; }
@@ -114,6 +115,7 @@ export default function BulkActionBar({
   const [pctText, setPctText] = useState('');
   // Review period the actions use. null = None (default) — Apply won't park; "Set review" is disabled (needs a real period).
   const [reviewDays, setReviewDays] = useState<number | null>(null);
+  const season = seasonPark();   // the "Season" chip — park until the next season starts (lib/reviewPeriods.ts)
 
   const delta = parseDelta(moveText);
   const setPrice = parseDelta(setText);
@@ -273,6 +275,9 @@ export default function BulkActionBar({
                 className={'rounded-full border px-3.5 py-1.5 text-sm disabled:opacity-50 ' + (reviewDays === d ? tone.chipOn : 'border-slate-300 text-slate-600 hover:bg-slate-50')}>{d}</button>
             ))}
             <span className="text-sm text-slate-400">days</span>
+            {/* Park for the season (lib/reviewPeriods.ts → seasonPark): to the next 1 Aug / 1 Mar, a month before the season. */}
+            <button onClick={() => setReviewDays(season.days)} disabled={busy} title={season.title}
+              className={'rounded-full border px-3.5 py-1.5 text-sm disabled:opacity-50 ' + (reviewDays === season.days ? tone.chipOn : 'border-slate-300 text-slate-600 hover:bg-slate-50')}>{season.label}</button>
           </div>
 
           {/* Actions — mirror the drill's two buttons. */}
