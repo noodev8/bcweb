@@ -21,9 +21,9 @@ is) · Review. No subtitle and no product hand-off cards (both taken off, owner 
 for?" line at the top (owner, 2026-11-08), the screen's purpose in three lines.
 
 CLICK A STYLE TO OPEN ITS SIZES (owner, 2026-10-26): every size with its barcode — one click copies it ("just give me the barcodes to
-copy") — and its local stock; the AMAZON UPLOAD FILE button ("let me get the amz upload file from there as well") — the same file as Add
-/ Modify (components/AmazonExport → POST /product-amazon: the SHOES.xlsm listing loader for this style, which also stamps the sizes'
-skumap sku/status as the batch script does); and the review chips for this style. One style open at a time; the tick box (not the row)
+copy") — and its local stock; LIST ON AMAZON (FBA) (components/AmazonListFba → POST /amz-list, the same one-press button as Add /
+Modify — replaced the .xlsm upload file here 2026-11-11, owner; the file, components/AmazonExport → POST /product-amazon, stays
+behind its ⋯ as the backup); and the review chips for this style. One style open at a time; the tick box (not the row)
 ticks for the bar.
 =======================================================================================================================================
 */
@@ -32,6 +32,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { ChevronRightIcon, ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/20/solid';
 import AppShell from '@/components/AppShell';
 import AmazonExport from '@/components/AmazonExport';
+import AmazonListFba from '@/components/AmazonListFba';
 import ListViewControls, { fmtReviewDate } from '@/components/ListViewControls';
 import ReviewPicker from '@/components/ReviewPicker';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -285,10 +286,17 @@ function SizesPanel({ row, busy, copied, onCopy, onSetReview }: {
       </table>
 
       <div className="flex min-w-0 flex-1 flex-col gap-5">
-        {/* The listing file — the same as Add / Modify's (it also marks these sizes as sent to Amazon, as the batch script does). */}
+        {/* List on Amazon (FBA) — the same one-press button as Add / Modify (2026-11-11, owner: in place of the old upload file);
+            the .xlsm file stays behind its ⋯ as the backup. */}
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700">Load to Amazon</p>
-          <AmazonExport key={row.groupid} groupid={row.groupid} sizesCount={row.sizes_list.length} quiet />
+          <AmazonListFba
+            key={row.groupid}
+            groupid={row.groupid}
+            sizesCount={row.sizes_list.length}
+            quiet
+            backup={<AmazonExport key={`xlsm-${row.groupid}`} groupid={row.groupid} sizesCount={row.sizes_list.length} quiet />}
+          />
         </div>
         <div>
           <p className="mb-1.5 text-sm text-slate-500">

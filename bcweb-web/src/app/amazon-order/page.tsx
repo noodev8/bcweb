@@ -17,7 +17,8 @@ SEARCH: two boxes, Include / Does not contain. Enter (or the Add button) commits
 NOT ON AMAZON (owner, 2026-10-16): a search also lists stocked sizes that have no Amazon listing (the route's off_amazon), under the
         listed results and tagged "Not on Amazon". Before this, a style never listed — L7514-15, skipped at creation for a poor
         ranking, then spotted as a candidate — searched to "Nothing found" and looked like a fault. The tag opens the detail row,
-        which builds the Amazon upload file (AmazonExport, the same control as Add / Modify) in place of the price block. Order and
+        which has List on Amazon (FBA) (AmazonListFba, the same control as Add / Modify — replaced the .xlsm upload file 2026-11-11,
+        which stays behind its ⋯; either one turns the tag green "Sent") in place of the price block. Order and
         Pick are open on these rows and go through Confirm Basket like any other: a pick needs only shelf stock, and the missing
         FNSKU is checked at Pack (AMZ Shipment refuses a size with none), by when the listing is normally in. Typed by hand only —
         rate fills skip them (no Amazon sales = no demand to fill from), and Hot / Warm / Simmer never show them. The tag stays until
@@ -239,6 +240,7 @@ import AppShell from '@/components/AppShell';
 import Image from 'next/image';
 import CopyButton from '@/components/CopyButton';
 import AmazonExport from '@/components/AmazonExport';
+import AmazonListFba from '@/components/AmazonListFba';
 import { prettyPathLabel } from '@/lib/nav';
 import {
   getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
@@ -2671,14 +2673,14 @@ function AmazonOrderContent() {
                           type="button"
                           onClick={(e) => { e.stopPropagation(); toggleExpanded(r.code); }}
                           title={fileMade.has(r.groupid)
-                            ? 'Upload file downloaded this session — not on Amazon until the Update Amazon import finds it'
-                            : 'No Amazon listing — open to build the Amazon upload file'}
+                            ? 'Sent to Amazon this session (List on Amazon, or the backup upload file) — not shown as on Amazon until the FBA stock read finds it'
+                            : 'No Amazon listing — open to list it on Amazon (FBA)'}
                           className={
                             'rounded border px-1 font-sans text-[10px] font-medium leading-4 '
                             + (fileMade.has(r.groupid) ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-sky-200 bg-sky-50 text-sky-700')
                           }
                         >
-                          {fileMade.has(r.groupid) ? 'File made' : 'No AMZ'}
+                          {fileMade.has(r.groupid) ? 'Sent' : 'No AMZ'}
                         </button>
                       )}
                       {/* CAN'T GET tag — the style's mark, on each of its sizes. A button that opens the detail row, where Release /
@@ -2847,8 +2849,16 @@ function AmazonOrderContent() {
                       {/* ONE ROW OF BUTTONS (owner, 2026-10-26): Amazon upload file (unlisted only — the same component as Add / Modify,
                           so there is one way to make the file), Can't get it, Find in Inventory — side by side, left edge on the picture's. */}
                       <div className="mt-3 flex flex-wrap items-center gap-2 pl-3 text-sm">
+                        {/* List on Amazon (FBA) in place of the upload file (2026-11-11, owner); the .xlsm is the backup behind its ⋯. */}
                         {!r.on_amazon && (
-                          <AmazonExport key={r.groupid} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} onDownloaded={markFileMade} quiet />
+                          <AmazonListFba
+                            key={r.groupid}
+                            groupid={r.groupid}
+                            sizesCount={offRows.filter((o) => o.groupid === r.groupid).length}
+                            onListed={() => markFileMade(r.groupid)}
+                            quiet
+                            backup={<AmazonExport key={`xlsm-${r.groupid}`} groupid={r.groupid} sizesCount={offRows.filter((o) => o.groupid === r.groupid).length} onDownloaded={markFileMade} quiet />}
+                          />
                         )}
                         <SupplyControl
                           row={r}
