@@ -15,8 +15,9 @@ HOW (checked against Amazon's real replies on 2026-11-11 — scripts/amz-price-p
   "Your Price 47 is not ≤ Maximum Seller Allowed Price 45" (536 of 652 listings carry a min / max; the old file wrote max = RRP).
 
 SENT = the rows are stamped uploaded_at = now(), uploaded_by = who (the same stamp "I've uploaded" made — every older pending row of that
-SKU too), so they leave the basket and the screens read the price as current (utils/amzNow.js). The nightly FBA Inventory report then
-sees the new price, finds it is our latest log row, and logs nothing (amzImport.planManualPrices).
+SKU too), so they leave the basket, AND amzfeed.amzprice is set to the sent price (owner, 2026-11-11 — the screens show it at once, not
+after the nightly report). The nightly FBA Inventory report then finds amzfeed already matching Amazon and logs nothing
+(amzImport.planManualPrices). This is the ONE place a price is written to amzfeed outside the nightly report.
 
 NOT SENT = nothing stored (owner, 2026-11-11: "just show the result on the screen if it goes wrong — doesn't need storing"). The row stays
 pending — it keeps counting on the Send to Amazon button and is tried again by that button and by Update Orders (utils/orderSync.js).
@@ -100,6 +101,14 @@ async function pushAmzPrices({ codes = null, who }) {
         FROM (SELECT UNNEST($1::text[]) AS code, UNNEST($2::int[]) AS max_id) f
        WHERE u.code = f.code AND u.id <= f.max_id AND u.uploaded_at IS NULL`,
       [sent.map((r) => r.code), sent.map((r) => r.id), String(who || 'cron')]);
+    // ...and amzfeed.amzprice set to it at once (owner, 2026-11-11: "dont need to wait till the evening run"), so the drill header and
+    // every list read the new price straight away. Written as a 2dp string (legacy VARCHAR, same as the import). The nightly report then
+    // finds amzfeed already matching Amazon and logs nothing (amzImport.planManualPrices).
+    await query(`
+      UPDATE amzfeed a SET amzprice = f.price
+        FROM (SELECT UNNEST($1::text[]) AS code, UNNEST($2::text[]) AS price) f
+       WHERE a.code = f.code`,
+      [sent.map((r) => r.code), sent.map((r) => r.price.toFixed(2))]);
   }
   if (failed.length) logger.error(`[amzPricePush] not sent: ${failed.map((f) => `${f.code} £${f.price.toFixed(2)}: ${f.message}`).join(' | ')}`);
   return { sent: sent.map((r) => ({ code: r.code, price: r.price })), failed, skipped: null };

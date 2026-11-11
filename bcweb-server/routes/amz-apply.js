@@ -21,7 +21,8 @@ Rules enforced here (never trust the client):
   - ALLOW+FLAG newPrice > RRP                            -> warnings:['ABOVE_RRP']
     (The tidy working-floor and any discovered ceiling are *guidance in the suggestion*, not hard write bounds. Nothing blocks here.)
   - Money rounded to 2dp. amz_price_log.old_price/new_price are numeric columns, so numbers are written (not strings).
-  - NEVER write amzfeed (it is refreshed nightly from Amazon — any write is clobbered; hard rule from AMZ_PRICING.md).
+  - The write itself never touches amzfeed. Once Amazon ACCEPTS the price (the push below), utils/amzPricePush.js sets amzfeed.amzprice
+    to it so the screens show it at once (owner, 2026-11-11) — a refused price leaves amzfeed alone.
   - The optional `note` carries the operator's rationale (the row's suggestion "why" is a good default the client can pass). Capped.
 
 Schema note: amz_price_log is (id, log_date, code, old_price, new_price, notes, changed_by). `changed_by` was added 2026-07-10 (nullable
