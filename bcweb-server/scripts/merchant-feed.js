@@ -61,13 +61,16 @@ async function upload(file) {
 async function main() {
   const doUpload = process.argv.includes('--upload');
   const { rows } = await query(FEED_SQL);
-  const { items, noGtin, badNumber } = buildItems(rows);
+  const { items, badNumber } = buildItems(rows);
   const file = outPath();
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, toTsv(items), 'utf8');
 
-  const summary = `${items.length} sizes in the feed (${noGtin} left out, no valid barcode`
-    + `${badNumber ? `; ${badNumber} with a price or cost that isn't a number` : ''})`;
+  // Just the total sent (owner, 2026-11-11). The sizes left out for no barcode aren't mentioned: they are placeholder sizes with
+  // no stock (77 on 2026-11-11, every one blank / NULL), so the count was noise. A price or cost that isn't a number is still
+  // named, and only when it happens: that one is a data error someone has to fix.
+  const summary = `${items.length} sizes sent`
+    + `${badNumber ? ` (${badNumber} left out: a price or cost that isn't a number)` : ''}`;
   console.log(summary);
   console.log(`Feed file: ${file}`);
   if (!doUpload) { console.log('Built only — add --upload to send it to Google.'); return; }
