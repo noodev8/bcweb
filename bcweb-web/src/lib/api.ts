@@ -630,7 +630,7 @@ export function getAmzFastSellers() {
 // Amazon Buy Box (/amz/buybox, server routes/amz-buybox.js + amz-buybox-read.js, rules utils/amzBuyBox.js, 2026-11-12) — the LAST
 // STORED reading of who holds the Buy Box on each Amazon size, grouped. Opening the screen never asks Amazon; a read is the cron, or
 // startAmzBuyBoxRead (whole list, or one style), which runs in the background — follow it through `running`.
-export type AmzBuyBoxGroup = 'can_match' | 'room' | 'cant_match' | 'no_bb' | 'top' | 'alone' | 'not_live' | 'unknown' | 'error';
+export type AmzBuyBoxGroup = 'can_match' | 'room' | 'cant_match' | 'tie' | 'dearer' | 'no_bb' | 'top' | 'alone' | 'not_live' | 'unknown' | 'error';
 export type AmzBuyBoxHolder = 'US' | 'US_SHARED' | 'OTHER_FBA' | 'OTHER_MFN' | 'AMAZON' | 'NONE';
 export interface AmzBuyBoxOffer { seller: string; us?: boolean; fba: boolean; price: number | null; bb: boolean }   // us = our own offer
 // One featured offer (competitiveSummary): its share of page views, and the customer groups it is featured to.

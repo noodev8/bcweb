@@ -42,6 +42,12 @@ GROUPS (classify — computed when the screen loads, from the stored reading + t
   cant_match  a rival leads under our walk-away price — hold, no race to the bottom
   no_bb       nobody is featured (Amazon pulled the Buy Box — often "seen cheaper elsewhere")
   unknown     no walk-away price (no cost) or Amazon gave no price to match
+  tie         a rival leads AT OUR EXACT PRICE (Amazon gives the tie to them) — matching changes nothing, only going under would,
+              and a follower follows. LEFT AS A TIE for now (owner, 2026-11-12: "What can we do other than race to bottom ... Can just
+              leave for now as a tie"); weeks of stock is on the row for when it is judged. Idea on file, not decided: nudge up and
+              see whether the follower comes up too (the hourly history shows it).
+  dearer      a rival leads at a HIGHER price than ours — price isn't the reason (owner: "That's Amazon's choice for whatever
+              reason"). No action.
   not_live    NO STOCK SELLABLE AT FBA NOW (only on its way in) — Amazon can't feature an offer it can't ship, so no price fixes it;
               it comes back into the groups when the stock lands (owner, 2026-11-12: 56 of the 178 sizes shown to nobody were this).
               Checked FIRST, from today's amzfeed.amzlive.
@@ -82,7 +88,7 @@ async function postPaced(path, body, waitMs) {
   }
 }
 
-const GROUPS = ['can_match', 'room', 'cant_match', 'no_bb', 'top', 'alone', 'not_live', 'unknown', 'error'];
+const GROUPS = ['can_match', 'room', 'cant_match', 'tie', 'dearer', 'no_bb', 'top', 'alone', 'not_live', 'unknown', 'error'];
 
 const chunk = (a, n) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; };
 const money = (m) => {
@@ -333,6 +339,8 @@ function classify(r) {
   if (!(r.rivals > 0)) group = 'alone';
   else if (us) group = r.next_up !== null && r.our_price !== null && num(r.next_up) > num(r.our_price) * (1 + ROOM_MIN_GAP) ? 'room' : 'top';
   else if (r.holder === 'NONE') group = 'no_bb';
+  else if (target !== null && r.our_price !== null && Math.abs(target - r.our_price) < 0.005) group = 'tie';
+  else if (target !== null && r.our_price !== null && target > r.our_price) group = 'dearer';
   else if (target === null || walk === null) group = 'unknown';
   else group = target >= walk ? 'can_match' : 'cant_match';
   return { group, target, kept, walk };

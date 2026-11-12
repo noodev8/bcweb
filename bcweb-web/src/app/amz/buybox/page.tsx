@@ -48,6 +48,8 @@ const GROUPS: { key: AmzBuyBoxGroup; label: string; rule: string; dot: string }[
   { key: 'can_match', label: 'Losing, can match', rule: 'A rival has the Buy Box, and its price still keeps us £3 a pair', dot: 'bg-red-500' },
   { key: 'room', label: 'Winning, room to go up', rule: 'We have it, and the next rival is more than 2% above us — a guess until history shows how far up it holds', dot: 'bg-emerald-500' },
   { key: 'cant_match', label: "Losing, can't match", rule: 'A rival has it under our £3 walk-away price — hold, no race to the bottom', dot: 'bg-slate-400' },
+  { key: 'tie', label: 'Tie at our price', rule: 'A rival at our exact price is shown instead of us — matching changes nothing; left as a tie for now (weeks of stock is on the row)', dot: 'bg-amber-400' },
+  { key: 'dearer', label: 'Rival dearer', rule: 'A rival priced ABOVE us is shown instead — price isn’t the reason; Amazon’s choice', dot: 'bg-slate-400' },
   { key: 'no_bb', label: 'No Buy Box', rule: 'Nobody holds it — Amazon pulled it (often: seen cheaper elsewhere)', dot: 'bg-amber-500' },
   { key: 'top', label: 'Winning, at the top', rule: 'We have it, no room above', dot: 'bg-emerald-700' },
   { key: 'alone', label: 'Alone', rule: 'No other seller on the size — its price is the pricing standard’s job, not the Buy Box', dot: 'bg-sky-500' },
@@ -201,7 +203,7 @@ export default function AmzBuyBoxPage() {
           )}
 
           {/* THE GROUPS — the count is the job. */}
-          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
             {GROUPS.filter((g) => !['unknown', 'error'].includes(g.key) || (counts?.[g.key] ?? 0) > 0).map((g) => {
               const n = counts?.[g.key] ?? 0;
               const on = !search && shown === g.key;
