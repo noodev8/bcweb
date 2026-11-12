@@ -11,7 +11,8 @@ Purpose: The Buy Box screen (/amz/buybox — owner, 2026-11-12; docs/amz-buybox/
 Success Response:
 {
   "return_code": "SUCCESS",
-  "counts": { "can_match": 10, "room": 14, "cant_match": 2, "no_bb": 0, "top": 3, "alone": 1, "unknown": 0, "error": 0 },
+  "counts": { "can_match": 68, "room": 121, "cant_match": 48, "no_bb": 6, "top": 32, "alone": 21, "not_live": 61, "unknown": 0, "error": 0 },
+  "headline": { "sizes": 296, "avg_share": 54.6, "weighted_share": 54.7, "full": 127, "part": 47, "none": 122 },   // sizes live at FBA; the screen shows avg_share + full only
   "last_all": { "id": 4, "started_at": "...", "finished_at": "...", "by_name": "cron", "total": 358, "changed": 41, "error": null },
   "last_run": { ...the newest finished run, any scope, incl. "scope" and "status" },
   "running":  { "id": 5, "scope": "all", "started_at": "...", "by_name": "Andreas", "total": 358, "done": 120 } | null,

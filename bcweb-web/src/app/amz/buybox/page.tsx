@@ -51,6 +51,7 @@ const GROUPS: { key: AmzBuyBoxGroup; label: string; rule: string; dot: string }[
   { key: 'no_bb', label: 'No Buy Box', rule: 'Nobody holds it — Amazon pulled it (often: seen cheaper elsewhere)', dot: 'bg-amber-500' },
   { key: 'top', label: 'Winning, at the top', rule: 'We have it, no room above', dot: 'bg-emerald-700' },
   { key: 'alone', label: 'Alone', rule: 'No other seller on the size — its price is the pricing standard’s job, not the Buy Box', dot: 'bg-sky-500' },
+  { key: 'not_live', label: 'Not live at FBA', rule: 'No stock sellable at FBA now, only on its way in — Amazon can’t feature it, so no price fixes it; back in the groups when the stock lands', dot: 'bg-slate-300' },
   { key: 'unknown', label: 'No walk-away', rule: 'No cost on the style (no £3 price), or no price to match', dot: 'bg-slate-300' },
   { key: 'error', label: 'Not read', rule: 'Amazon refused the read for this size — hover the row for its reason', dot: 'bg-slate-300' },
 ];
@@ -184,8 +185,23 @@ export default function AmzBuyBoxPage() {
 
       {data && (
         <>
+          {/* THE HEADLINE — TWO figures only (owner, 2026-11-12: "I think only the 55% and the 127 are useful", after a strip of
+              five and then the full chat sentence both confused). Over the sizes LIVE at FBA. */}
+          {data.headline && data.headline.sizes > 0 && (
+            <div className="mb-4 flex flex-wrap items-end gap-x-10 gap-y-2">
+              <div title={`Our share of page views, averaged across the ${data.headline.sizes} sizes live at FBA`}>
+                <div className="text-3xl font-semibold tabular-nums text-slate-900">{data.headline.avg_share !== null ? `${Math.round(data.headline.avg_share)}%` : '—'}</div>
+                <div className="text-xs text-slate-500">of page views show our offer</div>
+              </div>
+              <div title={`Of the ${data.headline.sizes} sizes live at FBA`}>
+                <div className="text-3xl font-semibold tabular-nums text-slate-900">{data.headline.full}</div>
+                <div className="text-xs text-slate-500">sizes show our offer on every view</div>
+              </div>
+            </div>
+          )}
+
           {/* THE GROUPS — the count is the job. */}
-          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
             {GROUPS.filter((g) => !['unknown', 'error'].includes(g.key) || (counts?.[g.key] ?? 0) > 0).map((g) => {
               const n = counts?.[g.key] ?? 0;
               const on = !search && shown === g.key;

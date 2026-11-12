@@ -630,7 +630,7 @@ export function getAmzFastSellers() {
 // Amazon Buy Box (/amz/buybox, server routes/amz-buybox.js + amz-buybox-read.js, rules utils/amzBuyBox.js, 2026-11-12) — the LAST
 // STORED reading of who holds the Buy Box on each Amazon size, grouped. Opening the screen never asks Amazon; a read is the cron, or
 // startAmzBuyBoxRead (whole list, or one style), which runs in the background — follow it through `running`.
-export type AmzBuyBoxGroup = 'can_match' | 'room' | 'cant_match' | 'no_bb' | 'top' | 'alone' | 'unknown' | 'error';
+export type AmzBuyBoxGroup = 'can_match' | 'room' | 'cant_match' | 'no_bb' | 'top' | 'alone' | 'not_live' | 'unknown' | 'error';
 export type AmzBuyBoxHolder = 'US' | 'US_SHARED' | 'OTHER_FBA' | 'OTHER_MFN' | 'AMAZON' | 'NONE';
 export interface AmzBuyBoxOffer { seller: string; us?: boolean; fba: boolean; price: number | null; bb: boolean }   // us = our own offer
 // One featured offer (competitiveSummary): its share of page views, and the customer groups it is featured to.
@@ -656,8 +656,15 @@ export interface AmzBuyBoxRun {
   id: number; scope?: string; status?: string; started_at: string; finished_at?: string | null; by_name: string;
   total: number; done?: number; changed?: number | null; error?: string | null;
 }
+// The headline (utils/amzBuyBox.js HEADLINE): over the sizes LIVE at FBA with a known share of views.
+export interface AmzBuyBoxHeadline {
+  sizes: number;
+  avg_share: number | null;       // our share of views, averaged per size
+  weighted_share: number | null;  // the same, weighted by pairs sold in 30 days
+  full: number; part: number; none: number;   // sizes we are shown to on all / part / none of the views
+}
 export interface AmzBuyBoxData {
-  rows: AmzBuyBoxRow[]; counts: Record<AmzBuyBoxGroup, number>;
+  rows: AmzBuyBoxRow[]; counts: Record<AmzBuyBoxGroup, number>; headline: AmzBuyBoxHeadline | null;
   last_all: AmzBuyBoxRun | null; last_run: AmzBuyBoxRun | null; running: AmzBuyBoxRun | null;
 }
 export function getAmzBuyBox() {
@@ -665,6 +672,7 @@ export function getAmzBuyBox() {
     { url: '/amz-buybox', method: 'GET' },
     (b) => ({
       rows: (b.rows || []) as AmzBuyBoxRow[], counts: (b.counts || {}) as Record<AmzBuyBoxGroup, number>,
+      headline: (b.headline ?? null) as AmzBuyBoxHeadline | null,
       last_all: b.last_all ?? null, last_run: b.last_run ?? null, running: b.running ?? null,
     })
   );

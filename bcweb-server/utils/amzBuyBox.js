@@ -42,7 +42,16 @@ GROUPS (classify — computed when the screen loads, from the stored reading + t
   cant_match  a rival leads under our walk-away price — hold, no race to the bottom
   no_bb       nobody is featured (Amazon pulled the Buy Box — often "seen cheaper elsewhere")
   unknown     no walk-away price (no cost) or Amazon gave no price to match
+  not_live    NO STOCK SELLABLE AT FBA NOW (only on its way in) — Amazon can't feature an offer it can't ship, so no price fixes it;
+              it comes back into the groups when the stock lands (owner, 2026-11-12: 56 of the 178 sizes shown to nobody were this).
+              Checked FIRST, from today's amzfeed.amzlive.
   error       the read failed for this size
+
+HEADLINE (owner, 2026-11-12 — "those headline percentages ... would be good to see on screen"; maybe promoted to the dashboard once
+  agreed): over the sizes LIVE at FBA with a known share (an inbound-only size can't be shown, so it would only drag the figure). The
+  screen shows TWO figures only (owner, 2026-11-12, after a strip of five and then the full chat sentence both confused: "I think only
+  the 55% and the 127 are useful"): avg_share (our share of views, averaged per size) and full (sizes shown to on every view). The
+  rest (weighted_share by 30-day pairs, part, none) stay in the API for a later look, not on screen.
 =======================================================================================================================================
 */
 
@@ -73,7 +82,7 @@ async function postPaced(path, body, waitMs) {
   }
 }
 
-const GROUPS = ['can_match', 'room', 'cant_match', 'no_bb', 'top', 'alone', 'unknown', 'error'];
+const GROUPS = ['can_match', 'room', 'cant_match', 'no_bb', 'top', 'alone', 'not_live', 'unknown', 'error'];
 
 const chunk = (a, n) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; };
 const money = (m) => {
@@ -316,6 +325,7 @@ async function executeRun(run) {
 function classify(r) {
   const walk = priceForProfit({ cost: r.cost, fbafee: r.fbafee, tax: r.tax }, SETTINGS.WALK_AWAY_PROFIT);
   if (r.error) return { group: 'error', target: null, kept: null, walk };
+  if (!(Number(r.live) > 0)) return { group: 'not_live', target: null, kept: null, walk };
   const us = r.holder === 'US' || r.holder === 'US_SHARED';
   const target = us ? null : num(r.bb_price);
   const kept = target === null ? null : amzProfit({ price: target, cost: r.cost, fbafee: r.fbafee, tax: r.tax }).profit;
@@ -362,6 +372,19 @@ async function readScreen(db) {
   });
   const counts = Object.fromEntries(GROUPS.map((g) => [g, 0]));
   for (const r of out) counts[r.group] += 1;
+
+  // HEADLINE (header): sizes live at FBA whose share is known.
+  const known = out.filter((r) => r.live > 0 && r.our_share !== null && !r.error);
+  const sold = known.filter((r) => r.sold30 > 0);
+  const soldPairs = sold.reduce((t, r) => t + r.sold30, 0);
+  const headline = {
+    sizes: known.length,
+    avg_share: known.length ? Math.round((known.reduce((t, r) => t + r.our_share, 0) / known.length) * 10) / 10 : null,
+    weighted_share: soldPairs ? Math.round((sold.reduce((t, r) => t + r.our_share * r.sold30, 0) / soldPairs) * 10) / 10 : null,
+    full: known.filter((r) => r.our_share >= 99.5).length,
+    part: known.filter((r) => r.our_share > 0 && r.our_share < 99.5).length,
+    none: known.filter((r) => r.our_share === 0).length,
+  };
   const lastAll = await db.query(
     `SELECT id, started_at::text, finished_at::text, by_name, total, changed, error FROM amz_buybox_run
      WHERE scope = 'all' AND status = 'ok' ORDER BY id DESC LIMIT 1`);
@@ -371,7 +394,7 @@ async function readScreen(db) {
   const running = await db.query(
     `SELECT id, scope, started_at::text, by_name, total, done FROM amz_buybox_run
      WHERE status = 'running' AND started_at >= now() - make_interval(mins => $1) ORDER BY id DESC LIMIT 1`, [STALE_RUN_MINUTES]);
-  return { rows: out, counts, last_all: lastAll.rows[0] || null, last_run: lastAny.rows[0] || null, running: running.rows[0] || null };
+  return { rows: out, counts, headline, last_all: lastAll.rows[0] || null, last_run: lastAny.rows[0] || null, running: running.rows[0] || null };
 }
 
 module.exports = { GROUPS, KEEP_MONTHS, sizesToRead, startRun, executeRun, readAmazon, summarise, saveReadings, classify, readScreen };
