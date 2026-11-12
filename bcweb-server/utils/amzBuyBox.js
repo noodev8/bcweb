@@ -28,9 +28,12 @@ THE BUY BOX IS SHARED BY SHARE OF VIEWS (owner, 2026-11-12 — "swap to the shar
   If competitiveSummary fails for a size, the reading falls back to itemOffers' IsBuyBoxWinner flags (the cheapest winner) with
   our_share unknown — the reading still stands.
   - A rival at OUR EXACT PRICE, to the penny, is tagged (a repricer following us — matching it starts a race).
+  - OUR ELIGIBILITY (owner, 2026-11-12): itemOffers' IsFeaturedMerchant for our offer → our_eligible (+ elig on every offer in the
+    offers jsonb). false = Amazon won't consider us for the Buy Box at all, so 0% whatever the price — tagged on the screen; the fix
+    is in Seller Central, not the price. Kept in history (change-only), migration 20261112d. IVES-WHITE 03–09 were all eligible.
 
 HISTORY (change-only, KEEP_MONTHS): a size gets a row only when holder / Buy Box price / our price / cheapest rival (seller + price) /
-rival count / our share of views (as a WHOLE %) differs from its previous row. Purged by the read itself: a row older than the cut-off goes only once a newer row is also
+rival count / our share of views (as a WHOLE %) / our eligibility differs from its previous row. Purged by the read itself: a row older than the cut-off goes only once a newer row is also
 at or before the cut-off, so the state at the cut-off can still be read. A size that fails to read writes nothing to history.
 
 GROUPS (classify — computed when the screen loads, from the stored reading + today's cost / fee, so a cost change applies at once):
@@ -210,7 +213,11 @@ function summarise(size, offersResp, summaryResp, me) {
   out.rival_at_our_price = out.our_price !== null && others.some((x) => Math.abs(landed(x) - out.our_price) < 0.005);
   out.amazon_retail = list.some((x) => x.SellerId === AMAZON_RETAIL_UK);
   out.competitive_price = r2(money(payload.Summary && payload.Summary.CompetitivePriceThreshold));
-  out.offers = list.map((x) => ({ seller: x.SellerId, us: x.SellerId === me, fba: !!x.IsFulfilledByAmazon, price: landed(x), bb: !!x.IsBuyBoxWinner }));
+  // ELIGIBILITY (2026-11-12): IsFeaturedMerchant = Amazon will consider the offer for the Buy Box at all. Ours false = no price
+  // fixes a 0% share. NULL = our offer not in the list (or Amazon left the flag out).
+  const elig = (x) => (typeof x.IsFeaturedMerchant === 'boolean' ? x.IsFeaturedMerchant : null);
+  out.our_eligible = ours ? elig(ours) : null;
+  out.offers = list.map((x) => ({ seller: x.SellerId, us: x.SellerId === me, fba: !!x.IsFulfilledByAmazon, price: landed(x), bb: !!x.IsBuyBoxWinner, elig: elig(x) }));
   return out;
 }
 
@@ -251,7 +258,7 @@ async function readAmazon(sizes, onProgress = () => {}) {
 }
 
 // our_share is compared and stored as a WHOLE % — Amazon's view weights move by fractions between reads, and a fraction is not news.
-const HISTORY_KEYS = ['our_price', 'holder', 'bb_price', 'rival_seller', 'rival_price', 'rivals', 'share'];
+const HISTORY_KEYS = ['our_price', 'holder', 'bb_price', 'rival_seller', 'rival_price', 'rivals', 'share', 'our_eligible'];
 // pg hands numerics back as strings ('39.79'), the reading has numbers — compare as numbers where both are numeric.
 const norm = (v) => (v === null || v === undefined || v === '' ? null : typeof v === 'boolean' ? v : Number.isFinite(Number(v)) ? Number(v) : String(v));
 const same = (a, b) => norm(a) === norm(b);
@@ -262,7 +269,7 @@ async function saveReadings(client, runId, readings, scopeAll) {
   const now = (await client.query(`SELECT now() AS t`)).rows[0].t;
   const codes = readings.map((r) => r.code);
   const prev = await client.query(
-    `SELECT DISTINCT ON (code) code, our_price, holder, bb_price, rival_seller, rival_price, rivals, our_share AS share
+    `SELECT DISTINCT ON (code) code, our_price, holder, bb_price, rival_seller, rival_price, rivals, our_share AS share, our_eligible
      FROM amz_buybox_history WHERE code = ANY($1) ORDER BY code, read_at DESC`, [codes]);
   const last = new Map(prev.rows.map((r) => [r.code, r]));
 
@@ -271,24 +278,28 @@ async function saveReadings(client, runId, readings, scopeAll) {
     r.share = r.our_share === null || r.our_share === undefined ? null : Math.round(r.our_share);
     await client.query(
       `INSERT INTO amz_buybox_now (code, read_at, run_id, asin, our_price, holder, bb_price, rival_seller, rival_price, next_up, rivals,
-                                   rival_at_our_price, amazon_retail, our_share, lead_share, featured, competitive_price, offers, error)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+                                   rival_at_our_price, amazon_retail, our_share, lead_share, featured, competitive_price, offers, error,
+                                   our_eligible)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
        ON CONFLICT (code) DO UPDATE SET read_at = EXCLUDED.read_at, run_id = EXCLUDED.run_id, asin = EXCLUDED.asin,
          our_price = EXCLUDED.our_price, holder = EXCLUDED.holder, bb_price = EXCLUDED.bb_price, rival_seller = EXCLUDED.rival_seller,
          rival_price = EXCLUDED.rival_price, next_up = EXCLUDED.next_up, rivals = EXCLUDED.rivals,
          rival_at_our_price = EXCLUDED.rival_at_our_price, amazon_retail = EXCLUDED.amazon_retail,
          our_share = EXCLUDED.our_share, lead_share = EXCLUDED.lead_share, featured = EXCLUDED.featured,
-         competitive_price = EXCLUDED.competitive_price, offers = EXCLUDED.offers, error = EXCLUDED.error`,
+         competitive_price = EXCLUDED.competitive_price, offers = EXCLUDED.offers, error = EXCLUDED.error,
+         our_eligible = EXCLUDED.our_eligible`,
       [r.code, now, runId, r.asin, r.our_price ?? null, r.holder || 'NONE', r.bb_price ?? null, r.rival_seller ?? null, r.rival_price ?? null,
         r.next_up ?? null, r.rivals ?? 0, !!r.rival_at_our_price, !!r.amazon_retail, r.our_share ?? null, r.lead_share ?? null,
-        r.featured ? JSON.stringify(r.featured) : null, r.competitive_price ?? null, r.offers ? JSON.stringify(r.offers) : null, r.error]);
+        r.featured ? JSON.stringify(r.featured) : null, r.competitive_price ?? null, r.offers ? JSON.stringify(r.offers) : null, r.error,
+        r.our_eligible ?? null]);
     if (r.error) continue; // a failed read says nothing about the Buy Box — no history row
     const p = last.get(r.code);
     if (p && HISTORY_KEYS.every((k) => same(p[k], r[k]))) continue;
     await client.query(
-      `INSERT INTO amz_buybox_history (code, read_at, our_price, holder, bb_price, rival_seller, rival_price, rivals, our_share)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT (code, read_at) DO NOTHING`,
-      [r.code, now, r.our_price ?? null, r.holder, r.bb_price ?? null, r.rival_seller ?? null, r.rival_price ?? null, r.rivals ?? 0, r.share]);
+      `INSERT INTO amz_buybox_history (code, read_at, our_price, holder, bb_price, rival_seller, rival_price, rivals, our_share, our_eligible)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (code, read_at) DO NOTHING`,
+      [r.code, now, r.our_price ?? null, r.holder, r.bb_price ?? null, r.rival_seller ?? null, r.rival_price ?? null, r.rivals ?? 0, r.share,
+        r.our_eligible ?? null]);
     changed += 1;
   }
   // The whole list read: a size no longer stocked at FBA leaves the screen (its history stays until it ages out).
@@ -372,7 +383,7 @@ async function readScreen(db) {
       live: r.live, total: r.total, sold30: r.sold30, weeks_left: weeks,
       our_price: num(r.our_price), set_since: num(r.set_since), rrp: num(r.rrp),
       holder: r.holder, bb_price: num(r.bb_price), rivals: Number(r.rivals), rival_price: num(r.rival_price), rival_seller: r.rival_seller,
-      next_up: num(r.next_up), rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail,
+      next_up: num(r.next_up), rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail, our_eligible: r.our_eligible,
       our_share: num(r.our_share), lead_share: num(r.lead_share), featured: r.featured || [],
       competitive_price: num(r.competitive_price), offers: r.offers || [], error: r.error,
       group: c.group, target: c.target, kept: c.kept, walk: c.walk,

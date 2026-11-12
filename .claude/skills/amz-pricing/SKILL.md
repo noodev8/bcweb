@@ -1,6 +1,6 @@
 ---
 name: amz-pricing
-description: Run the Amazon pricing standard on a style — each size judged against its sister sizes (Buy Box, expected vs sold, price vs the sister median) with a verdict and a suggested price, Lean on profit or Revenue Push. The check is read only; a price the owner agrees for a size can then be set (logged into the Amazon upload basket) with a guarded script. Use when the owner asks to "check the pricing on <style>", "run amz-pricing", "check IVES-WHITE", "check the top 10 on Amazon", or "should I move the price on <size>".
+description: Run the Amazon pricing standard on a style — each size judged against its sister sizes (Buy Box, expected vs sold, price vs the sister median) with a verdict and a suggested price, Lean on profit or Revenue Push. The check is read only; a price the owner agrees for a size can then be set (logged, sent to Amazon by the next Update Orders or Send to Amazon) with a guarded script. Reads the Buy Box screen's data (who Amazon shows, share of views, copier sellers) for today's Buy Box. Use when the owner asks to "check the pricing on <style>", "run amz-pricing", "check IVES-WHITE", "check the top 10 on Amazon", or "should I move the price on <size>".
 ---
 
 # Amazon pricing standard (`/amz-pricing`)
@@ -9,6 +9,54 @@ The rules live in `bcweb-server/utils/amzPricingStandard.js` (read its header �
 the owner's decisions in memory `amz-size-pricing-standard` (if this machine has it — the util header holds the same rules). The
 **check** (`amz-pricing-check.js`) is read only. **Setting a price** (`amz-price-set.js`, below) writes — only ever for a size and
 price the owner has agreed in this conversation.
+
+## The Buy Box screen's data — read it for every style you discuss (2026-11-12)
+
+`/amz/buybox` reads who Amazon SHOWS on every size in FBA stock, hourly 08–18 GMT by cron (rules `utils/amzBuyBox.js`, the
+record + owner decisions `docs/amz-buybox/PLAN.md`). It is today's Buy Box with no report needed, so **look it up before giving a
+judgement on any size** (read only, through the server's `database.js` with `bcweb-server/.env` loaded):
+
+```sql
+SELECT code, read_at, our_price, holder, bb_price, our_share, lead_share, rivals, rival_at_our_price, next_up, featured, offers
+  FROM amz_buybox_now WHERE code LIKE 'FLE030-IVES-WHITE-%' ORDER BY code;          -- latest reading, one row per size
+SELECT read_at, our_price, holder, bb_price, our_share FROM amz_buybox_history
+ WHERE code = 'FLE030-IVES-WHITE-06' ORDER BY read_at;                               -- change-only, from 2026-11-12, 12 months
+```
+
+Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). Say how old the reading is.
+
+**How to read it:**
+- **`our_eligible`** (2026-11-12) = Amazon's IsFeaturedMerchant for our offer. `false` = Amazon won't feature us whatever the price
+  (red "not eligible" tag on the screen) — say so first; the fix is in Seller Central, never a price move. Every offer's flag is
+  `elig` in `offers`. All Ives White sizes were eligible when it was added, so their 0% is Amazon's choice between eligible offers.
+- **`our_share` = our own Buy Box %** (share of page views where Amazon features us). `featured` = each featured offer with its
+  share and customer groups (PRIME / NON_PRIME / DEFAULT); `offers` = every offer, `us` / `fba` / price incl. postage.
+- **The lead = the offer featured to the MOST views.** Its price, postage included, is the one that matters. It is NOT the cheapest
+  featured offer, and never use Amazon's "featured offer expected price" (wrong both times it was checked — PLAN.md).
+- **Today vs a window.** The check's `--report` (Business Report) is still the only Buy Box % for a PAST window — history only
+  starts 2026-11-12. Until history covers the window, give `our_share` as **today's** reading beside the verdict and say so; a size
+  shown 0% today with no report is still worth calling a Buy Box problem, not "NOT PRICE".
+- **The screen's groups**, and what each means for a verdict: *Winning, room to go up* (next rival > 2% above — a raise candidate,
+  a guess until history shows how far up it holds) · *Losing, can match* (the lead's price still keeps £3 a pair) · *Losing, can't
+  match* (lead under the walk-away — hold, no race to the bottom) · *Tie at our price* (a rival at our exact price is featured —
+  see the copier below; a cut is not the answer) · *Rival dearer* (Amazon's choice, not price) · *No Buy Box* · *Winning, at the
+  top* · *Alone* (pricing standard's job, not the Buy Box) · *Not live at FBA* (inbound only — no price fixes it).
+
+**What IVES-WHITE taught us (2026-11-12, with the owner):**
+- **A copier seller.** AAGBKF49IVH4X (self-posts, free postage) sits at OUR EXACT PRICE on every White size (04 £39.69, 05 £39.30,
+  06 / 07 £39.49) and followed us down £39.79 → £39.49 within hours. A cut against a copier only moves the tie lower — never suggest
+  one to win the Buy Box back. **Who wins the tie differs by size** (05: us 71% of views; 06 / 07: the copier ~85%, us 0%) — Amazon's
+  choice, not visible in the data. Untested: whether it follows UP (if it does, we set the page price). A size at 0% loses nothing
+  by testing a small raise; a 10p cut tells you within the hour whether it follows down. It is NOT range-wide: on 2026-11-12 it was
+  on 9 of our sizes (Ives White, GLB123-TAN — tied on 2 of 3, us 0%). Another seller at our exact price in ONE reading may just be a
+  round price (A1038HLWXRJ756 matched us on 13 of 28 sizes, A3P5ROKL5A1OLE 16 of 81) — call it a copier only when the history
+  shows it moving after our price moved.
+- **The cheap non-Prime seller.** A1LSPI8RFKURCB at £31.44 + £4.95 postage (£36.39) is featured only to non-Prime groups (~10% of
+  views on 06, up to ~30% on 05). Not worth chasing: on Ives it costs ~£2 a pair (≈£0.67 kept per £1 of price) for a tenth of views.
+- **Season first.** 06 sold 13 pairs on Amazon Nov 2025 – Feb 2026 against 183 in Mar – May 2026. A lost Buy Box in winter costs
+  a few pairs; don't give margin away for it while the stock (59 on 06) is safe to sell in spring at ~£39. The tie matters in March.
+- **Pricing a test.** Since 2026-11-11 a price goes live through the SP-API; after a change, the screen's **Read this style** (seconds)
+  or the next hourly read shows the reaction. Note test prices clearly (e.g. "Buy Box copier test").
 
 ## Running it
 
@@ -94,8 +142,9 @@ same as the Amazon pricing screens): one `amz_price_log` row. It never touches r
 3. **If it says REFUSED, stop.** Tell the owner the reason it printed. Add an override flag (`--big-move`, `--below-walk-away`,
    `--above-rrp`, `--replace-pending`) only if the owner, told that reason, says to — never on your own.
 4. **Then the same command with `--commit`.** Report the log id it prints.
-5. **Tell the owner it is not on Amazon yet**: it is in the team upload basket — download the Seller Central file, upload it, then
-   press "I've uploaded" (so the check knows when the new price went live).
+5. **Tell the owner it is not on Amazon yet**: the script logs it but doesn't send it. It goes to Amazon at the next Update Orders
+   run (cron or button — step 2c sends any unsent price), or straight away if someone presses **Send to Amazon · N** in the /amz
+   header. Once Amazon accepts it the row is stamped sent, so the check knows when the new price went live.
 6. Never set more sizes than the owner named, never re-run a `--commit` that already printed WRITTEN, and never write SQL by hand
    to change a price.
 

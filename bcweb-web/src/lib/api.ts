@@ -632,7 +632,8 @@ export function getAmzFastSellers() {
 // startAmzBuyBoxRead (whole list, or one style), which runs in the background — follow it through `running`.
 export type AmzBuyBoxGroup = 'can_match' | 'room' | 'cant_match' | 'tie' | 'dearer' | 'no_bb' | 'top' | 'alone' | 'not_live' | 'unknown' | 'error';
 export type AmzBuyBoxHolder = 'US' | 'US_SHARED' | 'OTHER_FBA' | 'OTHER_MFN' | 'AMAZON' | 'NONE';
-export interface AmzBuyBoxOffer { seller: string; us?: boolean; fba: boolean; price: number | null; bb: boolean }   // us = our own offer
+// us = our own offer; elig = Amazon's IsFeaturedMerchant (will it consider the offer for the Buy Box at all) — absent on readings stored before it was saved (2026-11-12)
+export interface AmzBuyBoxOffer { seller: string; us?: boolean; fba: boolean; price: number | null; bb: boolean; elig?: boolean | null }
 // One featured offer (competitiveSummary): its share of page views, and the customer groups it is featured to.
 export interface AmzBuyBoxFeatured {
   seller: string; us: boolean; fba: boolean; price: number | null; share: number; segments: { who: string; pct: number }[];
@@ -645,6 +646,7 @@ export interface AmzBuyBoxRow {
   rrp: number | null;
   holder: AmzBuyBoxHolder; bb_price: number | null; rivals: number; rival_price: number | null; rival_seller: string | null;
   next_up: number | null; rival_at_our_price: boolean; amazon_retail: boolean;
+  our_eligible: boolean | null;  // our offer's IsFeaturedMerchant — false = Amazon won't feature us whatever the price; null = not known
   // SHARE OF VIEWS (2026-11-12): our_share = % of page views where we are the featured offer (null = not known this read);
   // lead_share = the share of the offer featured to the most views — holder / bb_price are that offer's.
   our_share: number | null; lead_share: number | null; featured: AmzBuyBoxFeatured[];

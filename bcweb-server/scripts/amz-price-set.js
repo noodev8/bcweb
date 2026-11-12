@@ -11,8 +11,8 @@ WHAT IT WRITES: one amz_price_log row (old = today's live amzfeed price, new, no
 skumap.next_amz_price_review = today + SETTINGS.REVIEW_AFTER_PRICE_DAYS (7: the earliest the standard can judge the new price), so the
 size leaves the Amazon Due list like a price set on the screens (owner, 2026-11-04: "same system as our manual due dates"). Set
 exactly, even over a later date: pricing a parked size is the owner's override, and the new price wants judging in 7 days. No Shopify,
-never amzfeed. Like every Amazon price here it is NOT live yet: it lands in the team upload basket (GET /amz-basket) and
-reaches Amazon only when someone downloads the Seller Central file, uploads it, and presses "I've uploaded".
+never amzfeed. It is NOT sent from here: the row waits as unsent (the /amz header's "Send to Amazon · N") and reaches Amazon at
+the next Update Orders run (step 2c, utils/amzPricePush.js) or when someone presses Send to Amazon (since 2026-11-11).
 
 GUARDS (each refuses; the flag lets the owner override one on purpose):
   - Dry run by default: prints what it would do and writes nothing. --commit writes.
@@ -123,7 +123,7 @@ async function main() {
   }));
   if (w.error) throw new Error(`${w.error}: ${w.message}`);
   console.log(`WRITTEN — amz_price_log id ${w.logId} · review ${w.nextReview ? 'set' : 'not set'}${w.warnings.length ? ` · warnings: ${w.warnings.join(', ')}` : ''}.`);
-  console.log('Not on Amazon yet: it is in the team upload basket. Download the Seller Central file, upload it, then press "I\'ve uploaded".');
+  console.log('Not on Amazon yet: it goes at the next Update Orders run, or press "Send to Amazon" in the /amz header to send it now.');
 }
 
 main()

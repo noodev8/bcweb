@@ -12,7 +12,7 @@ WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12: "is the screen just a result of
          taken off); the one button is Read this style, on an open row (seconds — after a price change). New / sold-out sizes need nothing: each read takes the sizes in FBA stock at the time.
 
 THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost):
-         Losing, can match · Winning, room to go up · Losing, can't match · No Buy Box · Winning, at the top · Alone.
+         Winning, room to go up · Losing, can match · Losing, can't match · No Buy Box · Winning, at the top · Alone.
          The Buy Box price includes postage. "Kept" = our profit a pair at the Buy Box price; "Walk-away" = the £3-a-pair price.
          SHARE OF VIEWS (owner, 2026-11-12): Amazon splits the Buy Box by customer group, each with a share of page views. "Buy Box"
          is the offer featured to the MOST views (its price is the one to match, postage included); "We're shown" is the % of views
@@ -30,7 +30,8 @@ READ ONLY for now: no Match / Raise presses yet (PLAN.md step 3, after the owner
 
 TAGS (colour restraint — small solid tags, no row tints): "following us" = a rival at our exact price to the penny (a repricer?) ·
          "Amazon" = Amazon Retail sells the size · "set £x" = a price was set AFTER the reading (amz_price_log), so the row is out of
-         date for it. Our price is always what AMAZON showed at the read — not amzfeed, which can lag a day (2026-11-12: 40 sizes looked
+         date for it · "not eligible" (red) = Amazon won't consider OUR offer for the Buy Box at all (IsFeaturedMerchant false, 2026-11-12)
+         — 0% whatever the price, so the fix is in Seller Central. Our price is always what AMAZON showed at the read — not amzfeed, which can lag a day (2026-11-12: 40 sizes looked
          "changed" because amzfeed still held the price from before changes Amazon had already taken).
 =======================================================================================================================================
 */
@@ -43,10 +44,10 @@ import { getAmzBuyBox, startAmzBuyBoxRead, type AmzBuyBoxGroup, type AmzBuyBoxHo
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Screen order = the order to work them: what can be won back, then money left on the table, then what to leave.
+// Screen order = the order to work them: money left on the table first (owner, 2026-11-12), then what can be won back, then what to leave.
 const GROUPS: { key: AmzBuyBoxGroup; label: string; rule: string; dot: string }[] = [
-  { key: 'can_match', label: 'Losing, can match', rule: 'A rival has the Buy Box, and its price still keeps us £3 a pair', dot: 'bg-red-500' },
   { key: 'room', label: 'Winning, room to go up', rule: 'We have it, and the next rival is more than 2% above us — a guess until history shows how far up it holds', dot: 'bg-emerald-500' },
+  { key: 'can_match', label: 'Losing, can match', rule: 'A rival has the Buy Box, and its price still keeps us £3 a pair', dot: 'bg-red-500' },
   { key: 'cant_match', label: "Losing, can't match", rule: 'A rival has it under our £3 walk-away price — hold, no race to the bottom', dot: 'bg-slate-400' },
   { key: 'tie', label: 'Tie at our price', rule: 'A rival at our exact price is shown instead of us — matching changes nothing; left as a tie for now (weeks of stock is on the row)', dot: 'bg-amber-400' },
   { key: 'dearer', label: 'Rival dearer', rule: 'A rival priced ABOVE us is shown instead — price isn’t the reason; Amazon’s choice', dot: 'bg-slate-400' },
@@ -316,6 +317,7 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
           )}
           {r.rival_at_our_price && <Tag tone="amber" title="A rival sits at our exact price, to the penny — likely a repricer following us. Matching it starts a race.">following us</Tag>}
           {r.amazon_retail && <Tag title="Amazon itself sells this size">Amazon</Tag>}
+          {r.our_eligible === false && <Tag tone="red" title="Amazon says our offer isn't eligible for the Buy Box (Featured Offer) — it can't be shown whatever the price. Check the listing in Seller Central, not the price.">not eligible</Tag>}
         </td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{r.rivals}</td>
         <td className={'whitespace-nowrap px-2 py-1.5 text-right tabular-nums ' + (r.kept !== null && r.walk !== null && r.target !== null && r.target < r.walk ? 'text-red-600' : 'text-slate-700')}>
@@ -373,6 +375,7 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
                       <tr key={`${o.seller}-${i}`} className={o.us ? 'font-medium text-slate-900' : 'text-slate-600'}>
                         <td className="py-0.5 pr-6 font-mono text-xs" title={o.seller}>
                           {o.us ? 'Us' : o.seller}{!o.us && o.seller === r.rival_seller && <span className="ml-1 font-sans text-slate-400">cheapest rival</span>}
+                          {o.elig === false && <span className="ml-1 font-sans text-red-600" title="Amazon won't consider this offer for the Buy Box">not eligible</span>}
                         </td>
                         <td className="py-0.5 pr-6">{o.fba ? 'FBA' : 'Self-post'}</td>
                         <td className="py-0.5 pr-6 text-right tabular-nums">{money(o.price)}</td>
