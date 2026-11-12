@@ -158,6 +158,8 @@ The owner pointed at it: probably our best-selling, most profitable size, priced
 
 8. **Is our offer even eligible?** *Owner, 2026-11-12, on IVES-WHITE-06 (59 pairs, FBA, shown to 0%): "yes, save the eligibility flag".* Built: itemOffers' `IsFeaturedMerchant` for our offer → `our_eligible` on `_now` and in history (change-only), plus `elig` on every offer in the offers jsonb (migration `20261112d_amz_buybox_eligible.sql`, applied). A red **not eligible** tag shows on the row, and on the offer in the open row. **Ives White 03–09: all eligible**, so 06 / 07's 0% is Amazon choosing between eligible offers. In the raw read, the copier (AAGBKF49IVH4X) on 06 promises 24h dispatch and is regional Prime only, against our FBA 0h and national Prime. Its feedback is 91% from 99,046 ratings, ours 96% from 2,515. Why Amazon still prefers it is not visible.
 
+9. **Copier test — a SEPARATE trial, not part of this plan** (owner, 2026-11-12). Idea: on a size where a copier wins the tie and we're shown 0%, step our price down. The copier follows, sells at the low price, and may run out, and then we go back up. Run on IVES-WHITE-06 only, in **`COPIER-TEST.md`**. Nothing from it comes into this plan, the screen or the pricing skill unless the result confirms it.
+
 ### Built 2026-11-12 (step 2, read only)
 
 - Tables `amz_buybox_now` / `amz_buybox_history` / `amz_buybox_run` (`bcweb-server/migrations/20261112_amz_buybox.sql`).
