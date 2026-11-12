@@ -25,8 +25,9 @@ CLEAR (owner, 2026-11-12): no size ever drops off by itself — "it takes away t
          them back). And NO review dates on this screen: with an hourly reading, waiting 3–30 days to act on a lost Buy Box makes no
          sense (owner: "if we are updating EVERY hour, what is the point of not acting for a possible 3, 7 or 30 days?").
 
-READ ONLY for now: no Match / Raise presses yet (PLAN.md step 3, after the owner has watched a few readings). The row links to the
-         size's Amazon price screen, where a price can be set as usual.
+THIS SCREEN WRITES NOTHING. The Match / Raise presses (PLAN.md step 3) are on GO THROUGH (/amz/buybox/deck, 2026-11-12, a trial),
+         linked from each To do tile: one size at a time, one suggested move (utils/amzBuyBoxDeck.js). The row links to the size's
+         Amazon price screen, where a price can be set as usual.
 
 TAGS (colour restraint — small solid tags, no row tints): "following us" = a rival at our exact price to the penny (a repricer?) ·
          "Amazon" = Amazon Retail sells the size · "set £x" = a price was set AFTER the reading (amz_price_log), so the row is out of
@@ -213,14 +214,22 @@ export default function AmzBuyBoxPage() {
             {GROUPS.filter((g) => ACTION_GROUPS.includes(g.key)).map((g) => {
               const n = counts?.[g.key] ?? 0;
               const on = !search && shown === g.key;
+              // GO THROUGH (2026-11-12, a trial): the group one size at a time with one suggested move — /amz/buybox/deck,
+              // rules utils/amzBuyBoxDeck.js. A link beside the tile's button, not inside it (no link inside a button).
               return (
-                <button key={g.key} type="button" onClick={() => { setGroup(g.key); setSearch(''); setOpen(null); }} title={g.rule}
-                  className={'min-w-[12rem] rounded-lg border px-4 py-3 text-left shadow-sm ' + (on ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:bg-slate-50')}>
-                  <div className="flex items-center gap-1.5 text-sm text-slate-600">
-                    <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} /> {g.label}
-                  </div>
-                  <div className="text-3xl font-semibold tabular-nums text-slate-900">{n}</div>
-                </button>
+                <div key={g.key} className={'min-w-[12rem] rounded-lg border shadow-sm ' + (on ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white')}>
+                  <button type="button" onClick={() => { setGroup(g.key); setSearch(''); setOpen(null); }} title={g.rule}
+                    className={'block w-full rounded-t-lg px-4 pb-1 pt-3 text-left ' + (on ? '' : 'hover:bg-slate-50')}>
+                    <div className="flex items-center gap-1.5 text-sm text-slate-600">
+                      <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} /> {g.label}
+                    </div>
+                    <div className="text-3xl font-semibold tabular-nums text-slate-900">{n}</div>
+                  </button>
+                  <Link href={`/amz/buybox/deck?g=${g.key}`} title="One size at a time, with one suggested move — the sizes that sold in 30 days"
+                    className="block px-4 pb-2 text-xs font-medium text-brand-700 hover:underline">
+                    Go through →
+                  </Link>
+                </div>
               );
             })}
           </div>

@@ -171,6 +171,7 @@ app.use('/amz-sales', require('./routes/amz-sales'));        // drill report (la
 app.use('/amz-find', require('./routes/amz-find'));          // direct SKU search across all managed segments
 app.use('/amz-buybox', require('./routes/amz-buybox'));               // Buy Box screen: the last stored reading, grouped (utils/amzBuyBox.js) — READ ONLY
 app.use('/amz-buybox-team', require('./routes/amz-buybox-team'));     // Buy Box Team week: each person's moves vs the Buy Box (utils/amzBuyBoxTeam.js) — READ ONLY
+app.use('/amz-buybox-deck', require('./routes/amz-buybox-deck'));     // Buy Box "Go through": one size at a time, one suggested move (utils/amzBuyBoxDeck.js) — READ ONLY
 app.use('/amz-buybox-read', require('./routes/amz-buybox-read'));     // start a Buy Box read (whole list / one style) in the background (2026-11-12)
 app.use('/amz-fast-sellers', require('./routes/amz-fast-sellers')); // Fast sellers: sold in 30d, priced->sold / shipped->sold (utils/sellSpeed.js)
 app.use('/amz-apply', require('./routes/amz-apply'));        // W-A1: record a new Amazon price + auto-park the SKU (skumap.next_amz_price_review)

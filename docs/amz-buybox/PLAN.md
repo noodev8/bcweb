@@ -84,7 +84,7 @@ Row: our price · Buy Box price + holder (us / other FBA / other self-posted) ·
 
 1. **Read-only look** — a probe script (e.g. `scripts/amz-buybox-probe.js`, on `utils/amzSpApi.js`) printing the above for ~30 known sizes (IVES-WHITE + some Rieker / Lunar). Changes nothing.
 2. Hourly background read + stored Buy Box history + the screen, read only.
-3. Match / Raise presses (W-A1, note e.g. "Buy Box match", 3-day review keeping a later date).
+3. Match / Raise presses (W-A1, note e.g. "Buy Box match", 3-day review keeping a later date). **Built 2026-11-12 as "Go through"** (`/amz/buybox/deck`, rules `utils/amzBuyBoxDeck.js`) — owner changed the review: none; a size set leaves the deck until a reading has seen its new price. Raise = next rival − 1p, max +5%, max RRP, max 2% over a rival already cheaper than us (no card when already 2%+ over); Match = a penny under the lead; sold in 30 days only; money at stake first.
 4. Profit a week on the size drill; stored Buy Box % feeds the pricing standard instead of the Business Report.
 5. Auto per size, only if steps 2–4 earn it. It would have a daily move cap and one emergency-stop switch.
 

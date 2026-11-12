@@ -685,6 +685,37 @@ export function getAmzBuyBox() {
     })
   );
 }
+// Buy Box "Go through" (/amz/buybox/deck, 2026-11-12; server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js). READ ONLY —
+// the price is set with applyAmzPrice (W-A1). One card per size in the two groups with a job, one suggested move, money at stake first.
+export type AmzDeckKind = 'room' | 'can_match';
+export interface AmzDeckCard {
+  deck: AmzDeckKind; code: string; groupid: string | null; title: string | null; brand: string | null; asin: string | null;
+  imagename: string | null; read_at: string;
+  live: number; total: number; sold30: number; weeks_left: number | null;
+  our_price: number; rrp: number | null; walk: number | null;
+  holder: AmzBuyBoxHolder; bb_price: number | null; lead_share: number | null; our_share: number | null; next_up: number | null; rivals: number;
+  rival_at_our_price: boolean; amazon_retail: boolean; offers: AmzBuyBoxOffer[]; featured: AmzBuyBoxFeatured[];
+  suggest: number; suggest_note: string;
+  profit_now: number | null; profit_suggest: number | null;
+  profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound × price + at_zero (amzProfit is linear)
+  gain_week: number | null;   // room only: pairs a week × the extra profit a pair at the suggestion
+  stake: number;
+}
+export interface AmzDeckLeftOut { not_selling: number; waiting: number; not_eligible: number; cheaper_rival?: number }   // cheaper_rival: room only, already 2%+ over a cheaper rival
+export interface AmzDeckData {
+  cards: AmzDeckCard[]; counts: Record<AmzDeckKind, number>; left_out: Record<AmzDeckKind, AmzDeckLeftOut>;
+  last_all: AmzBuyBoxRun | null; running: AmzBuyBoxRun | null;
+}
+export function getAmzBuyBoxDeck() {
+  return request<AmzDeckData>(
+    { url: '/amz-buybox-deck', method: 'GET' },
+    (b) => ({
+      cards: (b.cards || []) as AmzDeckCard[], counts: (b.counts || { room: 0, can_match: 0 }) as Record<AmzDeckKind, number>,
+      left_out: (b.left_out || {}) as Record<AmzDeckKind, AmzDeckLeftOut>, last_all: b.last_all ?? null, running: b.running ?? null,
+    })
+  );
+}
+
 // Buy Box "Team week" (2026-11-12; server utils/amzBuyBoxTeam.js — THE rules). READ ONLY.
 export type AmzTeamWhy = 'held' | 'under' | 'tie' | 'not_live' | 'walk';
 export interface AmzTeamPerson {
