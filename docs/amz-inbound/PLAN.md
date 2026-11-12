@@ -62,6 +62,31 @@ seconds up to about a minute.
   lying around today, which is harmless.
 - Shipment names are Seller Central's `FBA STA (dd/mm/yyyy hh:mm)-<FC>`. We can pass our own name (e.g. our shipment number).
 
+## What the TEST PLAN proved (2026-11-12, `scripts/amz-inbound-test-plan.js`)
+
+A real plan (2 Ives White sizes × 1, one test box) was taken through every step WITHOUT confirming placement, transport or delivery
+window, then cancelled → VOIDED. **Nothing charged.** The script can't confirm those three (its writes are allow-listed).
+
+- **The whole one-button flow works through the API**, and the single confirm box is possible: transport options AND delivery windows
+  can be generated and listed for a placement option BEFORE it is confirmed.
+- **prepOwner must be `NONE`** for our shoes ("IVES-WHITE-07 does not require prepOwner but SELLER was assigned. Accepted values:
+  [NONE]"). labelOwner stays SELLER (we put the FNSKU labels on). If a SKU ever does need prep, Amazon says so in the same way.
+- **"WARNING: Address was unable to be verified" is harmless.** Amazon's docs: "Non-blocking errors are warnings that can be ignored
+  (for example, when the address is suspected to be wrong, but progression is allowed anyway)." The plan goes ahead. It comes on every
+  create for our Welshpool address. Show it, never stop on it. (It cost an hour: our client printed only Amazon's FIRST error, the
+  warning, and hid the real prepOwner ERROR behind it. `utils/amzSpApi.js` now puts ALL errors in the message.)
+- **Phone is REQUIRED on the ship-from** (Seller Central doesn't show one): `AMZ_SHIP_FROM_PHONE` in `.env`. Add it to the VPS `.env` too.
+- Packing: 1 option, 1 pack group, no fee. Placement: 1 option, 1 shipment (LBA4), "Placement Services: 0 GBP".
+- **Transport: Amazon's DPD and our own DPD have THE SAME carrier code `DPDX`.** Own: `USE_YOUR_OWN_CARRIER / GROUND_SMALL_PARCEL / DPD (DPDX)`,
+  no quote. Amazon's: `AMAZON_PARTNERED_CARRIER / GROUND_SMALL_PARCEL / DPD (DPDX)`, quote £2.86 (Amazon UPS £2.45). **So the filter MUST be on
+  `shippingSolution === 'USE_YOUR_OWN_CARRIER'` first, never on the carrier code alone.** Also offered as own carrier: DPDgroupUK (DPDUK),
+  Parcelforce, Yodel, DHL UK, UPS, TNT, Other. We take DPD (DPDX), the one on every past shipment, and STOP if it's missing.
+  Any option with a `quote` is never confirmed.
+- Delivery windows: 7 offered, 7 days each, AVAILABLE. Take the one that starts on or after the chosen ready-to-ship date. Shown in the confirm box.
+- Box warning seen: "Box minimum cubic volume does not meet the expected minimum cubic cm 11925.79" (the 30×20×15 test box was
+  under ~11,900 cm³). A WARNING only; real cartons are far bigger (e.g. 62×48×47). Show warnings, don't stop on them.
+- Cancel before any confirm: SUCCESS, plan VOIDED, free.
+
 ## ONE BUTTON: "Do shipment" (owner, 2026-11-12)
 
 One press does the whole job, **stopping once, where there is a cost**:
@@ -98,7 +123,7 @@ Everything comes from the stored packed boxes (`amzshipment`). Your unpacked box
 
 | Step | BCWEB calls | Notes |
 |---|---|---|
-| **1 Create plan** | `createInboundPlan`: items = Amazon SKU + qty totalled across boxes, `prepOwner` / `labelOwner` SELLER (as the .txt says now), ship-from address from `.env`. Then `generatePackingOptions` → `listPackingOptions` → `confirmPackingOption`. | Replaces the .txt. **ONE PACK GROUP, ALWAYS** (owner): from `listPackingOptions` only an option with exactly one packing group is confirmed. If there is none, stop, confirm nothing and cancel the plan, with a message naming the SKUs Amazon wanted kept apart (so they can go on a separate shipment by hand). |
+| **1 Create plan** | `createInboundPlan`: items = Amazon SKU + qty totalled across boxes, `labelOwner` SELLER, `prepOwner` NONE (test plan), ship-from address from `.env`. Then `generatePackingOptions` → `listPackingOptions` → `confirmPackingOption`. | Replaces the .txt. **ONE PACK GROUP, ALWAYS** (owner): from `listPackingOptions` only an option with exactly one packing group is confirmed. If there is none, stop, confirm nothing and cancel the plan, with a message naming the SKUs Amazon wanted kept apart (so they can go on a separate shipment by hand). |
 | **2 Boxes** | `setPackingInformation`: per box its items, `BOX_CONTENT_PROVIDED`, dimensions in CM and weight in KG straight from `amzshipment`. | Replaces the .xlsx. Our Box 1..n = Amazon's box order. Amazon's errors are shown per box. |
 | **3 Warehouse** | `generatePlacementOptions` → `listPlacementOptions` → **only an option with exactly ONE shipment** → `confirmPlacementOption`. | **NEVER SPLIT, REGARDLESS OF PRICE** (owner, 2026-11-12). Price never decides anything here: a split is never taken, even if it's cheaper. If Amazon offers more than one single-shipment option (unlikely), take Amazon's first. If there's none, stop, confirm nothing and offer Cancel plan. The fee and the warehouse are shown before the press, for information only. **Placement fees are charged from this confirm on.** |
 | **4 Carrier + dates** | `generateTransportationOptions` (ready-to-ship date **picked on screen**) → choose `USE_YOUR_OWN_CARRIER` / `GROUND_SMALL_PARCEL` / carrier **DPD `DPDX`** → delivery window (`generateDeliveryWindowOptions` → `confirmDeliveryWindowOptions`, every shipment has one) → `confirmTransportationOptions`. | **Our local DPD only, NEVER Amazon's DPD.** Anything `AMAZON_PARTNERED_CARRIER` is filtered out in code and never confirmed, even if it's the only one or the cheapest. If no own-carrier DPDX option comes back, stop. |
@@ -125,7 +150,7 @@ after step 3.
 
 0. ~~Read-only probe~~ **DONE 2026-11-12**, `scripts/amz-inbound-probe.js` (findings above). Re-run any time:
    `node scripts/amz-inbound-probe.js [--plans 3] [--out file.json]`.
-1. **Test plan, then cancel**: a script creates a plan for 1–2 SKUs, runs steps 1–2, generates placement AND transport options without
+1. ~~Test plan, then cancel~~ **DONE 2026-11-12** (findings above): a script creates a plan for 1–2 SKUs, runs steps 1–2, generates placement AND transport options without
    confirming, then `cancelInboundPlan`. That proves transport can be listed before the placement confirm (the one confirm box depends
    on it) and that a cancel before confirming is free. Needs the owner's OK: it creates a real draft in Seller Central (it shows as VOIDED,
    like the ~35 drafts already there).
@@ -139,4 +164,4 @@ after step 3.
 - ~~Delivery window required?~~ Yes, every shipment has one (probe).
 - What happens to a plan **left open** (e.g. created, never shipped)? Today drafts are just left (one ACTIVE since 9 Nov), so a
   warning on the screen is probably enough. Owner to say.
-- Can transport options be listed before the placement confirm? The test plan (build step 1) answers it.
+- ~~Transport before the placement confirm?~~ Yes (test plan).

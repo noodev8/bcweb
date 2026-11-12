@@ -98,8 +98,11 @@ async function call(method, path, { query, body } = {}) {
   let json = null;
   try { json = text ? JSON.parse(text) : null; } catch { /* not JSON */ }
   if (!res.ok) {
-    const e = json && json.errors && json.errors[0];
-    const err = new Error(`SP-API ${method} ${path} failed (${res.status}): ${e ? `${e.code} — ${e.message}` : text.slice(0, 300)}`);
+    // ALL of Amazon's errors go in the message, not just the first (2026-11-12): Fulfillment Inbound lists a harmless "WARNING: Address
+    // was unable to be verified" FIRST and the real blocking "ERROR: … prepOwner …" after it, so the first alone sent us the wrong way.
+    const all = (json && Array.isArray(json.errors)) ? json.errors : [];
+    const e = all[0];
+    const err = new Error(`SP-API ${method} ${path} failed (${res.status}): ${all.length ? all.map((x) => `${x.code} — ${x.message}`).join(' | ') : text.slice(0, 300)}`);
     err.status = res.status;
     err.code = e && e.code;
     throw err;
