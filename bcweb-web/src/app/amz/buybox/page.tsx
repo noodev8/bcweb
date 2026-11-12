@@ -40,6 +40,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import AmzTeamWeek from '@/components/AmzTeamWeek';
 import { getAmzBuyBox, startAmzBuyBoxRead, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzBuyBoxRun } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useAuth } from '@/contexts/AuthContext';
@@ -58,6 +59,10 @@ const GROUPS: { key: AmzBuyBoxGroup; label: string; rule: string; dot: string }[
   { key: 'unknown', label: 'No walk-away', rule: 'No cost on the style (no £3 price), or no price to match', dot: 'bg-slate-300' },
   { key: 'error', label: 'Not read', rule: 'Amazon refused the read for this size — hover the row for its reason', dot: 'bg-slate-300' },
 ];
+
+// The groups with a job, shown as the big To do tiles; the rest are the quiet "Where we stand" row. Tie stays a position for now
+// (owner, 2026-11-12: "Can just leave for now as a tie").
+const ACTION_GROUPS: AmzBuyBoxGroup[] = ['room', 'can_match'];
 
 const HOLDER: Record<AmzBuyBoxHolder, string> = {
   US: 'Us', US_SHARED: 'Us + shared', OTHER_FBA: 'Rival (FBA)', OTHER_MFN: 'Rival (self-post)', AMAZON: 'Amazon', NONE: 'Nobody',
@@ -203,18 +208,38 @@ export default function AmzBuyBoxPage() {
             </div>
           )}
 
-          {/* THE GROUPS — the count is the job. */}
-          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 2xl:grid-cols-9">
-            {GROUPS.filter((g) => !['unknown', 'error'].includes(g.key) || (counts?.[g.key] ?? 0) > 0).map((g) => {
+          {/* TEAM WEEK (owner, 2026-11-12): each person's Buy Box results, one collapsed line — components/AmzTeamWeek. */}
+          <AmzTeamWeek />
+
+          {/* THE GROUPS, in two rows (owner, 2026-11-12: "will make the screen more actionable and less noise"). TO DO = the groups
+              with a job — big tiles, the count is the job. WHERE WE STAND = every other group as a quiet count: the position, still
+              clickable, nothing to do. A new group goes in the row that fits it, so To do stays short as groups are added. */}
+          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">To do</div>
+          <div className="mb-3 flex flex-wrap gap-2">
+            {GROUPS.filter((g) => ACTION_GROUPS.includes(g.key)).map((g) => {
               const n = counts?.[g.key] ?? 0;
               const on = !search && shown === g.key;
               return (
                 <button key={g.key} type="button" onClick={() => { setGroup(g.key); setSearch(''); setOpen(null); }} title={g.rule}
-                  className={'rounded-lg border px-3 py-2 text-left shadow-sm ' + (on ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:bg-slate-50')}>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                  className={'min-w-[12rem] rounded-lg border px-4 py-3 text-left shadow-sm ' + (on ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:bg-slate-50')}>
+                  <div className="flex items-center gap-1.5 text-sm text-slate-600">
                     <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} /> {g.label}
                   </div>
-                  <div className="text-2xl font-semibold tabular-nums text-slate-900">{n}</div>
+                  <div className="text-3xl font-semibold tabular-nums text-slate-900">{n}</div>
+                </button>
+              );
+            })}
+          </div>
+          <div className="mb-4 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm">
+            <span className="mr-2 text-xs font-medium uppercase tracking-wide text-slate-500">Where we stand</span>
+            {GROUPS.filter((g) => !ACTION_GROUPS.includes(g.key) && (!['unknown', 'error'].includes(g.key) || (counts?.[g.key] ?? 0) > 0)).map((g) => {
+              const n = counts?.[g.key] ?? 0;
+              const on = !search && shown === g.key;
+              return (
+                <button key={g.key} type="button" onClick={() => { setGroup(g.key); setSearch(''); setOpen(null); }} title={g.rule}
+                  className={'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ' + (on ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-500' : 'text-slate-600 hover:bg-slate-100')}>
+                  <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} /> {g.label}
+                  <span className="font-semibold tabular-nums text-slate-900">{n}</span>
                 </button>
               );
             })}

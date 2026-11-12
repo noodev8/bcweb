@@ -679,6 +679,27 @@ export function getAmzBuyBox() {
     })
   );
 }
+// Buy Box "Team week" (2026-11-12; server utils/amzBuyBoxTeam.js — THE rules). READ ONLY.
+export type AmzTeamWhy = 'held' | 'under' | 'tie' | 'not_live' | 'walk';
+export interface AmzTeamPerson {
+  name: string; changes: number; cuts: number; raises: number; holds: number;
+  won_back: number; raises_kept: number; kept_pairs: number; kept_profit: number;
+  to_look: number; waiting: number; superseded: number; not_judged: number;
+}
+export interface AmzTeamLook {
+  id: number; code: string; title: string | null; by: string; changed_at: string; old_price: number; new_price: number;
+  why: AmzTeamWhy[]; walk: number | null; result: 'won_back' | 'raise_kept' | null;
+  before: { share: number | null; holder: AmzBuyBoxHolder; lead_price: number | null; our_price: number | null };
+  after: { share: number | null } | null;
+}
+export interface AmzTeamWeek { people: AmzTeamPerson[]; look: AmzTeamLook[] }
+export interface AmzTeamData { this_start: string; last_start: string; history_from: string | null; weeks: { this: AmzTeamWeek; last: AmzTeamWeek } }
+export function getAmzBuyBoxTeam() {
+  return request<AmzTeamData>(
+    { url: '/amz-buybox-team', method: 'GET' },
+    (b) => ({ this_start: b.this_start, last_start: b.last_start, history_from: b.history_from ?? null, weeks: b.weeks })
+  );
+}
 export function startAmzBuyBoxRead(groupid?: string) {
   return request<{ run: { id: number; scope: string; total: number } }>(
     { url: '/amz-buybox-read', method: 'POST', data: groupid ? { groupid } : {} },
