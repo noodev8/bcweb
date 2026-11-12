@@ -193,18 +193,12 @@ export default function AmzBuyBoxPage() {
 
       {data && (
         <>
-          {/* THE HEADLINE — TWO figures only (owner, 2026-11-12: "I think only the 55% and the 127 are useful", after a strip of
-              five and then the full chat sentence both confused). Over the sizes LIVE at FBA. */}
+          {/* THE HEADLINE — ONE figure (owner, 2026-11-12: first "only the 55% and the 127", then the size count went too —
+              "just keep the big percentage"). Over the sizes LIVE at FBA. */}
           {data.headline && data.headline.sizes > 0 && (
-            <div className="mb-4 flex flex-wrap items-end gap-x-10 gap-y-2">
-              <div title={`Our share of page views, averaged across the ${data.headline.sizes} sizes live at FBA`}>
-                <div className="text-3xl font-semibold tabular-nums text-slate-900">{data.headline.avg_share !== null ? `${Math.round(data.headline.avg_share)}%` : '—'}</div>
-                <div className="text-xs text-slate-500">of page views show our offer</div>
-              </div>
-              <div title={`Of the ${data.headline.sizes} sizes live at FBA`}>
-                <div className="text-3xl font-semibold tabular-nums text-slate-900">{data.headline.full}</div>
-                <div className="text-xs text-slate-500">sizes show our offer on every view</div>
-              </div>
+            <div className="mb-4" title={`Our share of page views, averaged across the ${data.headline.sizes} sizes live at FBA`}>
+              <div className="text-3xl font-semibold tabular-nums text-slate-900">{data.headline.avg_share !== null ? `${Math.round(data.headline.avg_share)}%` : '—'}</div>
+              <div className="text-xs text-slate-500">of page views show our offer</div>
             </div>
           )}
 

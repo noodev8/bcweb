@@ -94,6 +94,11 @@ interface ListRow {
   rrp: number | null;       // the "Reset to RRP" target (skusummary.rrp; null = junk/blank -> skipped)
   next_review: string | null;
   parked: boolean;
+  // Buy Box (latest reading, Due / status lists only; owner 2026-11-12) — so a cut is decided knowing whether we already have it
+  bb_share?: number | null;
+  bb_lead?: number | null;
+  bb_rivals?: number | null;
+  bb_read_at?: string | null;
 }
 
 // useSearchParams must sit inside a Suspense boundary for Next's build.
@@ -154,6 +159,7 @@ function SegmentContent() {
         const rows: ListRow[] = s.data.rows.map((r) => ({
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
           fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+          bb_share: r.bb_share, bb_lead: r.bb_lead, bb_rivals: r.bb_rivals, bb_read_at: r.bb_read_at,
         }));
         return {
           success: true,
@@ -170,6 +176,7 @@ function SegmentContent() {
         const rows: ListRow[] = s.data.rows.map((r) => ({
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
           fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+          bb_share: r.bb_share, bb_lead: r.bb_lead, bb_rivals: r.bb_rivals, bb_read_at: r.bb_read_at,
         }));
         return {
           success: true,
@@ -479,6 +486,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
     brand: (r: ListRow) => r.brand,
     price: (r: ListRow) => r.price,
     fba: (r: ListRow) => r.fba,
+    bb: (r: ListRow) => (r.bb_share ?? -1),
     review: (r: ListRow) => (r.parked ? r.next_review : '0000'),
   });
   const th = { sort, onSort };
@@ -495,6 +503,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
           <col className="w-40" />{/* Brand — short; the product name is the Code cell's tooltip */}
           <col className="w-24" />{/* Price */}
           <col className="w-16" />{/* FBA */}
+          <col className="w-24" />{/* Buy Box */}
           <col className="w-24" />{/* Review */}
         </colgroup>
         <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
@@ -515,6 +524,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
             <SortableTh {...th} sortKey="brand" label="Brand" firstDir="asc" />
             <SortableTh {...th} sortKey="price" label="Price" align="right" />
             <SortableTh {...th} sortKey="fba" label="FBA" align="right" title="FBA sellable stock (+ on its way in)" />
+            <SortableTh {...th} sortKey="bb" label="Buy Box" align="right" title="% of Amazon page views showing OUR offer, at the latest Buy Box reading. 100% = already ours: a cut won't win more" />
             <SortableTh {...th} sortKey="review" label="Review" firstDir="asc" />
           </tr>
         </thead>
@@ -546,6 +556,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                 <td className={'truncate px-4 py-2 ' + tone}>{r.brand || <span className="text-slate-400">—</span>}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}{r.fba_inbound > 0 && <span className="ml-1 text-xs font-normal text-sky-600" title="On its way into FBA">+{r.fba_inbound}</span>}</td>
+                <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums"><BuyBoxCell r={r} /></td>
                 <td className="whitespace-nowrap px-4 py-2">
                   {r.parked
                     ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
@@ -558,4 +569,15 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
       </table>
     </div>
   );
+}
+
+// The Buy Box cell (owner, 2026-11-12: "add Buy Box share to the Due list"). Green 100% = ours already (don't cut), amber = shared,
+// red 0% = someone else is shown (match the lead in the tooltip, don't undercut it). Alone = no rival; — = not read.
+function BuyBoxCell({ r }: { r: ListRow }) {
+  if (r.bb_rivals === 0) return <span className="text-xs text-slate-400" title="No other seller on this size">Alone</span>;
+  if (r.bb_share === null || r.bb_share === undefined) return <span className="text-slate-300">—</span>;
+  const pct = Math.round(r.bb_share);
+  const tone = pct >= 100 ? 'text-emerald-700' : pct > 0 ? 'text-amber-600' : 'text-red-600';
+  const lead = r.bb_lead !== null && r.bb_lead !== undefined ? `Lead offer £${r.bb_lead.toFixed(2)} incl. postage` : 'No lead price';
+  return <span className={'font-medium ' + tone} title={`${lead} · read ${r.bb_read_at ?? '?'}`}>{pct}%</span>;
 }

@@ -110,6 +110,11 @@ router.get('/', async (req, res) => {
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
              COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             bb.our_share AS bb_share,                                    -- Buy Box: % of views showing US (amz_buybox_now, owner 2026-11-12)
+             bb.bb_price  AS bb_lead,                                     -- the lead offer's price incl. postage (the one to match)
+             bb.rivals    AS bb_rivals,                                   -- 0 = Alone (no Buy Box race)
+             bb.holder    AS bb_holder,
+             to_char(bb.read_at AT TIME ZONE 'Europe/London', 'DD Mon HH24:MI') AS bb_read_at,
              COUNT(*) OVER () AS total_rows,
              COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0) OVER () AS oos_rows
       FROM amzfeed a
@@ -118,6 +123,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN u        ON u.code    = a.code
       LEFT JOIN ls       ON ls.code   = a.code
       LEFT JOIN title t  ON t.groupid = a.groupid
+      LEFT JOIN amz_buybox_now bb ON bb.code = a.code AND bb.error IS NULL   -- latest Buy Box reading, display only
       WHERE ${group.column} = $1
         AND ($4::numeric IS NULL OR sk.portfolio_revenue_12m > $4::numeric)   -- the dial's bar, on the STAMPED revenue
         AND ${channelFilterSql('sk', 'AMZ')}                                   -- Amazon-led or BOTH (see header)
@@ -143,6 +149,11 @@ router.get('/', async (req, res) => {
       last_sold: r.last_sold || null,
       next_review: r.next_review || null,
       parked: r.parked === true,
+      bb_share: num(r.bb_share),
+      bb_lead: num(r.bb_lead),
+      bb_rivals: r.bb_rivals === null || r.bb_rivals === undefined ? null : Number(r.bb_rivals),
+      bb_holder: r.bb_holder || null,
+      bb_read_at: r.bb_read_at || null,
     }));
 
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;

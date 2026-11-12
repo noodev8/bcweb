@@ -110,6 +110,12 @@ export interface AmzWinnerRow {
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   next_review: string | null;   // YYYY-MM-DD or null
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
+  // Buy Box, latest reading (amz_buybox_now) — sent by the Due / status lists only (owner, 2026-11-12); absent elsewhere
+  bb_share?: number | null;     // % of page views showing OUR offer
+  bb_lead?: number | null;      // the lead offer's price incl. postage
+  bb_rivals?: number | null;    // 0 = Alone
+  bb_holder?: string | null;
+  bb_read_at?: string | null;   // UK time, "12 Nov 13:28"
 }
 // Stage 1 LOSERS: FBA stock that sold NOTHING in the window (default 30d), most stock first. Same simplification as the Shopify
 // LoserRow above — u90/u14/cover_weeks/is_dead dropped. u7/u30 are always 0, kept for the shared table layout; last_sold /

@@ -57,6 +57,7 @@ Our stock: 23 live + 36 inbound. Sales: 15 pairs in October, 2 in November so fa
 |---|---|---|---|---|
 | 2026-11-12 11:29 | £39.49 | £39.49 | copier 89% · cheap seller 11% · us 0% | Baseline |
 | 2026-11-12 11:41 | **£39.39** | ? | ? | **Step 1 started**: amz_price_log 3462, by Andreas, accepted by Amazon (SP-API) at 11:41. Review date 19 Nov. Read this style ~12:45. |
+| 2026-11-12 12:28 | £39.39 | £39.49 (not moved) | copier 89% · cheap seller 11% · us 0% | 47 min after: copier has NOT followed, and we're 10p under it yet still 0%. 07 unchanged (copier 91%, us 0%). Wait for the next hourly readings. |
 
 ## How to read a step
 
