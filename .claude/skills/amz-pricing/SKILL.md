@@ -58,6 +58,39 @@ Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). S
 - **Pricing a test.** Since 2026-11-11 a price goes live through the SP-API; after a change, the screen's **Read this style** (seconds)
   or the next hourly read shows the reaction. Note test prices clearly (e.g. "Buy Box copier test").
 
+**What going through the Room to go up deck taught us (2026-11-12, with the owner):**
+- **One step, then a sale** (owner: "otherwise we are making a guess on top of a guess"). Before suggesting a RAISE, look up the
+  size's last real price move and the pairs sold since (below). If the last move was a raise and nothing has sold since, the answer
+  is **wait**, however much room the Buy Box shows — BLACKSOLE-08 was raised £39.89 → £41.88 in the morning and the screen offered
+  £43.97 that afternoon. Go through holds these back by the same rule (`utils/amzBuyBoxDeck.js`). Cuts are not held.
+  ```sql
+  SELECT DISTINCT ON (code) code, COALESCE(changed_at, log_date::timestamptz) AS at, changed_by, old_price, new_price
+    FROM amz_price_log WHERE code = 'FLE030-IVES-GREY-06' AND abs(new_price - old_price) >= 0.005
+   ORDER BY code, COALESCE(changed_at, log_date::timestamptz) DESC, id DESC;   -- holds skipped; changed_at is NULL before Jul 2026
+  SELECT COALESCE(SUM(qty),0) FROM sales WHERE channel='AMZ' AND code='FLE030-IVES-GREY-06' AND solddate >= '<that day>';
+  ```
+- **Two clocks.** The Buy Box answers a price move within the hour (a raise that loses the box leaves "room to go up" by itself);
+  SALES need at least one pair at the new price, and the Room sizes sold 0.2–0.9 pairs a WEEK — weeks, not hours. Say how long the
+  size needs ("at 0.5 a week, about two weeks to see one pair"), never judge a raise on the same day.
+- **Check what's coming before calling stock scarce.** A low "weeks left" read as a reason to go higher on GREY-06 (2 at FBA,
+  1.4 weeks) — but 3 were on an Amazon order (placed 10 Nov) and 1 at home. Rationing (pricing ABOVE a rival and accepting fewer
+  views) is only for a size with nothing on order. On order = `orderstatus` ordertype 2 / 3, `COALESCE(orderdate,'') <> ''`,
+  `COALESCE(arrived,0) = 0` (`shopifysku` = the code); at home = `localstock` `#FREE`.
+- **The FBA premium over a cheaper self-poster is only a few %.** Our average share of views across the 2026-11-12 reading: 78% as
+  the cheapest offer, 54% at 0–2% over the cheapest rival, 46% at 2–5%, 12% at 5–8%, ~0 at 20%+. So a raise stops a penny under
+  the next DEARER rival, and at 2% over a rival already cheaper than us.
+- **One reading isn't the share.** GREY-06 was 86% at 08:28 and 12:28 but 17% at 01:37 (a self-poster held it overnight). Read
+  `amz_buybox_history` across the day before trusting a share for a raise.
+- **Last year's price is evidence of room.** GREY-06 sold 5 at £39.99 in Oct 2025 and 3 at £38.99 in Nov, against £37.39 now —
+  check the same months last year (`sales.soldprice`) before calling a raise a guess.
+- **A cut while we already hold the box gives margin away.** About half the Room cards had been CUT in the day or two before, on
+  sizes shown to most views (Team week's "already 100%" rule). Never suggest a cut to win a Buy Box we already have.
+- **Sold nothing in 30 days while shown is NOT a Buy Box question.** 74 of the 84 non-selling Room sizes were shown to 90%+ of views
+  — no rival is the problem; demand and price are. Split it: last sold on Amazon within 3 months = **wait** (mostly season; the
+  review dates bring it back) · never / 3+ months = Range / Clearance's question. Then: **sisters selling** at a similar price = it's
+  the SIZE (a cut is for clearing, not winning), judge it against the sisters (the standard's job) · **whole style not selling** =
+  season, a season park, not a cut.
+
 ## Running it
 
 From the repo's `bcweb-server` folder (`D:\projects\bcweb\bcweb-server` on the main PC). It needs `bcweb-server/.env` for the
@@ -127,7 +160,9 @@ next 4 weeks at today's price.
 ## Setting a price (WRITES — follow every step)
 
 The only way this skill changes a price. It goes through THE shared Amazon price write (`utils/priceWrite.js → writeAmzPrice`, the
-same as the Amazon pricing screens): one `amz_price_log` row. It never touches review dates, Shopify, or `amzfeed`.
+same as the Amazon pricing screens): one `amz_price_log` row, and the size's review date set to today + 7
+(`REVIEW_AFTER_PRICE_DAYS`), keeping a review date that is already later (the dry run says "review date kept" — mention it: the
+size was parked further out on purpose). It never touches Shopify or `amzfeed`.
 
 1. **Only after the owner has said yes to THAT size at THAT price** in this conversation (e.g. "yes, 05 to 39.79"). A general "go
    ahead", "looks good", or a yes to a different size is NOT an OK. One OK = one size. If unsure, ask: "Set FLE030-IVES-WHITE-05 to

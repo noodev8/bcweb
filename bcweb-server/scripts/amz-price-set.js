@@ -9,8 +9,9 @@ Purpose: Set ONE Amazon size's price the owner has agreed in conversation, throu
 
 WHAT IT WRITES: one amz_price_log row (old = today's live amzfeed price, new, note, changed_by) AND the size's review date —
 skumap.next_amz_price_review = today + SETTINGS.REVIEW_AFTER_PRICE_DAYS (7: the earliest the standard can judge the new price), so the
-size leaves the Amazon Due list like a price set on the screens (owner, 2026-11-04: "same system as our manual due dates"). Set
-exactly, even over a later date: pricing a parked size is the owner's override, and the new price wants judging in 7 days. No Shopify,
+size leaves the Amazon Due list like a price set on the screens (owner, 2026-11-04: "same system as our manual due dates"). A LATER
+review date is KEPT (owner, 2026-11-12 — was set exactly, over a later date, until then): a size parked further out was parked on
+purpose, the same rule as Buy Box Go through and Fast sellers. No Shopify,
 never amzfeed. It is NOT sent from here: the row waits as unsent (the /amz header's "Send to Amazon · N") and reaches Amazon at
 the next Update Orders run (step 2c, utils/amzPricePush.js) or when someone presses Send to Amazon (since 2026-11-11).
 
@@ -93,7 +94,10 @@ async function main() {
   console.log(`${o.code} (Amazon SKU ${r.sku}) · FBA live ${r.amzlive ?? '—'} / total ${r.amztotal ?? '—'}`);
   console.log(`  today ${money(now)} (keeps ${money(kept(now))} a pair)  →  ${money(o.price)} (keeps ${money(kept(o.price))} a pair)`);
   console.log(`  RRP ${money(rrp)} · walk-away ${money(walk)} · by ${o.by} · note "${o.note}"`);
-  console.log(`  review date → today + ${SETTINGS.REVIEW_AFTER_PRICE_DAYS} days${r.next_review ? ` (now ${r.next_review})` : ''}`);
+  const reviewOn = new Date(Date.now() + SETTINGS.REVIEW_AFTER_PRICE_DAYS * 864e5).toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+  console.log(r.next_review && r.next_review > reviewOn
+    ? `  review date kept: ${r.next_review} is later than today + ${SETTINGS.REVIEW_AFTER_PRICE_DAYS} days`
+    : `  review date → today + ${SETTINGS.REVIEW_AFTER_PRICE_DAYS} days${r.next_review ? ` (now ${r.next_review})` : ''}`);
 
   const refuse = [];
   if (now !== null && Math.abs(o.price - now) < 0.005) refuse.push('it is already today\'s price — nothing to change');
@@ -119,7 +123,7 @@ async function main() {
     return;
   }
   const w = await withTransaction((client) => writeAmzPrice(client, {
-    code: o.code, price: o.price, reviewDays: SETTINGS.REVIEW_AFTER_PRICE_DAYS, note: o.note, changedBy: o.by,
+    code: o.code, price: o.price, reviewDays: SETTINGS.REVIEW_AFTER_PRICE_DAYS, note: o.note, changedBy: o.by, keepLater: true,
   }));
   if (w.error) throw new Error(`${w.error}: ${w.message}`);
   console.log(`WRITTEN — amz_price_log id ${w.logId} · review ${w.nextReview ? 'set' : 'not set'}${w.warnings.length ? ` · warnings: ${w.warnings.join(', ')}` : ''}.`);

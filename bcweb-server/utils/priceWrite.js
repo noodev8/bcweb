@@ -101,9 +101,11 @@ async function writeShopifyPrice(client, { groupid, price, reviewDays, note, cha
 }
 
 /*
- * writeAmzPrice(client, { code, price, reviewDays, note, changedBy })
+ * writeAmzPrice(client, { code, price, reviewDays, note, changedBy, keepLater })
  *   price       number, > 0, already rounded to 2dp
  *   reviewDays  integer >= 1, or null = leave skumap.next_amz_price_review untouched ("None")
+ *   keepLater   true = a review date already later than today + reviewDays is kept (scripts/amz-price-set.js, owner 2026-11-12 — a
+ *               size parked further out was parked on purpose); default false = set exactly (the screens' behaviour, unchanged)
  * Returns { error, message } or { logId, oldPrice, amzSku, rrp, warnings, nextReview (pg DATE or null) }.
  *
  * Rules (CLAUDE.md W-A1):
@@ -114,7 +116,7 @@ async function writeShopifyPrice(client, { groupid, price, reviewDays, note, cha
  *     old_price (a zero-delta row) rather than violate the constraint; the returned oldPrice stays the truth (null = unknown).
  *   - The optional park stamps skumap.next_amz_price_review in the same transaction, so a park never lands without its log row.
  */
-async function writeAmzPrice(client, { code, price, reviewDays, note, changedBy }) {
+async function writeAmzPrice(client, { code, price, reviewDays, note, changedBy, keepLater = false }) {
   // amzfeed is Amazon's truth (live price, FBA fee, Amazon SKU); cost / RRP live on skusummary. No FOR UPDATE: amzfeed is read-only to
   // this platform, so there is no row of ours to lock.
   const cur = await client.query(`
@@ -155,7 +157,9 @@ async function writeAmzPrice(client, { code, price, reviewDays, note, changedBy 
   let nextReview = null;
   if (reviewDays !== null) {
     const upd = await client.query(
-      `UPDATE skumap SET next_amz_price_review = CURRENT_DATE + $2::int WHERE code = $1 RETURNING next_amz_price_review`,
+      // GREATEST ignores NULL in Postgres, so an un-reviewed size simply gets today + reviewDays.
+      `UPDATE skumap SET next_amz_price_review = ${keepLater ? 'GREATEST(next_amz_price_review, CURRENT_DATE + $2::int)' : 'CURRENT_DATE + $2::int'}
+       WHERE code = $1 RETURNING next_amz_price_review`,
       [code, reviewDays]
     );
     nextReview = upd.rows[0] ? upd.rows[0].next_amz_price_review : null;
