@@ -703,6 +703,7 @@ export interface AmzDeckCard {
   holder: AmzBuyBoxHolder; bb_price: number | null; lead_share: number | null; our_share: number | null; next_up: number | null; rivals: number;
   rival_at_our_price: boolean; amazon_retail: boolean; offers: AmzBuyBoxOffer[]; featured: AmzBuyBoxFeatured[];
   suggest: number; suggest_note: string;
+  over_lead: boolean;   // can_match: the suggestion is 2% OVER a self-posting lead (a trial), not a penny under it
   profit_now: number | null; profit_suggest: number | null;
   profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound × price + at_zero (amzProfit is linear)
   gain_week: number | null;   // room only: pairs a week × the extra profit a pair at the suggestion

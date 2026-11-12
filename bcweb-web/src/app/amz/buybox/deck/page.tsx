@@ -356,7 +356,13 @@ function Card({ card, verb, n, of, busy, setDone, onSet, onLeave, onPrev, onUndo
     if (card.rrp !== null && p2 > card.rrp + 0.005) warnings.push({ text: `Over the RRP (${money(card.rrp)})` });
     if (Math.abs(p2 - card.our_price) / card.our_price > BIG_MOVE) warnings.push({ text: `A big move — ${pct(card.our_price, p2)}` });
     if (room && card.next_up !== null && p2 >= card.next_up - 0.005) warnings.push({ text: `At or above the next rival (${money(card.next_up)}) — it may take the Buy Box` });
-    if (!room && card.bb_price !== null && p2 >= card.bb_price - 0.005) warnings.push({ text: `Not under the lead (${money(card.bb_price)}) — a tie usually goes to them` });
+    // Over a self-posting lead by up to 2% is the suggestion itself (a trial), so it isn't warned; past 2%, or level with any lead, is.
+    if (!room && card.bb_price !== null && p2 >= card.bb_price - 0.005
+        && !(card.holder === 'OTHER_MFN' && p2 <= Math.floor(card.bb_price * 102 + 1e-6) / 100 + 0.005 && p2 > card.bb_price + 0.005)) {
+      warnings.push({ text: card.holder === 'OTHER_MFN'
+        ? `More than 2% over the self-posting lead (${money(card.bb_price)}) — FBA's edge runs out about there`
+        : `Not under the lead (${money(card.bb_price)}) — a tie usually goes to them` });
+    }
   }
 
   function submit() {

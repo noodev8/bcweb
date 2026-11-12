@@ -23,7 +23,8 @@ WHEN A MOVE IS THE PERSON'S (owner, 2026-11-12: "yes, that's the right rule"):
   NOT JUDGED = no reading before (Buy Box history starts 2026-11-12, so earlier moves are never judged) or a size with no rival
            (ALONE — price is purely demand, the pricing standard's job; owner, 2026-11-12: Alone sizes left off).
 
-  WON BACK   = before, we were shown to < 100% of views; the new price is at or below the lead price (postage included); and
+  WON BACK   = before, we were shown to < 100% of views; the new price is at or below the lead price (postage included — or up to
+               2% over it when the lead was a self-poster, Go through's trial, 2026-11-12); and
                AFTER shows us to MORE views. A cut that doesn't reach the lead can't be what won the views; a rival moved.
   RAISE KEPT = a raise, before we were shown to SOME views (> 0%: a 0% size has no Buy Box to keep), and AFTER shows the same or
                more. Credited with the extra profit on the pairs sold AT the raised price since (Amazon sales, net of returns,
@@ -144,8 +145,11 @@ async function readTeamWeek(db) {
     if (!after) p.waiting += 1;
     else {
       const afterShare = num(after.our_share);
+      // "Reached the lead" = at or under it — or, when the lead was a SELF-POSTER, up to 2% over it (Go through's can_match trial,
+      // owner 2026-11-12: FBA wins views there, so that cut can be what won them).
+      const reach = before.holder === 'OTHER_MFN' ? Math.floor(lead * 102 + 1e-6) / 100 : lead;
       if (dir === 'down' && beforeShare !== null && afterShare !== null && beforeShare < 100 && lead !== null
-          && m.new_price <= lead + PENNY && afterShare > beforeShare) {
+          && m.new_price <= reach + PENNY && afterShare > beforeShare) {
         result = 'won_back'; p.won_back += 1;
       } else if (dir === 'up' && beforeShare !== null && afterShare !== null && beforeShare > 0 && afterShare >= beforeShare) {
         result = 'raise_kept'; p.raises_kept += 1;

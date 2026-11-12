@@ -17,7 +17,11 @@ THE DECKS (owner agreed the recommendations, 2026-11-12):
              2026-11-12 reading our average share of views was 78% as the cheapest offer, 54% at 0–2% over the cheapest rival, 46% at
              2–5%, 12% at 5–8% and ~0 at 20%+ — the FBA premium over a cheaper self-poster is only a few %. A size already 2%+ over
              the cheaper rival gets NO card (counted as `cheaper_rival`) — raising would give views away.
-  can_match  "Losing, can match"      -> MATCH: a penny under the lead price, postage included. A penny under, not level: at our exact
+  can_match  "Losing, can match"      -> when the lead is a SELF-POSTER (holder OTHER_MFN): 2% over it (owner, 2026-11-12 — a TRIAL,
+             "try 2% over a self-poster": the same FBA premium as the Room cap — our share was 54% at 0–2% over a cheaper rival,
+             12% at 5–8%; BLACKSOLE-05: £38.93 a penny under keeps £4.90, £39.71 keeps ~£5.51). Only when that is still a cut and
+             not under the walk-away; if we are ALREADY within 2% of it and still not shown, the premium isn't working on that
+             size, so a penny under as below. Otherwise MATCH: a penny under the lead price, postage included. A penny under, not level: at our exact
              price Amazon gives the tie to the rival (the 'tie' group). Never under the £3 walk-away — if a penny under would be, the
              suggestion is the lead price itself (a tie, said on the card).
   Every other group's answer is "leave it", so it makes no card.
@@ -51,6 +55,7 @@ const { placed } = require('./orderStatus');
 const DECKS = ['room', 'can_match'];
 const RAISE_CAP = 0.05;            // a raise is at most +5% on our price per step
 const OVER_CHEAPER_CAP = 0.02;     // ...and at most 2% over a rival already cheaper than us (header)
+const SELF_POST_PREMIUM = 0.02;    // can_match: 2% over a self-posting lead (header, a trial)
 const PENNY = 0.01;
 
 const floor2 = (n) => Math.floor(n * 100 + 1e-6) / 100;
@@ -89,6 +94,12 @@ function suggest(r) {
   }
   if (r.group === 'can_match') {
     if (r.bb_price === null) return null;
+    if (r.holder === 'OTHER_MFN') {
+      const over = floor2(r.bb_price * (1 + SELF_POST_PREMIUM));
+      if (over < r.our_price - 0.005 && (r.walk === null || over >= ceil2(r.walk))) {
+        return { price: over, note: `2% over the self-posting lead (${'£' + r.bb_price.toFixed(2)}) — FBA usually wins views there (a trial)`, over_lead: true };
+      }
+    }
     const under = r2(r.bb_price - PENNY);
     if (r.walk !== null && under < ceil2(r.walk)) {
       return { price: r2(r.bb_price), note: 'Level with the lead — a penny under would be below the £3 walk-away (a tie usually goes to them)' };
@@ -240,7 +251,7 @@ async function readDeck(db) {
       holder: r.holder, bb_price: r.bb_price, lead_share: r.lead_share, our_share: r.our_share, next_up: r.next_up, rivals: r.rivals,
       rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail,
       offers: r.offers, featured: r.featured,
-      suggest: s.price, suggest_note: s.note,
+      suggest: s.price, suggest_note: s.note, over_lead: !!s.over_lead,
       profit_now: profitNow, profit_suggest: profitSuggest, profit_line: profitLine(econ),
       gain_week: gain, stake,
     };
@@ -250,4 +261,4 @@ async function readDeck(db) {
   return { cards, counts, left_out: leftOut, last_all: screen.last_all, running: screen.running };
 }
 
-module.exports = { DECKS, RAISE_CAP, OVER_CHEAPER_CAP, cheaperRival, suggest, profitLine, readDeck };
+module.exports = { DECKS, RAISE_CAP, OVER_CHEAPER_CAP, SELF_POST_PREMIUM, cheaperRival, suggest, profitLine, readDeck };
