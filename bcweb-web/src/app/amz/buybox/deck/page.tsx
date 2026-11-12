@@ -56,7 +56,6 @@ function isoInDays(n: number): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 const REVIEW_ON = isoInDays(REVIEW_DAYS);
-const TODAY = isoInDays(0);
 // '9 Nov' from a pg timestamp text or a YYYY-MM-DD date, in the UK calendar (a date-only string is taken as that calendar day).
 function dayLabel(v: string): string {
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
@@ -66,22 +65,7 @@ function dayLabel(v: string): string {
   const t = Date.parse(v.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00'));
   return Number.isFinite(t) ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' }) : v;
 }
-// 'YYYY-MM-DD' (UK calendar) of a pg timestamp text, for comparing with STALE_ON.
-function ukDay(v: string): string {
-  const t = Date.parse(v.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00'));
-  return Number.isFinite(t) ? new Date(t).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) : v.slice(0, 10);
-}
-// 'today' / 'yesterday' / 'n days ago' (UK calendar days), then the date once it is a fortnight old (owner, 2026-11-12).
-function daysAgo(v: string): string {
-  const d = ukDay(v);
-  const [y, m, dd] = d.split('-').map(Number);
-  const [ty, tm, td] = TODAY.split('-').map(Number);
-  const n = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(y, m - 1, dd)) / 864e5);
-  if (!Number.isFinite(n)) return dayLabel(v);
-  return n <= 0 ? 'today' : n === 1 ? 'yesterday' : n < 14 ? `${n} days ago` : dayLabel(v);
-}
-const STALE_DAYS = 3;
-const STALE_ON = isoInDays(-STALE_DAYS);
+const STALE_SALE_DAYS = 14;   // "last sold" goes amber at this many days (or never) — beside the strip
 const reviewDaysFor = (nextReview: string | null): number | null => (nextReview && nextReview > REVIEW_ON ? null : REVIEW_DAYS);
 
 const BIG_MOVE = 0.15;
@@ -311,6 +295,29 @@ export default function AmzBuyBoxDeckPage() {
   );
 }
 
+// The 30-day strip (header of the card's strip line). Day i of 30: i = 29 is today. Each square's hover names the day and the pairs;
+// a price change that day draws a dark notch on the square's left edge and adds who / from → to to the hover.
+function SalesStrip({ card }: { card: AmzDeckCard }) {
+  const days = card.strip.sold.length;
+  return (
+    <span className="flex shrink-0 items-center gap-px" aria-label="Amazon pairs sold a day, last 30 days">
+      {card.strip.sold.map((n, i) => {
+        const ago = days - 1 - i;
+        const moves = card.strip.moves.filter((m) => m.day === i);
+        const when = ago === 0 ? 'today' : ago === 1 ? 'yesterday' : `${ago} days ago`;
+        const title = [`${when}: ${n > 0 ? `${n} sold` : n < 0 ? `${-n} returned` : 'none sold'}`,
+          ...moves.map((m) => `price ${money(m.old_price)} → ${money(m.new_price)}${m.by ? ` (${m.by})` : ''}`)].join(' · ');
+        return (
+          <span key={i} title={title}
+            className={'relative inline-block h-3.5 w-2 rounded-[1px] ' + (n >= 2 ? 'bg-emerald-700' : n === 1 ? 'bg-emerald-500' : 'bg-slate-200')}>
+            {moves.length > 0 && <span className="absolute -left-px -top-0.5 h-[1.125rem] w-0.5 rounded bg-slate-800" />}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
 function Fact({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) {
   return (
     // A fixed slot (label, value, room for one small line under it): a fact with a note is no taller than one without.
@@ -339,8 +346,8 @@ function Card({ card, verb, n, of, busy, setDone, onSet, onLeave, onPrev, onUndo
     : card.profit_line ? Math.round((card.profit_line.per_pound * p2 + card.profit_line.at_zero) * 100) / 100 : null;
   const room = card.deck === 'room';
   const parkedLong = !!card.next_review && card.next_review > REVIEW_ON;
-  // Nothing sold since a change STALE_DAYS+ old is worth a look; a change made today with nothing sold yet is normal, so stays grey.
-  const staleNoSale = !!card.last_change && card.last_change.sold_since === 0 && ukDay(card.last_change.at) <= STALE_ON;
+  // The last sale goes amber once it is STALE_SALE_DAYS old, or never — the "stopped selling" signal beside the strip.
+  const lastSoldStale = card.strip.last_sold_ago === null || card.strip.last_sold_ago >= STALE_SALE_DAYS;
   const same = p2 !== null && Math.abs(p2 - card.our_price) < 0.005;
 
   const warnings: { text: string; red?: boolean }[] = [];
@@ -407,25 +414,21 @@ function Card({ card, verb, n, of, busy, setDone, onSet, onLeave, onPrev, onUndo
           {card.rival_at_our_price && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800" title="A rival at our exact price, to the penny — likely a repricer following us">following us</span>}
           {card.amazon_retail && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Amazon sells this size</span>}
         </div>
-        {/* LAST CHANGED + a long park (owner, 2026-11-12): did the last step hold, and did someone park it on purpose? */}
-        {/* Always takes its one line (empty when never changed), truncating, so the card below it never moves. */}
-        <div className="mt-1 h-5 truncate text-sm text-slate-500">
-            {card.last_change && (
-              <span title="The last time the price actually moved (same-price saves skipped), and net Amazon pairs sold since that day">
-                Last changed {daysAgo(card.last_change.at)}{card.last_change.by ? ` · ${card.last_change.by}` : ''} ·{' '}
-                <span className="tabular-nums">{money(card.last_change.old_price)} → {money(card.last_change.new_price)}</span> ·{' '}
-                <span className={card.last_change.sold_since > 0 ? 'text-slate-700' : staleNoSale ? 'font-medium text-amber-700' : ''}
-                  title={staleNoSale ? `Nothing sold in the ${STALE_DAYS}+ days since — did the last step hold?` : undefined}>
-                  {card.last_change.sold_since > 0 ? `${card.last_change.sold_since} sold since` : 'none sold since'}
-                </span>
-              </span>
-            )}
-            {parkedLong && (
-              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600"
-                title="Someone parked this size beyond the 7 days a Set gives — a Set keeps that date">
-                parked to {dayLabel(card.next_review!)} — kept
-              </span>
-            )}
+        {/* THE 30-DAY STRIP (owner, 2026-11-12: "want to be able to glance") in the card's one reserved line: a square per day,
+            oldest left, today right — filled = a pair sold that day, a dark notch = a price change (hover: when, who, from → to).
+            A stop reads as a blank run on the right without reading anything. Then the last sale, amber at 14+ days or never. */}
+        <div className="mt-1 flex h-5 items-center gap-2 overflow-hidden whitespace-nowrap text-sm text-slate-500">
+          <span className="shrink-0 text-xs">Sales 30d</span>
+          <SalesStrip card={card} />
+          <span className={'shrink-0 text-xs ' + (lastSoldStale ? 'font-medium text-amber-700' : '')}>
+            {card.strip.last_sold_ago === null ? 'never sold on Amazon' : `last sold ${card.strip.last_sold_ago === 0 ? 'today' : card.strip.last_sold_ago === 1 ? 'yesterday' : `${card.strip.last_sold_ago}d ago`}`}
+          </span>
+          {parkedLong && (
+            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600"
+              title="Someone parked this size beyond the 7 days a Set gives — a Set keeps that date">
+              parked to {dayLabel(card.next_review!)} — kept
+            </span>
+          )}
         </div>
       </div>
 

@@ -696,6 +696,9 @@ export interface AmzDeckCard {
   next_review: string | null;           // the Amazon review date, YYYY-MM-DD — a later one than the Set's 7 days is kept
   // The last real price move (holds skipped) and net Amazon pairs sold since that day; null = never changed.
   last_change: { at: string; by: string | null; old_price: number; new_price: number; sold_since: number } | null;
+  // The 30-day strip: sold[i] = net Amazon pairs that UK day (oldest first, today last); moves = real price changes by day index;
+  // last_sold_ago = days since the last pair sold (any time), null = never sold on Amazon.
+  strip: { sold: number[]; moves: { day: number; by: string | null; old_price: number; new_price: number }[]; last_sold_ago: number | null };
   our_price: number; rrp: number | null; walk: number | null;
   holder: AmzBuyBoxHolder; bb_price: number | null; lead_share: number | null; our_share: number | null; next_up: number | null; rivals: number;
   rival_at_our_price: boolean; amazon_retail: boolean; offers: AmzBuyBoxOffer[]; featured: AmzBuyBoxFeatured[];

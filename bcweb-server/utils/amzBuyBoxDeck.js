@@ -177,6 +177,30 @@ async function readDeck(db) {
   const lastOf = Object.fromEntries(lastRows.rows.map((x) => [x.code, {
     at: x.changed_at, by: x.changed_by, old_price: x.old_price, new_price: x.new_price, sold_since: x.sold_since }]));
 
+  // THE 30-DAY STRIP (owner, 2026-11-12: "want to be able to glance" — BLACKSOLE-05 sold 5 at £41.79 in 26–29 Oct, then nothing
+  // for 14 days once a self-poster came in under it; "4 sold since" hid that). Per card: net Amazon pairs per UK day for the last
+  // 30 days (oldest first, today last), the real price moves in those days (holds skipped), and how many days since the last pair
+  // sold (any time; null = never). Shown only — no rule reads it.
+  const STRIP_DAYS = 30;
+  const [stripSales, stripMoves, lastSales] = codes.length ? await Promise.all([
+    db.query(`SELECT code, (CURRENT_DATE - solddate)::int AS ago, SUM(qty)::int AS n FROM sales
+               WHERE channel = 'AMZ' AND code = ANY($1) AND solddate > CURRENT_DATE - $2::int GROUP BY 1, 2`, [codes, STRIP_DAYS]),
+    db.query(`SELECT code, (CURRENT_DATE - (COALESCE(changed_at, log_date::timestamptz) AT TIME ZONE 'Europe/London')::date)::int AS ago,
+                     changed_by, old_price::float8 AS old_price, new_price::float8 AS new_price
+                FROM amz_price_log WHERE code = ANY($1) AND abs(new_price - old_price) >= 0.005
+                 AND COALESCE(changed_at, log_date::timestamptz) >= CURRENT_DATE - ($2::int - 1)
+               ORDER BY COALESCE(changed_at, log_date::timestamptz), id`, [codes, STRIP_DAYS]),
+    db.query(`SELECT code, (CURRENT_DATE - MAX(solddate))::int AS ago FROM sales
+               WHERE channel = 'AMZ' AND qty > 0 AND code = ANY($1) GROUP BY 1`, [codes]),
+  ]) : [{ rows: [] }, { rows: [] }, { rows: [] }];
+  const stripOf = {};
+  for (const c of codes) stripOf[c] = { sold: Array(STRIP_DAYS).fill(0), moves: [], last_sold_ago: null };
+  for (const x of stripSales.rows) if (x.ago >= 0 && x.ago < STRIP_DAYS) stripOf[x.code].sold[STRIP_DAYS - 1 - x.ago] = x.n;
+  for (const x of stripMoves.rows) {
+    if (x.ago >= 0 && x.ago < STRIP_DAYS) stripOf[x.code].moves.push({ day: STRIP_DAYS - 1 - x.ago, by: x.changed_by, old_price: x.old_price, new_price: x.new_price });
+  }
+  for (const x of lastSales.rows) stripOf[x.code].last_sold_ago = x.ago;
+
   // ONE STEP, THEN A SALE (owner, 2026-11-12: "otherwise we are making a guess on top of a guess"): a Room size whose last price
   // move was a RAISE with no net pair sold since gets no card — it would come back after every reading and step up again on no
   // evidence (BLACKSOLE-08: raised £39.89 -> £41.88 in the morning, suggested £43.97 that afternoon). The Buy Box half of the
@@ -211,6 +235,7 @@ async function readDeck(db) {
       on_order: stockOf[r.code]?.on_order ?? 0, at_home: stockOf[r.code]?.at_home ?? 0,
       next_review: stockOf[r.code]?.next_review ?? null,   // the Amazon review date — the screen keeps a later one when it parks
       last_change: lastOf[r.code] ?? null,
+      strip: stripOf[r.code],
       our_price: r.our_price, rrp: r.rrp, walk: r.walk,
       holder: r.holder, bb_price: r.bb_price, lead_share: r.lead_share, our_share: r.our_share, next_up: r.next_up, rivals: r.rivals,
       rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail,
