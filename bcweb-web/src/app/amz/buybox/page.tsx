@@ -14,7 +14,10 @@ WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12: "is the screen just a result of
 THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost):
          Losing, can match · Winning, room to go up · Losing, can't match · No Buy Box · Winning, at the top · Alone.
          The Buy Box price includes postage. "Kept" = our profit a pair at the Buy Box price; "Walk-away" = the £3-a-pair price.
-         Amazon's own "expected winning price" is SHOWN, NEVER a target (the probe found it £5+ under prices we already win at).
+         SHARE OF VIEWS (owner, 2026-11-12): Amazon splits the Buy Box by customer group, each with a share of page views. "Buy Box"
+         is the offer featured to the MOST views (its price is the one to match, postage included); "We're shown" is the % of views
+         where we are featured — our own Buy Box %. Amazon's "expected winning price" is no longer read or shown (wrong both times
+         it was checked — £31.43 on IVES-WHITE-06 was a rival's price minus 1p without its postage).
          "Room to go up" is measured to the next rival above us — a guess until the history shows how far up the Buy Box holds.
 
 CLEAR (owner, 2026-11-12): no size ever drops off by itself — "it takes away the fact that I can see our position on the screen
@@ -229,12 +232,12 @@ export default function AmzBuyBoxPage() {
                     ['Sold 30d', 'Net pairs sold on Amazon, last 30 days', 'right'],
                     ['Weeks left', 'Stock ÷ the last 30 days’ pace', 'right'],
                     ['Our price', 'Our price at the read, postage included', 'right'],
-                    ['Buy Box', 'Who holds it, at what price (postage included)', 'left'],
+                    ['Buy Box', 'The offer Amazon features to the MOST page views, its price (postage included) and its share of views', 'left'],
                     ['Rivals', 'Other offers on the size', 'right'],
                     ['Kept', 'Our profit a pair if we matched the Buy Box price', 'right'],
                     ['Walk-away', 'The price that keeps £3 a pair — never go under it', 'right'],
                     ['Next above', 'The cheapest rival priced above us', 'right'],
-                    ['Amazon exp.', 'Amazon’s “expected winning price” — shown only, never a target', 'right'],
+                    ['We’re shown', 'Our Buy Box %: the share of page views where Amazon features OUR offer', 'right'],
                   ].map(([l, t, a]) => (
                     <th key={l} title={t} className={`sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-2 py-1.5 font-medium shadow-[inset_0_-1px_0_rgb(226_232_240)] ${a === 'right' ? 'text-right' : 'text-left'} ${l === 'Size' ? 'pl-3' : ''}`}>{l}</th>
                   ))}
@@ -290,6 +293,9 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
         <td className="whitespace-nowrap px-2 py-1.5">
           <span className={us ? 'font-medium text-emerald-700' : r.holder === 'NONE' ? 'text-amber-700' : 'text-slate-800'}>{HOLDER[r.holder]}</span>
           {r.bb_price !== null && <span className="ml-1.5 tabular-nums text-slate-600">{money(r.bb_price)}</span>}
+          {r.lead_share !== null && r.lead_share < 99.5 && (
+            <span className="ml-1 text-xs tabular-nums text-slate-400" title="Its share of page views — the rest are shown another offer">{Math.round(r.lead_share)}%</span>
+          )}
           {r.rival_at_our_price && <Tag tone="amber" title="A rival sits at our exact price, to the penny — likely a repricer following us. Matching it starts a race.">following us</Tag>}
           {r.amazon_retail && <Tag title="Amazon itself sells this size">Amazon</Tag>}
         </td>
@@ -299,7 +305,10 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
         </td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{money(r.walk)}</td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{us ? money(r.next_up) : ''}</td>
-        <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-400" title={r.foep_status || undefined}>{money(r.foep)}</td>
+        <td className={'whitespace-nowrap px-2 py-1.5 text-right font-medium tabular-nums ' + (r.our_share === null ? 'text-slate-400' : r.our_share >= 50 ? 'text-emerald-700' : r.our_share > 0 ? 'text-amber-700' : 'text-slate-500')}
+          title={r.our_share === null ? 'Not known at this read' : undefined}>
+          {r.our_share === null ? '—' : `${Math.round(r.our_share)}%`}
+        </td>
         <td className="py-1.5 pr-2 text-right">
           <button type="button" onClick={(e) => { e.stopPropagation(); onClear(); }}
             title="Clear from the list while you work — Show all brings it back" aria-label={`Clear ${r.code}`}
@@ -335,11 +344,13 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
                     <th className="pb-1 pr-6 text-left font-medium">Offer</th>
                     <th className="pb-1 pr-6 text-left font-medium">Sent by</th>
                     <th className="pb-1 pr-6 text-right font-medium">Price</th>
-                    <th className="pb-1 text-left font-medium">Buy Box</th>
+                    <th className="pb-1 text-left font-medium" title="Share of page views where Amazon features this offer — hover for the customer groups">Shown to</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[...r.offers].sort((a, b) => (a.price ?? 0) - (b.price ?? 0)).map((o, i) => {
+                    const f = r.featured.find((x) => x.seller === o.seller);
+                    const groups = f ? f.segments.map((g) => `${g.who === 'DEFAULT' ? 'Default' : g.who === 'PRIME' ? 'Prime' : g.who === 'NON_PRIME' ? 'Non-Prime' : g.who} ${Math.round(g.pct)}%`).join(' · ') : '';
                     return (
                       <tr key={`${o.seller}-${i}`} className={o.us ? 'font-medium text-slate-900' : 'text-slate-600'}>
                         <td className="py-0.5 pr-6 font-mono text-xs" title={o.seller}>
@@ -347,7 +358,10 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
                         </td>
                         <td className="py-0.5 pr-6">{o.fba ? 'FBA' : 'Self-post'}</td>
                         <td className="py-0.5 pr-6 text-right tabular-nums">{money(o.price)}</td>
-                        <td className="py-0.5">{o.bb ? <span className="text-emerald-700">holds it</span> : ''}</td>
+                        <td className="py-0.5" title={groups || undefined}>
+                          {f ? <span className="font-medium text-emerald-700">{Math.round(f.share)}% of views</span>
+                            : r.featured.length === 0 && o.bb ? <span className="text-emerald-700">holds it</span> : ''}
+                        </td>
                       </tr>
                     );
                   })}

@@ -19,7 +19,10 @@ Success Response:
               "read_at": "...", "live": 23, "total": 59, "sold30": 10, "weeks_left": 25.3,
               "our_price": 39.49, "set_since": null, "rrp": 45.00,   // set_since = a price set AFTER this reading (amz_price_log), else null
               "holder": "OTHER_MFN", "bb_price": 36.39, "rivals": 6, "rival_price": 36.39, "rival_seller": "A1LS…", "next_up": 39.99,
-              "rival_at_our_price": true, "amazon_retail": false, "foep": 31.43, "foep_status": "VALID_FOEP", "competitive_price": 45.00,
+              "rival_at_our_price": true, "amazon_retail": false, "competitive_price": 45.00,
+              "our_share": 0, "lead_share": 89.2,          // share of page views: ours, and the lead offer's (holder / bb_price)
+              "featured": [ { "seller": "AAGB…", "us": false, "fba": false, "price": 39.49, "share": 89.2,
+                              "segments": [ { "who": "PRIME", "pct": 13.5 }, { "who": "DEFAULT", "pct": 54.1 } ] } ],
               "offers": [ { "seller": "A1LS…", "us": false, "fba": false, "price": 36.39, "bb": true } ], "error": null,
               "group": "can_match", "target": 36.39, "kept": 3.44, "walk": 35.62 } ]
 }
