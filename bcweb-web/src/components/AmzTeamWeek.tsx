@@ -102,7 +102,9 @@ export default function AmzTeamWeek() {
                     <td className="py-1.5 text-right text-base font-semibold tabular-nums text-slate-900">{p.won_back}</td>
                     <td className="py-1.5 text-right text-base font-semibold tabular-nums text-slate-900">{p.raises_kept}</td>
                     <td className="py-1.5 text-right tabular-nums text-slate-700">
-                      {p.kept_profit > 0 ? <span className="text-emerald-700">+{money(p.kept_profit)}</span> : '—'}
+                      {p.kept_profit > 0 ? <span className="text-emerald-700">+{money(p.kept_profit)}</span>
+                        : p.raises_kept > 0 && p.kept_pairs === 0 ? <span className="text-xs text-slate-400" title="Counted from booked sales at the raised price — none yet">none sold yet</span>
+                        : '—'}
                       {p.kept_pairs > 0 && <span className="text-xs text-slate-400"> · {p.kept_pairs} pairs</span>}
                     </td>
                     <td className="py-1.5 text-right tabular-nums text-slate-400" title={`${p.cuts} down · ${p.raises} up · ${p.holds} held at the same price`}>{p.changes}</td>

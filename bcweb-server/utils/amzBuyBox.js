@@ -345,7 +345,10 @@ function classify(r) {
   if (!(Number(r.live) > 0)) return { group: 'not_live', target: null, kept: null, walk };
   const us = r.holder === 'US' || r.holder === 'US_SHARED';
   const target = us ? null : num(r.bb_price);
-  const kept = target === null ? null : amzProfit({ price: target, cost: r.cost, fbafee: r.fbafee, tax: r.tax }).profit;
+  // KEPT = our profit a pair: at the Buy Box price when someone else holds it (what matching would leave us), at OUR price when we
+  // hold it (nothing to match — owner, 2026-11-12: show what the size makes now, so "Room to go up" isn't a blank column).
+  const keptAt = us ? num(r.our_price) : target;
+  const kept = keptAt === null ? null : amzProfit({ price: keptAt, cost: r.cost, fbafee: r.fbafee, tax: r.tax }).profit;
   let group;
   if (!(r.rivals > 0)) group = 'alone';
   else if (us) group = r.next_up !== null && r.our_price !== null && num(r.next_up) > num(r.our_price) * (1 + ROOM_MIN_GAP) ? 'room' : 'top';

@@ -13,7 +13,7 @@ WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12: "is the screen just a result of
 
 THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost):
          Winning, room to go up · Losing, can match · Losing, can't match · No Buy Box · Winning, at the top · Alone.
-         The Buy Box price includes postage. "Kept" = our profit a pair at the Buy Box price; "Walk-away" = the £3-a-pair price.
+         The Buy Box price includes postage. "Kept" = our profit a pair at the Buy Box price (at our own price where we hold it); "Walk-away" = the £3-a-pair price.
          SHARE OF VIEWS (owner, 2026-11-12): Amazon splits the Buy Box by customer group, each with a share of page views. "Buy Box"
          is the offer featured to the MOST views (its price is the one to match, postage included); "We're shown" is the % of views
          where we are featured — our own Buy Box %. Amazon's "expected winning price" is no longer read or shown (wrong both times
@@ -281,9 +281,9 @@ export default function AmzBuyBoxPage() {
                     ['Our price', 'Our price at the read, postage included', 'right'],
                     ['Buy Box', 'The offer Amazon features to the MOST page views, its price (postage included) and its share of views', 'left'],
                     ['Rivals', 'Other offers on the size', 'right'],
-                    ['Kept', 'Our profit a pair if we matched the Buy Box price', 'right'],
+                    ['Kept', 'Our profit a pair: at the Buy Box price if we matched it, or at our own price where we already hold the Buy Box', 'right'],
                     ['Walk-away', 'The price that keeps £3 a pair — never go under it', 'right'],
-                    ['Next above', 'The cheapest rival priced above us', 'right'],
+                    ['Next dearer', 'The cheapest rival priced above us — a raise stays a penny under it', 'right'],
                     ['We’re shown', 'Our Buy Box %: the share of page views where Amazon features OUR offer', 'right'],
                   ].map(([l, t, a]) => (
                     <th key={l} title={t} className={`sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-2 py-1.5 font-medium shadow-[inset_0_-1px_0_rgb(226_232_240)] ${a === 'right' ? 'text-right' : 'text-left'} ${l === 'Size' ? 'pl-3' : ''}`}>{l}</th>
@@ -348,8 +348,8 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
           {r.our_eligible === false && <Tag tone="red" title="Amazon says our offer isn't eligible for the Buy Box (Featured Offer) — it can't be shown whatever the price. Check the listing in Seller Central, not the price.">not eligible</Tag>}
         </td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">{r.rivals}</td>
-        <td className={'whitespace-nowrap px-2 py-1.5 text-right tabular-nums ' + (r.kept !== null && r.walk !== null && r.target !== null && r.target < r.walk ? 'text-red-600' : 'text-slate-700')}>
-          {us ? '' : money(r.kept)}
+        <td className={'whitespace-nowrap px-2 py-1.5 text-right tabular-nums ' + (r.kept !== null && r.walk !== null && (us ? r.our_price : r.target) !== null && (us ? r.our_price! : r.target!) < r.walk ? 'text-red-600' : 'text-slate-700')}>
+          {money(r.kept)}
         </td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{money(r.walk)}</td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{us ? money(r.next_up) : ''}</td>

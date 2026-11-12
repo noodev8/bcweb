@@ -9,15 +9,18 @@ Purpose: Work the Buy Box groups that have a job ONE SIZE AT A TIME, each with o
          phone — deliberately not a swipe app ("dont take tinder too closely").
          Server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js (which sizes, the suggestion, the order — read its header).
 
-THE CARD: our price → the suggested price, why, our share of views, the lead offer, the next rival above, walk-away, RRP, stock, pairs
+THE CARD: our price → the suggested price, why, our share of views, the lead offer, the next dearer rival (on screen "Next dearer", owner 2026-11-12 — "above" read as league-table position), walk-away, RRP, stock, pairs
          sold, profit a pair now and at the price in the box (typed prices priced from the server's profit line — no second copy of
          the formula). Warnings are advice, nothing blocks (as every pricing screen): under the walk-away, over the RRP, a move over 15%,
          a raise to or past the next rival, a match not under the lead.
 
 SET = the normal W-A1 (POST /amz-apply), sent to Amazon at once; note "Buy Box Raise" / "Buy Box Match" (+ "own price" when the box
-         was changed) so Team week and the logs say where it came from. NO review date is set or read (the Buy Box screen has none).
+         was changed) so Team week and the logs say where it came from. REVIEW (owner, 2026-11-12): a Set parks the size REVIEW_DAYS (7)
+         on the Amazon review date — unless its review is already later, which is kept (Fast sellers' shape) — so the Due list doesn't
+         move it again blind. The deck itself ignores review dates: a parked size still comes back here after the next reading.
+         Undo puts the price back but leaves the park.
          A size that is set leaves the deck until a reading has seen its new price (server rule). LEAVE = skip for this visit only,
-         nothing stored. UNDO = sets the price back to what Amazon showed at the reading (another W-A1, note "Buy Box undo").
+         nothing stored (going back to a left card shows it live again). UNDO = sets the price back to what Amazon showed at the reading (another W-A1, note "Buy Box undo").
 
 THE LIST STAYS PUT while you work: the deck is the snapshot from when the page opened (no refetch on focus); Refresh reloads it — sizes
          set since then have gone (they wait for a reading), anything left comes back.
@@ -45,7 +48,44 @@ const DECKS: { key: AmzDeckKind; label: string; verb: string; rule: string; dot:
 const HOLDER: Record<AmzBuyBoxHolder, string> = {
   US: 'Us', US_SHARED: 'Us + shared', OTHER_FBA: 'Rival (FBA)', OTHER_MFN: 'Rival (self-post)', AMAZON: 'Amazon', NONE: 'Nobody',
 };
-const BIG_MOVE = 0.15;   // a move over 15% gets a warning (amz-price-set.js refuses these without a flag; here it is advice)
+// REVIEW (header): today + REVIEW_DAYS as YYYY-MM-DD in the UK calendar, taken once at module load (react-hooks/purity, as Fast sellers).
+const REVIEW_DAYS = 7;
+function isoInDays(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+const REVIEW_ON = isoInDays(REVIEW_DAYS);
+const TODAY = isoInDays(0);
+// '9 Nov' from a pg timestamp text or a YYYY-MM-DD date, in the UK calendar (a date-only string is taken as that calendar day).
+function dayLabel(v: string): string {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const [y, mo, d] = v.split('-').map(Number);
+    return new Date(y, mo - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  }
+  const t = Date.parse(v.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00'));
+  return Number.isFinite(t) ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'Europe/London' }) : v;
+}
+// 'YYYY-MM-DD' (UK calendar) of a pg timestamp text, for comparing with STALE_ON.
+function ukDay(v: string): string {
+  const t = Date.parse(v.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00'));
+  return Number.isFinite(t) ? new Date(t).toLocaleDateString('en-CA', { timeZone: 'Europe/London' }) : v.slice(0, 10);
+}
+// 'today' / 'yesterday' / 'n days ago' (UK calendar days), then the date once it is a fortnight old (owner, 2026-11-12).
+function daysAgo(v: string): string {
+  const d = ukDay(v);
+  const [y, m, dd] = d.split('-').map(Number);
+  const [ty, tm, td] = TODAY.split('-').map(Number);
+  const n = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(y, m - 1, dd)) / 864e5);
+  if (!Number.isFinite(n)) return dayLabel(v);
+  return n <= 0 ? 'today' : n === 1 ? 'yesterday' : n < 14 ? `${n} days ago` : dayLabel(v);
+}
+const STALE_DAYS = 3;
+const STALE_ON = isoInDays(-STALE_DAYS);
+const reviewDaysFor = (nextReview: string | null): number | null => (nextReview && nextReview > REVIEW_ON ? null : REVIEW_DAYS);
+
+const BIG_MOVE = 0.15;
+const OFFER_ROWS = 5;     // offers on the card (+ a "more" line): fits the card's fixed height, so the buttons never move   // a move over 15% gets a warning (amz-price-set.js refuses these without a flag; here it is advice)
 
 const money = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `£${v.toFixed(2)}`);
 const pct = (from: number, to: number) => {
@@ -111,7 +151,7 @@ export default function AmzBuyBoxDeckPage() {
     if (busy) return;
     setBusy(true); setMsg(null);
     const note = `Buy Box ${meta.verb}${edited ? ' (own price)' : ''}`;
-    const res = await applyAmzPrice(card.code, price, note);
+    const res = await applyAmzPrice(card.code, price, note, reviewDaysFor(card.next_review));
     setBusy(false);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
     if (!res.success || !res.data) { setMsg({ text: `${card.code}: ${res.error || 'could not set the price'}`, tone: 'err' }); return; }
@@ -168,8 +208,8 @@ export default function AmzBuyBoxDeckPage() {
     <AppShell backHref="/amz/buybox" backLabel="Buy Box" crumb={<span className="font-medium text-slate-800">Go through</span>}>
       {/* ONE SCREEN, NO SCROLL on a laptop (owner, 2026-11-12: "squeeze things upwards"): no title row (the crumb names it), the
           result line sits in the deck row, and the card puts facts and offers side by side with the price and buttons on one line. */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+      <div className="mb-3 flex min-h-9 flex-wrap items-center gap-x-4 gap-y-2 lg:flex-nowrap">
+        <div className="inline-flex shrink-0 rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
           {DECKS.map((d) => (
             <Link key={d.key} href={`/amz/buybox/deck?g=${d.key}`} title={d.rule}
               className={'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm ' + (d.key === deck ? 'bg-brand-50 font-medium text-brand-800' : 'text-slate-600 hover:bg-slate-50')}>
@@ -178,20 +218,22 @@ export default function AmzBuyBoxDeckPage() {
             </Link>
           ))}
         </div>
-        <span className="text-sm text-slate-500" title="Every hour, by the cron">
+        <span className="shrink-0 text-sm text-slate-500" title="Every hour, by the cron">
           Reading {ago(readMs, now)}{data?.running ? ' · a read is running' : ''}
         </span>
         <button type="button" onClick={reload}
           title="Reload the deck — sizes set since have gone until a reading sees their new price; anything left comes back"
-          className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
           <ArrowPathIcon className="h-3.5 w-3.5" /> Refresh
         </button>
+      {/* STEADY (owner, 2026-11-12: "im moving my cursor to chase it"): the result line is ONE line that truncates (full text on
+          hover), in a header row that doesn't wrap on a laptop, so nothing below moves when it appears or changes. */}
       {msg && (
-        <div className={'flex flex-wrap items-center gap-3 rounded-md px-3 py-1.5 text-sm ' + (msg.tone === 'err' ? 'bg-red-50 text-red-700' : msg.tone === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800')}>
-          <span>{msg.text}</span>
+        <div title={msg.text} className={'flex h-8 min-w-0 items-center gap-3 whitespace-nowrap rounded-md px-3 text-sm ' + (msg.tone === 'err' ? 'bg-red-50 text-red-700' : msg.tone === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-emerald-50 text-emerald-800')}>
+          <span className="min-w-0 truncate">{msg.text}</span>
           {msg.undo && done.get(msg.undo)?.kind === 'set' && (
             <button type="button" onClick={() => undo(msg.undo!)} disabled={busy}
-              className="inline-flex items-center gap-1 font-medium underline disabled:opacity-50">
+              className="inline-flex shrink-0 items-center gap-1 font-medium underline disabled:opacity-50">
               <ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo
             </button>
           )}
@@ -205,14 +247,15 @@ export default function AmzBuyBoxDeckPage() {
       {data && (
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
           <div className="w-full lg:max-w-2xl">
-            {current && !done.has(current.code) ? (
-              <Card key={current.code} card={current} verb={meta.verb} n={index + 1} of={cards.length} busy={busy}
+            {/* ONE card layout for every state, so the buttons never move (owner, 2026-11-12). Going back to a card you LEFT shows it
+                live again (Leave is only a skip — Set or Leave it again); one you SET shows what was sent, with Undo in Set's place and
+                Next in Leave's. */}
+            {current ? (
+              <Card key={current.code + (done.get(current.code)?.kind === 'set' ? ':set' : '')} card={current} verb={meta.verb} n={index + 1} of={cards.length} busy={busy}
+                setDone={done.get(current.code)?.kind === 'set' ? (done.get(current.code) as Extract<Done, { kind: 'set' }>) : null}
                 onSet={(p, edited) => setPrice(current, p, edited)} onLeave={() => leave(current)} onPrev={previous}
+                onUndo={() => undo(current.code)} onNext={() => go(nextAfter(current.code, done))}
                 onUndoLast={() => lastSet && undo(lastSet)} />
-            ) : current && done.has(current.code) ? (
-              <DoneCard card={current} d={done.get(current.code)!} busy={busy} onUndo={() => undo(current.code)}
-                onReopen={() => setDone((p) => { const n = new Map(p); n.delete(current.code); return n; })}
-                onNext={() => go(nextAfter(current.code, done))} onPrev={previous} />
             ) : (
               <div className="rounded-lg border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
                 <div className="text-lg font-medium text-slate-900">{cards.length ? 'All done here' : 'Nothing to go through'}</div>
@@ -227,6 +270,7 @@ export default function AmzBuyBoxDeckPage() {
                 Not in the deck: {leftOut.not_selling} that sold nothing in 30 days
                 {leftOut.waiting > 0 && <> · {leftOut.waiting} with a price set since the reading (back after the next one)</>}
                 {leftOut.not_eligible > 0 && <> · {leftOut.not_eligible} not eligible for the Buy Box (Seller Central)</>}
+                {(leftOut.raised_waiting ?? 0) > 0 && <> · {leftOut.raised_waiting} raised, waiting for a sale at the new price</>}
                 {(leftOut.cheaper_rival ?? 0) > 0 && <> · {leftOut.cheaper_rival} already 2%+ over a cheaper rival (raising would give views away)</>}
                 {' '}— all on the <Link href="/amz/buybox" className="text-brand-700 hover:underline">Buy Box screen</Link>.
               </p>
@@ -267,18 +311,21 @@ export default function AmzBuyBoxDeckPage() {
 
 function Fact({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) {
   return (
-    <div title={title}>
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className="font-medium tabular-nums text-slate-900">{children}</div>
+    // A fixed slot (label, value, room for one small line under it): a fact with a note is no taller than one without.
+    <div title={title} className="h-[3.25rem] min-w-0">
+      <div className="truncate text-xs text-slate-500">{label}</div>
+      <div className="truncate font-medium tabular-nums text-slate-900">{children}</div>
     </div>
   );
 }
 
-function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
+function Card({ card, verb, n, of, busy, setDone, onSet, onLeave, onPrev, onUndo, onNext, onUndoLast }: {
   card: AmzDeckCard; verb: string; n: number; of: number; busy: boolean;
-  onSet: (price: number, edited: boolean) => void; onLeave: () => void; onPrev: () => void; onUndoLast: () => void;
+  setDone: Extract<Done, { kind: 'set' }> | null;   // set this visit: show what was sent, Undo where Set is, Next where Leave is
+  onSet: (price: number, edited: boolean) => void; onLeave: () => void; onPrev: () => void;
+  onUndo: () => void; onNext: () => void; onUndoLast: () => void;
 }) {
-  const [text, setText] = useState(card.suggest.toFixed(2));
+  const [text, setText] = useState((setDone ? setDone.price : card.suggest).toFixed(2));
   const inputRef = useRef<HTMLInputElement>(null);
   const price = Number(text);
   const valid = Number.isFinite(price) && price > 0;
@@ -289,6 +336,9 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
     : !edited ? card.profit_suggest
     : card.profit_line ? Math.round((card.profit_line.per_pound * p2 + card.profit_line.at_zero) * 100) / 100 : null;
   const room = card.deck === 'room';
+  const parkedLong = !!card.next_review && card.next_review > REVIEW_ON;
+  // Nothing sold since a change STALE_DAYS+ old is worth a look; a change made today with nothing sold yet is normal, so stays grey.
+  const staleNoSale = !!card.last_change && card.last_change.sold_since === 0 && ukDay(card.last_change.at) <= STALE_ON;
   const same = p2 !== null && Math.abs(p2 - card.our_price) < 0.005;
 
   const warnings: { text: string; red?: boolean }[] = [];
@@ -301,7 +351,7 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
   }
 
   function submit() {
-    if (busy || p2 === null || same) return;
+    if (setDone || busy || p2 === null || same) return;
     onSet(p2, edited);
   }
 
@@ -312,10 +362,10 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
       if (e.key === 'Enter') { e.preventDefault(); submit(); return; }
       if (typing) { if (e.key === 'Escape') (e.target as HTMLInputElement).blur(); return; }
-      if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') { e.preventDefault(); onLeave(); }
+      if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') { e.preventDefault(); if (setDone) onNext(); else onLeave(); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); onPrev(); }
-      else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); inputRef.current?.focus(); inputRef.current?.select(); }
-      else if (e.key === 'u' || e.key === 'U') { e.preventDefault(); onUndoLast(); }
+      else if ((e.key === 'e' || e.key === 'E') && !setDone) { e.preventDefault(); inputRef.current?.focus(); inputRef.current?.select(); }
+      else if (e.key === 'u' || e.key === 'U') { e.preventDefault(); if (setDone) onUndo(); else onUndoLast(); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -328,8 +378,15 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
       <div className="flex items-start gap-3 border-b border-slate-100 px-4 py-2.5">
         <StyleThumb imagename={card.imagename} alt={card.title || card.code} />
         <div className="min-w-0 flex-1">
-          <div className="truncate font-medium text-slate-900" title={card.title || undefined}>{card.title || card.code}</div>
-          <div className="font-mono text-xs text-slate-600">{card.code}<span className="ml-2 font-sans text-slate-400">{card.brand}</span></div>
+          {/* Led by the GROUPID (owner, 2026-11-12), the size after it; the name and brand underneath. */}
+          <div className="truncate font-mono font-semibold text-slate-900" title={card.code}>
+            {card.groupid && card.code.startsWith(card.groupid)
+              ? <>{card.groupid}<span className="font-normal text-slate-500">{card.code.slice(card.groupid.length)}</span></>
+              : card.code}
+          </div>
+          <div className="truncate text-xs text-slate-600" title={card.title || undefined}>
+            {card.title || '—'}<span className="ml-2 text-slate-400">{card.brand}</span>
+          </div>
           <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs">
             <Link href={`/amz/sku/${encodeURIComponent(card.code)}?from=${encodeURIComponent('/amz/buybox/deck?g=' + card.deck)}`} className="text-brand-700 hover:underline">Amazon price screen →</Link>
             {card.asin && <a href={`https://www.amazon.co.uk/dp/${card.asin}`} target="_blank" rel="noreferrer" className="text-brand-700 hover:underline">On Amazon ↗</a>}
@@ -340,18 +397,39 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
 
       {/* THE MOVE — the one line to decide on; the reason beside it. */}
       <div className="px-4 pt-3">
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className={'rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ' + (room ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700')}>{verb}</span>
+        <div className="flex items-baseline gap-x-3 whitespace-nowrap">
+          <span className={'shrink-0 rounded px-2 py-0.5 text-xs font-semibold uppercase tracking-wide ' + (room ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700')}>{verb}</span>
           <span className="text-2xl font-semibold tabular-nums text-slate-900">{money(card.our_price)} → {money(card.suggest)}</span>
           <span className="text-sm tabular-nums text-slate-500">{pct(card.our_price, card.suggest)}</span>
-          <span className="text-sm text-slate-500">· {card.suggest_note}</span>
-          {card.rival_at_our_price && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800" title="A rival at our exact price, to the penny — likely a repricer following us">following us</span>}
-          {card.amazon_retail && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Amazon sells this size</span>}
+          <span className="min-w-0 truncate text-sm text-slate-500" title={card.suggest_note}>· {card.suggest_note}</span>
+          {card.rival_at_our_price && <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800" title="A rival at our exact price, to the penny — likely a repricer following us">following us</span>}
+          {card.amazon_retail && <span className="shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">Amazon sells this size</span>}
+        </div>
+        {/* LAST CHANGED + a long park (owner, 2026-11-12): did the last step hold, and did someone park it on purpose? */}
+        {/* Always takes its one line (empty when never changed), truncating, so the card below it never moves. */}
+        <div className="mt-1 h-5 truncate text-sm text-slate-500">
+            {card.last_change && (
+              <span title="The last time the price actually moved (same-price saves skipped), and net Amazon pairs sold since that day">
+                Last changed {daysAgo(card.last_change.at)}{card.last_change.by ? ` · ${card.last_change.by}` : ''} ·{' '}
+                <span className="tabular-nums">{money(card.last_change.old_price)} → {money(card.last_change.new_price)}</span> ·{' '}
+                <span className={card.last_change.sold_since > 0 ? 'text-slate-700' : staleNoSale ? 'font-medium text-amber-700' : ''}
+                  title={staleNoSale ? `Nothing sold in the ${STALE_DAYS}+ days since — did the last step hold?` : undefined}>
+                  {card.last_change.sold_since > 0 ? `${card.last_change.sold_since} sold since` : 'none sold since'}
+                </span>
+              </span>
+            )}
+            {parkedLong && (
+              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600"
+                title="Someone parked this size beyond the 7 days a Set gives — a Set keeps that date">
+                parked to {dayLabel(card.next_review!)} — kept
+              </span>
+            )}
         </div>
       </div>
 
       {/* FACTS (left) and OFFERS (right), side by side on a laptop — stacked on a phone. */}
-      <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:gap-6">
+      {/* A FIXED-HEIGHT block on a laptop: facts in equal slots, offers capped at OFFER_ROWS — so the buttons stay put card to card. */}
+      <div className="flex flex-col gap-3 px-4 py-3 sm:h-[8.75rem] sm:flex-row sm:gap-6 sm:overflow-hidden">
         <div className="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-4">
           <Fact label="We're shown" title="Our share of page views at the reading — our Buy Box %">
             <span className={card.our_share === null ? 'text-slate-400' : card.our_share >= 50 ? 'text-emerald-700' : card.our_share > 0 ? 'text-amber-700' : 'text-slate-500'}>
@@ -359,7 +437,7 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
             </span>
           </Fact>
           {room ? (
-            <Fact label="Next above" title="The cheapest rival priced above us">{money(card.next_up)}</Fact>
+            <Fact label="Next dearer" title="The cheapest rival priced above us — a raise stays a penny under it">{money(card.next_up)}</Fact>
           ) : (
             <Fact label="Lead" title={`The offer Amazon features to the most views, price incl. postage — ${HOLDER[card.holder]}${card.lead_share !== null ? `, ${Math.round(card.lead_share)}% of views` : ''}`}>
               {money(card.bb_price)}
@@ -369,14 +447,22 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
           <Fact label="RRP">{money(card.rrp)}</Fact>
           <Fact label="Sold 30d" title="Net pairs sold on Amazon, last 30 days">{card.sold30}</Fact>
           <Fact label="FBA" title="Sellable at FBA now, + on its way in">{card.live}{card.total > card.live && <span className="font-normal text-slate-400"> +{card.total - card.live}</span>}</Fact>
-          <Fact label="Weeks left" title="Stock ÷ the last 30 days' pace">{card.weeks_left ?? '—'}</Fact>
+          <Fact label="Weeks left" title="FBA stock ÷ the last 30 days' pace — see the line under it for more coming">
+            {card.weeks_left ?? '—'}
+            {(card.on_order > 0 || card.at_home > 0) && (
+              <span className="block truncate text-xs font-normal text-slate-500"
+                title="On order = placed with the supplier, not yet arrived. At home = sellable local stock (could be sent to FBA).">
+                {[card.on_order > 0 ? `+${card.on_order} on order` : null, card.at_home > 0 ? `${card.at_home} at home` : null].filter(Boolean).join(' · ')}
+              </span>
+            )}
+          </Fact>
           <Fact label="Profit now" title="Profit a pair at our price at the reading">{money(card.profit_now)}</Fact>
         </div>
         {/* The offers, cheapest first — who else is on the size and who Amazon shows. */}
         <div className="shrink-0">
           <table className="text-xs">
             <tbody>
-              {[...card.offers].sort((a, b) => (a.price ?? 0) - (b.price ?? 0)).slice(0, 6).map((o, i) => {
+              {[...card.offers].sort((a, b) => (a.price ?? 0) - (b.price ?? 0)).slice(0, OFFER_ROWS).map((o, i) => {
                 const f = card.featured.find((x) => x.seller === o.seller);
                 return (
                   <tr key={`${o.seller}-${i}`} className={o.us ? 'font-medium text-slate-900' : 'text-slate-600'}>
@@ -389,92 +475,68 @@ function Card({ card, verb, n, of, busy, onSet, onLeave, onPrev, onUndoLast }: {
               })}
             </tbody>
           </table>
-          {card.offers.length > 6 && <div className="text-xs text-slate-400">+ {card.offers.length - 6} more</div>}
+          {card.offers.length > OFFER_ROWS && <div className="text-xs text-slate-400">+ {card.offers.length - OFFER_ROWS} more</div>}
         </div>
       </div>
 
       {/* THE DECISION — price, profit and the buttons on one line (wraps on a phone). */}
       <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 sm:flex-nowrap">
           <label className="flex items-center gap-1.5 text-sm text-slate-600">
             £
-            <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} inputMode="decimal"
+            <input ref={inputRef} value={text} onChange={(e) => setText(e.target.value)} inputMode="decimal" disabled={!!setDone}
               className="h-11 w-24 rounded-md border border-slate-300 px-2 text-lg tabular-nums focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
           </label>
-          <button type="button" onClick={submit} disabled={busy || p2 === null || same} title="Enter"
-            className="h-11 rounded-md bg-brand-600 px-5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
+          {setDone ? (
+            <>
+              <button type="button" onClick={onUndo} disabled={busy} title="U"
+                className="inline-flex h-11 w-36 shrink-0 items-center justify-center gap-1 rounded-md border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                <ArrowUturnLeftIcon className="h-4 w-4" /> {busy ? 'Sending…' : `Undo to ${money(card.our_price)}`}
+              </button>
+              <button type="button" onClick={onNext} disabled={busy} title="→ or L"
+                className="h-11 w-24 shrink-0 rounded-md border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                Next →
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={submit} disabled={busy || p2 === null || same} title="Enter"
+            className="h-11 w-36 shrink-0 rounded-md bg-brand-600 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50">
             {busy ? 'Sending…' : p2 !== null ? `Set ${money(p2)}` : 'Set'}
-          </button>
-          <button type="button" onClick={onLeave} disabled={busy} title="→ or L"
-            className="h-11 rounded-md border border-slate-300 bg-white px-5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              </button>
+              <button type="button" onClick={onLeave} disabled={busy} title="→ or L"
+            className="h-11 w-24 shrink-0 rounded-md border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
             Leave
-          </button>
+              </button>
+            </>
+          )}
           <button type="button" onClick={onPrev} disabled={busy || n <= 1} title="←"
-            className="hidden h-11 rounded-md px-2 text-sm text-slate-500 hover:bg-slate-100 disabled:opacity-40 sm:inline-block">
+            className="hidden h-11 shrink-0 rounded-md px-2 text-sm text-slate-500 hover:bg-slate-100 disabled:opacity-40 sm:inline-block">
             ← Prev
           </button>
-          <div className="text-sm text-slate-600">
+        </div>
+        {/* Profit at the box's price, then any warnings: ONE reserved line under the buttons (clipped, warnings in full on hover),
+            so typing a price or a card with warnings never moves anything. */}
+        <div className="mt-1.5 flex h-5 items-baseline gap-x-4 overflow-hidden whitespace-nowrap" title={warnings.map((w) => w.text).join(' · ') || undefined}>
+          {setDone ? (
+            <span className={'truncate text-sm ' + (setDone.amazon && !setDone.amazon.sent ? 'text-amber-700' : 'text-emerald-700')} title={setDone.amazon?.message || undefined}>
+              Set {money(card.our_price)} → <span className="font-medium">{money(setDone.price)}</span> this visit — {setDone.amazon?.sent ? 'sent to Amazon' : setDone.amazon ? `NOT sent: ${setDone.amazon.message}` : 'saved'}
+            </span>
+          ) : (<>
+          <span className="shrink-0 text-sm text-slate-600">
             {profitAt !== null ? <>keeps <span className="font-medium text-slate-900">{money(profitAt)}</span> a pair</> : valid ? '' : 'Not a price'}
             {room && !edited && card.gain_week !== null && card.gain_week > 0 && (
-              <span className="text-slate-500"> · ≈ £{card.gain_week.toFixed(2)} a week more</span>
+              <span className="text-slate-500" title="About this much more profit a week if it keeps selling at the same pace"> · +£{card.gain_week.toFixed(2)} a week</span>
             )}
-          </div>
+          </span>
+          {warnings.map((w) => <span key={w.text} className={'text-xs ' + (w.red ? 'text-red-600' : 'text-amber-700')}>{w.text}</span>)}
+          </>)}
         </div>
-        {warnings.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap gap-x-4 text-xs">
-            {warnings.map((w) => <span key={w.text} className={w.red ? 'text-red-600' : 'text-amber-700'}>{w.text}</span>)}
-          </div>
-        )}
         <p className="mt-1.5 hidden text-[11px] text-slate-400 sm:block">
-          Enter set · → leave · ← previous · E edit · U undo the last set — sent to Amazon at once, no review date.
+          Enter set · → leave · ← previous · E edit · U undo the last set — sent to Amazon at once, review in 7 days (a later date kept).
         </p>
       </div>
     </div>
   );
 }
 
-// A card already dealt with this visit (reached with ← or from the queue): what was done, Undo for a set.
-function DoneCard({ card, d, busy, onUndo, onReopen, onNext, onPrev }: {
-  card: AmzDeckCard; d: Done; busy: boolean; onUndo: () => void; onReopen: () => void; onNext: () => void; onPrev: () => void;
-}) {
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') { e.preventDefault(); onNext(); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); onPrev(); }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-4 py-4 shadow-sm">
-      <div className="flex items-start gap-3">
-        <StyleThumb imagename={card.imagename} alt={card.title || card.code} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate font-medium text-slate-900">{card.title || card.code}</div>
-          <div className="font-mono text-xs text-slate-600">{card.code}</div>
-          <div className="mt-2 text-sm text-slate-700">
-            {d.kind === 'set'
-              ? <>Set {money(card.our_price)} → <span className="font-medium">{money(d.price)}</span> — {d.amazon?.sent ? 'sent to Amazon' : d.amazon ? `NOT sent: ${d.amazon.message}` : 'saved'}</>
-              : <>Left as it is ({money(card.our_price)})</>}
-          </div>
-        </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {d.kind === 'set' && (
-          <button type="button" onClick={onUndo} disabled={busy}
-            className="inline-flex h-10 items-center gap-1 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-            <ArrowUturnLeftIcon className="h-4 w-4" /> Undo — back to {money(card.our_price)}
-          </button>
-        )}
-        {d.kind === 'left' && (
-          <button type="button" onClick={onReopen}
-            className="h-10 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50">
-            Look again
-          </button>
-        )}
-        <button type="button" onClick={onNext} className="h-10 rounded-md px-4 text-sm text-brand-700 hover:bg-slate-50">Next →</button>
-      </div>
-    </div>
-  );
-}

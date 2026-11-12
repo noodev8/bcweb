@@ -27,7 +27,10 @@ WHO IS IN A DECK:
   - NOT ACTED ON SINCE THE READING: a size with a price set after its reading (amz_price_log newer than read_at — set_since, any
     screen, any person) leaves the deck and comes back only once a reading has SEEN its new price, if it is still in the group
     (owner agreed: the cooldown is the next reading, not a review date — the same test Team week judges a move by). Counted as
-    `waiting`. The review dates are not read and not touched: the Buy Box screen has none (owner, 2026-11-12).
+    `waiting`. The deck never READS review dates. A Set PARKS the size 7 days on the Amazon review date, keeping a later one
+    (owner, 2026-11-12: so the Due list doesn't move it again blind — this screen is the preferred place; the screen sends it).
+  - room: NOT RAISED WITHOUT A SALE SINCE — the last real price move a raise and no net pair sold since: no card until one sells
+    (owner, 2026-11-12; see the filter in readDeck). Counted as `raised_waiting`.
   - can_match: our offer not "not eligible" — no price wins a Buy Box Amazon won't consider us for. Counted as `not_eligible`.
   "Leave" on the screen is a skip for this visit only (nothing stored), like the Buy Box screen's ×.
 
@@ -43,6 +46,7 @@ PROFIT ON THE CARD: amzProfit is a straight line in price (fees and VAT are % of
 
 const { amzProfit } = require('./amzProfit');
 const { readScreen } = require('./amzBuyBox');
+const { placed } = require('./orderStatus');
 
 const DECKS = ['room', 'can_match'];
 const RAISE_CAP = 0.05;            // a raise is at most +5% on our price per step
@@ -97,7 +101,7 @@ function suggest(r) {
 async function readDeck(db) {
   const screen = await readScreen(db);
   const counts = Object.fromEntries(DECKS.map((d) => [d, 0]));
-  const leftOut = Object.fromEntries(DECKS.map((d) => [d, { not_selling: 0, waiting: 0, not_eligible: 0, cheaper_rival: 0 }]));
+  const leftOut = Object.fromEntries(DECKS.map((d) => [d, { not_selling: 0, waiting: 0, not_eligible: 0, cheaper_rival: 0, raised_waiting: 0 }]));
 
   const picked = [];
   for (const r of screen.rows) {
@@ -126,7 +130,56 @@ async function readDeck(db) {
     : { rows: [] };
   const econOf = Object.fromEntries(econRows.rows.map((x) => [x.code, { cost: x.cost, fbafee: x.fbafee, tax: x.tax }]));
 
-  const cards = picked.map(({ r, s }) => {
+  // MORE COMING (owner, 2026-11-12): a low "weeks left" reads as scarce when a restock is already on its way. On order = supplier
+  // lines (2 local / 3 Amazon) PLACED with the supplier and not yet arrived (utils/orderStatus.js → placed); at home = sellable
+  // local stock (#FREE). Shown on the card only — neither changes the suggestion.
+  const stockRows = codes.length
+    ? await db.query(
+      `SELECT c.code,
+              (SELECT COUNT(*) FROM orderstatus o WHERE o.shopifysku = c.code AND o.ordertype IN (2, 3)
+                 AND ${placed('o')} AND COALESCE(o.arrived, 0) = 0)::int AS on_order,
+              (SELECT COALESCE(SUM(l.qty), 0) FROM localstock l WHERE l.code = c.code AND l.ordernum = '#FREE'
+                 AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0)::int AS at_home,
+              (SELECT to_char(m.next_amz_price_review, 'YYYY-MM-DD') FROM skumap m WHERE m.code = c.code LIMIT 1) AS next_review
+       FROM unnest($1::text[]) AS c(code)`, [codes])
+    : { rows: [] };
+  const stockOf = Object.fromEntries(stockRows.rows.map((x) => [x.code, x]));
+
+  // LAST CHANGED (owner, 2026-11-12): the size's last real price MOVE (holds — same-price saves — skipped), by whom, and the net
+  // Amazon pairs sold since that day (sales carry a date only, so a sale earlier on the same day counts — as Team week). Shows
+  // whether the last step held before taking the next one, and a size someone just moved from another screen.
+  const lastRows = codes.length
+    ? await db.query(
+      `WITH last AS (
+         -- changed_at is NULL on the 458 rows logged before it existed (Apr – Jul 2026): fall back to log_date, else those NULLs
+         -- would sort FIRST under DESC and pass for the latest change.
+         SELECT DISTINCT ON (code) code, COALESCE(changed_at, log_date::timestamptz) AS changed_at, changed_by,
+                old_price::float8 AS old_price, new_price::float8 AS new_price
+         FROM amz_price_log WHERE code = ANY($1) AND abs(new_price - old_price) >= 0.005
+         ORDER BY code, COALESCE(changed_at, log_date::timestamptz) DESC, id DESC)
+       SELECT l.code, l.changed_at::text AS changed_at, l.changed_by, l.old_price, l.new_price,
+              (SELECT COALESCE(SUM(s.qty), 0) FROM sales s WHERE s.channel = 'AMZ' AND s.code = l.code
+                 AND s.solddate >= (l.changed_at AT TIME ZONE 'Europe/London')::date)::int AS sold_since
+       FROM last l`, [codes])
+    : { rows: [] };
+  const lastOf = Object.fromEntries(lastRows.rows.map((x) => [x.code, {
+    at: x.changed_at, by: x.changed_by, old_price: x.old_price, new_price: x.new_price, sold_since: x.sold_since }]));
+
+  // ONE STEP, THEN A SALE (owner, 2026-11-12: "otherwise we are making a guess on top of a guess"): a Room size whose last price
+  // move was a RAISE with no net pair sold since gets no card — it would come back after every reading and step up again on no
+  // evidence (BLACKSOLE-08: raised £39.89 -> £41.88 in the morning, suggested £43.97 that afternoon). The Buy Box half of the
+  // test is hourly anyway: a raise that lost the box leaves Room by itself. Back once a pair sells; a size that then sells
+  // nothing for 30 days falls into not_selling. Cuts and Can match are not held (losing the box costs sales now).
+  const kept = picked.filter(({ r }) => {
+    const l = lastOf[r.code];
+    if (r.group === 'room' && l && l.new_price > l.old_price + 0.005 && !(l.sold_since > 0)) {
+      leftOut.room.raised_waiting += 1;
+      return false;
+    }
+    return true;
+  });
+
+  const cards = kept.map(({ r, s }) => {
     const econ = econOf[r.code] || {};
     const profitNow = amzProfit({ ...econ, price: r.our_price }).profit;
     const profitSuggest = amzProfit({ ...econ, price: s.price }).profit;
@@ -143,6 +196,9 @@ async function readDeck(db) {
     return {
       deck: r.group, code: r.code, groupid: r.groupid, title: r.title, brand: r.brand, asin: r.asin, imagename: imageOf[r.groupid] ?? null,
       read_at: r.read_at, live: r.live, total: r.total, sold30: r.sold30, weeks_left: r.weeks_left,
+      on_order: stockOf[r.code]?.on_order ?? 0, at_home: stockOf[r.code]?.at_home ?? 0,
+      next_review: stockOf[r.code]?.next_review ?? null,   // the Amazon review date — the screen keeps a later one when it parks
+      last_change: lastOf[r.code] ?? null,
       our_price: r.our_price, rrp: r.rrp, walk: r.walk,
       holder: r.holder, bb_price: r.bb_price, lead_share: r.lead_share, our_share: r.our_share, next_up: r.next_up, rivals: r.rivals,
       rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail,

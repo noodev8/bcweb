@@ -692,6 +692,10 @@ export interface AmzDeckCard {
   deck: AmzDeckKind; code: string; groupid: string | null; title: string | null; brand: string | null; asin: string | null;
   imagename: string | null; read_at: string;
   live: number; total: number; sold30: number; weeks_left: number | null;
+  on_order: number; at_home: number;   // placed with the supplier, not arrived · sellable local stock — shown, never in the suggestion
+  next_review: string | null;           // the Amazon review date, YYYY-MM-DD — a later one than the Set's 7 days is kept
+  // The last real price move (holds skipped) and net Amazon pairs sold since that day; null = never changed.
+  last_change: { at: string; by: string | null; old_price: number; new_price: number; sold_since: number } | null;
   our_price: number; rrp: number | null; walk: number | null;
   holder: AmzBuyBoxHolder; bb_price: number | null; lead_share: number | null; our_share: number | null; next_up: number | null; rivals: number;
   rival_at_our_price: boolean; amazon_retail: boolean; offers: AmzBuyBoxOffer[]; featured: AmzBuyBoxFeatured[];
@@ -701,7 +705,8 @@ export interface AmzDeckCard {
   gain_week: number | null;   // room only: pairs a week × the extra profit a pair at the suggestion
   stake: number;
 }
-export interface AmzDeckLeftOut { not_selling: number; waiting: number; not_eligible: number; cheaper_rival?: number }   // cheaper_rival: room only, already 2%+ over a cheaper rival
+// cheaper_rival / raised_waiting: room only — already 2%+ over a cheaper rival · raised, nothing sold since (back once a pair sells)
+export interface AmzDeckLeftOut { not_selling: number; waiting: number; not_eligible: number; cheaper_rival?: number; raised_waiting?: number }
 export interface AmzDeckData {
   cards: AmzDeckCard[]; counts: Record<AmzDeckKind, number>; left_out: Record<AmzDeckKind, AmzDeckLeftOut>;
   last_all: AmzBuyBoxRun | null; running: AmzBuyBoxRun | null;
