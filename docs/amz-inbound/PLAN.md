@@ -87,6 +87,30 @@ window, then cancelled → VOIDED. **Nothing charged.** The script can't confirm
   under ~11,900 cm³). A WARNING only; real cartons are far bigger (e.g. 62×48×47). Show warnings, don't stop on them.
 - Cancel before any confirm: SUCCESS, plan VOIDED, free.
 
+## Prep: Amazon decides per SKU (read 2026-11-12, `GET /inbound/fba/2024-03-20/items/prepDetails`, read only)
+
+Prep is not ours to choose. Amazon fixes it per product (ASIN), and createInboundPlan refuses a wrong prepOwner. Read for all 357 SKUs
+in stock at FBA:
+
+| SKUs | Amazon's category | Prep types | prepOwner allowed | Brands |
+|---|---|---|---|---|
+| 300 | NONE | labelling only | **NONE only** | Lunar 114, Rieker 70, Strive 49, Caprice 21, Remonte 15, … |
+| 57 | **TEXTILE** | labelling + **POLYBAGGING** | **SELLER only** | Lunar 15, Rieker 15, Remonte 12, Lazy Dogz 5, Free Spirit 5, Dek 2, Goor 2, Strive 1 |
+
+The split is per ASIN, not per brand (Amazon calls fabric-upper shoes "textile"). labelOwner is SELLER-only for all.
+
+**So BCWEB can't send "no prep" for everything.** The 57 would be refused. **Plan:** before createInboundPlan, Do shipment reads
+prepDetails for the shipment's SKUs and sends each SKU the owner Amazon allows (NONE, or SELLER for textile). Automatic, nobody
+picks anything. That is what Seller Central quietly did with the .txt's "Default prep owner: Seller".
+
+Not done: `setPrepDetails` (changing a SKU's category to NONE). Declaring a textile shoe "no prep" when Amazon expects a polybag
+risks Amazon's unplanned-prep / non-compliance charges.
+
+**Owner, 2026-11-12: "everything is in a shoe box"**, so nothing is polybagged, the textile 57 included, and that is how every past
+shipment went. For Do shipment nothing changes: textile SKUs go as prepOwner SELLER, exactly as the .txt's "Default prep owner:
+Seller" did. Whether Amazon has been charging unplanned prep for them is a separate read-only check (Finances API) if the owner wants it.
+Changing their category is NOT part of this build.
+
 ## ONE BUTTON: "Do shipment" (owner, 2026-11-12)
 
 One press does the whole job, **stopping once, where there is a cost**:
