@@ -133,8 +133,15 @@ One press does the whole job, **stopping once, where there is a cost**:
 Stops early with a plain message, with nothing confirmed and Cancel offered, when: no single-warehouse option, no own-carrier
 option, no single-pack-group option, or Amazon rejects a box. More than one pack group is NEVER accepted.
 
-**Pressing it again resumes.** If it stopped or the browser closed, Do shipment picks up from the saved step (see State) rather
-than making a second plan. Once confirmed, the button turns into **Reprint labels**.
+**NO RESUMING: every press starts clean (owner, 2026-11-12: "dont want to send wrong info - can it not clear any drafts and then
+go?").** Each press of Do shipment first CANCELS every unconfirmed draft plan on Amazon (ACTIVE, placement not confirmed: free, as
+the test plan proved), Seller Central's own drafts included, then builds a brand-new plan from the boxes as they are NOW. Nothing
+half-done is ever reused, so a box changed since the last press can't send stale contents. Stopping halfway, closing the browser or
+Cancel all just mean: press again.
+
+**A CONFIRMED plan is never cancelled automatically** (placement can't be reversed; a booked shipment may be inside its charge window).
+If one exists and isn't marked shipped yet, Do shipment doesn't start a new one. It shows that shipment (FBA15…, warehouse) and
+offers **Reprint labels** only. A confirmed plan is cleared by Mark shipped (ours) or by hand in Seller Central.
 
 **Mark shipped stays its own button** (owner, 2026-11-12): it takes the stock off the C3-Amazon shelf and clears the boxes, pressed
 when DPD collects, not when the plan is confirmed.
@@ -157,18 +164,15 @@ Everything comes from the stored packed boxes (`amzshipment`). Your unpacked box
 Steps 1–5 all run from the ONE button (above). The only human press is the confirm before 3 and 4 are CONFIRMED. **Cancel plan**
 (`cancelInboundPlan`) is available up to that confirm. What it costs after the confirm is to check in the test plan.
 
-## State: stopping halfway
+## State
 
-You must be able to close the browser after any step and come back to the next one. The plan id, shipment id, FBA15 id and how far it
-got are kept in the DB, **not a new table if avoidable** (owner rule):
-- While building: a small status record for the one open plan, e.g. a row in an existing status/sync table (`amz_api_sync.detail`
-  already holds JSON for the nightly job — a similar key could hold `{ inboundPlanId, step, shipmentId, confirmationId }`). To be decided at build time.
-- At Mark shipped: the FBA15 id + plan id go onto the archived rows, as **columns on `amzshipment_archive`** (one migration). That
-  links our shipment number to Amazon's.
+No resume state (every press starts clean, above). BCWEB only needs to know about a CONFIRMED shipment, for Reprint labels and Mark
+shipped: its plan id, shipment id and FBA15 id. It can always re-read these from Amazon (ACTIVE plans with a confirmed placement),
+so storing them is only a convenience. At Mark shipped the FBA15 id + plan id go onto the archived rows as **columns on
+`amzshipment_archive`** (one migration, no new table), linking our shipment number to Amazon's.
 
-**Boxes are frozen once step 2 is sent.** Unpack, Delete and Pack on a stored box must refuse (or warn and require a re-send of step 2)
-while a plan is open. Otherwise what Amazon has and what we packed drift apart. Decide which at build time. The simplest choice is to refuse
-after step 3.
+**Boxes are frozen once a plan is CONFIRMED.** Before that, changing a box is fine: the next press cancels the draft and starts again.
+After Confirm, Unpack / Delete / Pack on a stored box refuse until Mark shipped. Otherwise what Amazon booked and what we packed drift apart.
 
 ## Build order (probe first, against Amazon's real replies)
 
@@ -181,11 +185,12 @@ after step 3.
 2. **Do shipment, part 1**: the button runs steps 1–2 and stops. The rest is finished in Seller Central for a while, where the plan shows up ready.
 3. **Do shipment, full**: works out 3–4, the one confirm box (warehouse, fee, DPD, date), confirm → Zebra labels.
 4. **Step 6**: the FBA15 id carried into Mark shipped's archive.
-5. **Later**: DPD tracking per box (parked). Received-per-SKU tracking is NOT wanted (owner: checked on Amazon).
+5. **Later**: DPD tracking per box (parked). Amazon's API has no "mark shipped" call: for our own courier, sending the tracking
+   (`updateShipmentTrackingDetails`) is what tells Amazon the boxes are on their way. Proposal for then: BCWEB's Mark shipped asks
+   for the DPD numbers (scan each box's label) and sends them, so one press does both. Received-per-SKU tracking is NOT wanted (owner: checked on Amazon).
 
 ## Open questions
 
 - ~~Delivery window required?~~ Yes, every shipment has one (probe).
-- What happens to a plan **left open** (e.g. created, never shipped)? Today drafts are just left (one ACTIVE since 9 Nov), so a
-  warning on the screen is probably enough. Owner to say.
+- ~~A plan left open?~~ Every press cancels unconfirmed drafts first (owner), the 9 Nov leftover included.
 - ~~Transport before the placement confirm?~~ Yes (test plan).
