@@ -45,6 +45,17 @@ const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v)
  *     overwritten at the next sync. Every row is false since 2026-09-15; the guard stays so the feature revives intact.
  * The row is read FOR UPDATE so the old price in the audit row is the one this write replaced, even with two operators on one style.
  */
+const PRICE_LOG_KEEP_YEARS = 3;
+// $1 groupid, $2 years. (change_date, id) orders a style's rows — change_date is never NULL; id breaks same-day ties.
+const TRIM_SHOPIFY_LOG_SQL = `
+  DELETE FROM price_change_log p
+   WHERE p.groupid = $1
+     AND p.change_date < CURRENT_DATE - make_interval(years => $2)
+     AND EXISTS (SELECT 1 FROM price_change_log n
+                  WHERE n.groupid = p.groupid AND n.channel IS NOT DISTINCT FROM p.channel
+                    AND (n.change_date, n.id) > (p.change_date, p.id)
+                    AND n.change_date < CURRENT_DATE - make_interval(years => $2))`;
+
 async function writeShopifyPrice(client, { groupid, price, reviewDays, note, changedBy }) {
   const cur = await client.query(`
     SELECT ${safeNumeric('shopifyprice')} AS now,
@@ -89,6 +100,20 @@ async function writeShopifyPrice(client, { groupid, price, reviewDays, note, cha
     VALUES ($1, 'SHP', $2, $3, NULL, $4, $5, CASE WHEN $6::boolean THEN now() END)
     RETURNING id
   `, [groupid, oldPrice, price, note, changedBy, isHold]);
+
+  // 3 YEARS of price history (owner, 2026-11-12: "I dont like indefinite table growing" — price_change_log had no clean-up). Each write
+  // trims THIS style's own old rows (cheap: the groupid index), with amz_price_log's rule (utils/amzSizeHistory.js): a row older than
+  // the cut-off goes only once a NEWER row of the same style and channel is also before it, so the price in force at the cut-off and the
+  // latest row always stay. A style never repriced again keeps what it has — the table only grows by writes, and every write trims.
+  // Behind a SAVEPOINT: a failed trim can never fail the Apply.
+  await client.query('SAVEPOINT price_log_trim');
+  try {
+    await client.query(TRIM_SHOPIFY_LOG_SQL, [groupid, PRICE_LOG_KEEP_YEARS]);
+    await client.query('RELEASE SAVEPOINT price_log_trim');
+  } catch (e) {
+    await client.query('ROLLBACK TO SAVEPOINT price_log_trim');
+    console.error('[priceWrite] price_change_log trim failed (price saved):', e.message);
+  }
 
   // Size prices (utils/sizePrice.js, owner 2026-11-08): a size keeps its own price UNLESS the style price goes to or below it — then it
   // goes back to the style price, in THIS transaction, and the caller says so on screen (sizePricesEnded).

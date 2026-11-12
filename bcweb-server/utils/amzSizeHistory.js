@@ -21,6 +21,11 @@ THE RULES (owner, 2026-11-03):
     it was already superseded when the window starts — so the row in force at the cut-off stays and every day inside the window can
     be read. A size gone from amzfeed loses its last old row too (nothing left to read it for).
   - amz_size_history_run: one line per import DAY, so "nothing changed" and "no import" can be told apart.
+  - amz_price_log is trimmed HERE TOO, to the same 3 years (owner, 2026-11-12: "I dont like indefinite table growing" — it had no
+    clean-up at all). Same rule: a row older than the cut-off goes only once a NEWER row for that size is also before the cut-off, so
+    each size's price in force at the cut-off survives, and the latest row per size (the basket's unsent price included) never goes.
+    Here because this history reads its past prices from that log, so the two cover the same years; and this runs behind the
+    caller's SAVEPOINT, so a failed trim can never fail a stock write or a price Apply.
   - Rows written here are source 'import'. Days before the first import can hold rows REBUILT from Amazon's Inventory Ledger
     (source 'ledger', total only — scripts/amz-ledger-backfill.js). The change test compares with those too, so the first import
     writes a row for every size (a ledger row has no live / inbound / price).
@@ -108,6 +113,17 @@ async function recordSizeHistory(client, { inbound, who, carryInbound = false })
     [day, KEEP_YEARS]
   );
   await client.query(`DELETE FROM amz_size_history_run WHERE day < $1::date - make_interval(years => $2)`, [day, KEEP_YEARS]);
+  // The Amazon price log, the same 3 years and the same "row in force at the cut-off survives" rule (header). changed_at is NULL on
+  // the rows logged before it existed, so their log_date stands in.
+  await client.query(
+    `DELETE FROM amz_price_log p
+     WHERE COALESCE(p.changed_at, p.log_date::timestamptz) < $1::date - make_interval(years => $2)
+       AND EXISTS (SELECT 1 FROM amz_price_log n
+                   WHERE n.code = p.code AND n.id <> p.id
+                     AND COALESCE(n.changed_at, n.log_date::timestamptz) > COALESCE(p.changed_at, p.log_date::timestamptz)
+                     AND COALESCE(n.changed_at, n.log_date::timestamptz) < $1::date - make_interval(years => $2))`,
+    [day, KEEP_YEARS]
+  );
 
   const sizes = await client.query(`SELECT COUNT(*)::int AS n FROM amzfeed WHERE code IS NOT NULL AND code <> ''`);
   const run = await client.query(
