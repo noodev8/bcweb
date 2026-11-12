@@ -69,6 +69,9 @@ sells. Cost is the style's CURRENT skusummary.cost (sales carry no cost stamp) �
 the response for any other reader. Size = the code's suffix after the last '-'. Window bounds are computed in SQL off CURRENT_DATE (the anchor the rest of the app trusts).
 Requires auth.
 =======================================================================================================================================
+AMAZON PENDING (owner, 2026-11-12): Amazon orders not yet confirmed (no price from the API) are read from amz_pending_order at an
+ESTIMATED price and profit and COUNTED in the totals ("an indication of how we are doing today"); rows carry pending:true and the
+summary pendingUnits / pendingProfit. Only this screen reads that table.
 Request Query Params:
   channel (string, optional)  - 'all' (default, incl. CM3) | 'shp' | 'amz' | 'cm3' (the shop). Case-insensitive.
   window  (string, optional)  - 'today' (default) | 'yesterday' | '3d' (these carry the line list) | '7d' | '30d' | '90d' (SUMMARY-ONLY —
@@ -284,7 +287,19 @@ router.get('/', async (req, res) => {
         -- style_image = the style's picture (skusummary.imagename), for the row's small thumbnail (owner, 2026-11-06).
         SELECT s.*, COALESCE(s.rrp, ${safeNumeric('sk.rrp')}) AS rrp_shown, ${safeNumeric('sk.cost')} AS cost_now,
                sk.imagename AS style_image
-        FROM sales s
+        FROM (
+          SELECT id, solddate, ordertime, channel, code, groupid, productname, brand, ordernum, qty, soldprice, profit, rrp,
+                 false AS pending
+            FROM sales
+          UNION ALL
+          -- AMAZON PENDING (owner, 2026-11-12): orders Amazon hasn't confirmed yet, at an ESTIMATED price/profit
+          -- (utils/amzOrderSync.js → writePending). In the totals on purpose — "an indication of how we are doing today" — and
+          -- tagged on the row. Negative ids keep the sort stable; a line whose order is already booked in sales is skipped.
+          SELECT -ROW_NUMBER() OVER (ORDER BY p.ordernum, p.order_item_id), p.solddate, p.ordertime, 'AMZ', p.code, p.groupid,
+                 p.productname, p.brand, p.ordernum, p.qty, p.est_price, p.est_profit, NULL::numeric, true
+            FROM amz_pending_order p
+           WHERE NOT EXISTS (SELECT 1 FROM sales x WHERE x.channel = 'AMZ' AND x.ordernum = p.ordernum)
+        ) s
         LEFT JOIN skusummary sk ON sk.groupid = s.groupid, b
         WHERE (
               ($2::bool AND s.solddate >= (CURRENT_DATE - INTERVAL '12 months'))   -- product mode: rolling last 12 months
@@ -312,6 +327,8 @@ router.get('/', async (req, res) => {
          to_char(MIN(solddate), 'YYYY-MM-DD')                          AS data_from,
          to_char(MAX(solddate), 'YYYY-MM-DD')                          AS data_to,
          COUNT(*)::int                                                 AS lines,
+         COALESCE(SUM(qty) FILTER (WHERE pending), 0)::int              AS pending_units,
+         COALESCE(SUM(profit) FILTER (WHERE pending), 0)::numeric       AS pending_profit,
          COUNT(DISTINCT groupid)                                       AS products,
          COALESCE(SUM(qty) FILTER (WHERE qty > 0), 0)::int              AS units_sold,
          COALESCE(-SUM(qty) FILTER (WHERE qty < 0), 0)::int             AS units_returned,
@@ -352,7 +369,7 @@ router.get('/', async (req, res) => {
       : await query(
           `${filterCte}
            SELECT solddate, ordertime, channel, code, SUBSTRING(code FROM '[^-]*$') AS size, groupid, productname, brand, ordernum,
-                  qty, soldprice, profit, rrp_shown AS rrp, cost_now, style_image
+                  qty, soldprice, profit, rrp_shown AS rrp, cost_now, style_image, pending
            FROM f
            ORDER BY ${orderBy}
            LIMIT $${filterParams.length + 1}::int`,
@@ -396,6 +413,7 @@ router.get('/', async (req, res) => {
         profit,
         marginPct,
         onCostPct,
+        pending: r.pending === true,        // Amazon hasn't confirmed it yet — price/profit are estimates
       };
     });
 
@@ -421,6 +439,8 @@ router.get('/', async (req, res) => {
       marginPct: revenueTotal !== 0 ? Math.round((profitTotal / (revenueTotal / VAT_MULTIPLIER)) * 1000) / 10 : null,
       // Return on cost — see the header and the SQL. null when nothing matched has a cost (or the costed units net to 0).
       onCostPct: num(s.costed_cost) > 0 ? Math.round((num(s.costed_profit) / num(s.costed_cost)) * 1000) / 10 : null,
+      pendingUnits: Number(s.pending_units) || 0,       // of the above, Amazon lines not yet confirmed (estimated)
+      pendingProfit: num(s.pending_profit) || 0,
       products,                       // distinct styles matched (product mode: >1 = the total spans multiple products)
     };
 

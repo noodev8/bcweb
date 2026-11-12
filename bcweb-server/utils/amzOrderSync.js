@@ -21,6 +21,8 @@ booked is "already there", never a second row.
 DIFFERENCES FROM THE REPORT (known, accepted):
   - Pending orders carry no price in the API, so they are booked on the first run after Amazon confirms them (Unshipped / Shipped —
     for FBA usually within the hour). The report booked them while Pending.
+    Until then each Pending line is kept in amz_pending_order (estimated price + profit, DISPLAY ONLY — the Sales screen shows it
+    tagged Pending and counts it in the totals; owner, 2026-11-12). See fetchPending / writePending below.
   - Dates: the API gives UTC; converted here to the Europe/London date + HH:MM the report gave (an order at 00:30 BST is that day).
   - Amazon.co.uk only, as the report's sales-channel filter — multi-channel (MCF) orders for eBay / Shopify pairs never appear.
 
@@ -35,6 +37,8 @@ const sp = require('./amzSpApi');
 const { query } = require('../database');
 const { loadReference, planSales, planCancellations } = require('./amzImport');
 const { insertSales, retractCancelled } = require('./amzImportApply');
+const { amzProfit } = require('./amzProfit');
+const { safeNumeric } = require('./sql');
 
 const JOB = 'orders';
 const OVERLAP_MS = 60 * 60 * 1000;
@@ -143,7 +147,98 @@ async function fetchAmazonOrders({ since: sinceOverride } = {}) {
     }
   }
 
-  return { startedAt, since, ordersRead: uk.length, alreadyBooked: booked.size, fetchedOrders: fresh.length, rows, cancellations, skipped };
+  // 4. Pending orders, read in full every run (not by the cursor — a Pending order may not change again before it confirms).
+  //    A failure here never stops the sales: pending = null leaves the table as it was.
+  let pending = null;
+  try { pending = await fetchPending(); } catch (err) { skipped.push(`pending orders not read: ${err.message}`); }
+
+  return { startedAt, since, ordersRead: uk.length, alreadyBooked: booked.size, fetchedOrders: fresh.length, rows, cancellations, skipped, pending };
+}
+
+const PENDING_DAYS = 3;   // Amazon cancels an order that stays Pending much longer than this
+
+/**
+ * Every UK order Amazon still has as Pending (created in the last PENDING_DAYS), as lines { orderId, orderItemId, sku, qty, date,
+ * time }. Lines of an order already in amz_pending_order are re-used, so only NEW pending orders cost a getOrderItems call.
+ */
+async function fetchPending() {
+  const created = new Date(Date.now() - PENDING_DAYS * 24 * 3600 * 1000).toISOString();
+  const orders = [];
+  let next;
+  do {
+    const q = next
+      ? { MarketplaceIds: sp.marketplaceId(), NextToken: next }
+      : { MarketplaceIds: sp.marketplaceId(), CreatedAfter: created, OrderStatuses: 'Pending' };
+    await sp.sleep(1100);
+    const res = await sp.spGet('/orders/v0/orders', q);
+    const p = (res && res.payload) || {};
+    orders.push(...(p.Orders || []));
+    next = p.NextToken;
+  } while (next);
+  const uk = orders.filter((o) => o.OrderStatus === 'Pending' && (o.SalesChannel || 'Amazon.co.uk') === 'Amazon.co.uk');
+
+  const known = new Map();
+  if (uk.length) {
+    let r = { rows: [] };
+    try {
+      r = await query(`SELECT ordernum, order_item_id, sku, qty FROM amz_pending_order WHERE ordernum = ANY($1::text[])`,
+        [uk.map((o) => o.AmazonOrderId)]);
+    } catch (err) { if (!/amz_pending_order/.test(err.message)) throw err; }
+    for (const x of r.rows) {
+      if (!known.has(x.ordernum)) known.set(x.ordernum, []);
+      known.get(x.ordernum).push({ OrderItemId: x.order_item_id, SellerSKU: x.sku, QuantityOrdered: x.qty });
+    }
+  }
+
+  const lines = [];
+  let calls = 0;
+  for (const o of uk) {
+    let items = known.get(o.AmazonOrderId);
+    if (!items) {
+      if (calls > 0) await sp.sleep(calls < 25 ? 300 : 2100);
+      calls += 1;
+      items = [];
+      let itemNext;
+      do {
+        const res = await sp.spGet(`/orders/v0/orders/${encodeURIComponent(o.AmazonOrderId)}/orderItems`, itemNext ? { NextToken: itemNext } : undefined);
+        const p = (res && res.payload) || {};
+        items.push(...(p.OrderItems || []));
+        itemNext = p.NextToken;
+      } while (itemNext);
+    }
+    const { date, time } = londonDateTime(o.PurchaseDate);
+    for (const it of items) {
+      const qty = Number(it.QuantityOrdered || 0);
+      if (!it.SellerSKU || !it.OrderItemId || qty <= 0 || !date) continue;
+      lines.push({ orderId: o.AmazonOrderId, orderItemId: String(it.OrderItemId), sku: String(it.SellerSKU).trim(), qty, date, time });
+    }
+  }
+  return lines;
+}
+
+/** Replace amz_pending_order with this run's Pending lines, each at the size's current Amazon price. Returns the line count. */
+async function writePending(client, lines) {
+  await client.query(`DELETE FROM amz_pending_order`);
+  if (!lines.length) return 0;
+  const ref = await loadReference(client, lines.map((l) => l.sku));
+  const codes = [...new Set([...ref.bySku.values()].map((v) => v.code))];
+  const prices = new Map((await client.query(
+    `SELECT code, ${safeNumeric('amzprice')} AS p FROM amzfeed WHERE code = ANY($1::text[])`, [codes]
+  )).rows.map((r) => [r.code, r.p === null ? null : Number(r.p)]));
+
+  for (const l of lines) {
+    const m = ref.bySku.get(l.sku);
+    const g = (m && ref.byGroup.get(m.groupid)) || {};
+    const price = m ? prices.get(m.code) ?? null : null;
+    const unit = price === null ? null : amzProfit({ price, cost: g.cost, fbafee: m.fbafee, tax: g.tax }).profit;
+    await client.query(
+      `INSERT INTO amz_pending_order (ordernum, order_item_id, sku, code, groupid, productname, brand, qty, est_price, est_profit, solddate, ordertime)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,
+      [l.orderId, l.orderItemId, l.sku, m ? m.code : null, m ? m.groupid : null, g.title || null, g.brand || null, l.qty,
+       price, unit === null || unit === undefined ? null : Math.round(unit * l.qty * 100) / 100, l.date, l.time]
+    );
+  }
+  return lines.length;
 }
 
 /** DATABASE WRITE on the run's transaction client. Also the dry run's planner (commit = false writes nothing). */
@@ -154,9 +249,11 @@ async function writeAmazonOrders(client, fetched, { commit = true } = {}) {
 
   let inserted = 0;
   let retracted = 0;
+  let pendingLines = null;
   if (commit) {
     inserted = await insertSales(client, plan.insert);
     retracted = await retractCancelled(client, cancelPlan);
+    if (fetched.pending) pendingLines = await writePending(client, fetched.pending);
     await client.query(
       `INSERT INTO amz_api_sync (job, cursor_at, last_ok_at, last_ok_note, last_error, last_error_at)
        VALUES ($1, $2, now(), $3, NULL, NULL)
@@ -178,11 +275,11 @@ async function writeAmazonOrders(client, fetched, { commit = true } = {}) {
     // shipped by Amazon, so their count is kept in detail + the channel log, never in the total.
     newOrders: 0,
     notes,
-    log: `${newOrders} new, ${plan.insert.length} sales, ${cancelPlan.rows} cancelled`,
+    log: `${newOrders} new, ${plan.insert.length} sales, ${cancelPlan.rows} cancelled${pendingLines === null ? '' : `, ${pendingLines} pending`}`,
     detail: {
       amazonNewOrders: newOrders,
       ordersRead: fetched.ordersRead, alreadyBooked: fetched.alreadyBooked, sales: plan.insert.length, inserted,
-      duplicate: plan.duplicate, unknownSku: plan.unknownSku.length, cancelled: cancelPlan.rows, retracted,
+      pending: pendingLines, duplicate: plan.duplicate, unknownSku: plan.unknownSku.length, cancelled: cancelPlan.rows, retracted,
       lines: plan.insert.map((r) => `${r.ordernum} ${r.code} x${r.qty} £${r.soldprice.toFixed(2)} ${r.solddate} ${r.ordertime}`),
     },
   };
@@ -206,4 +303,4 @@ const channel = {
   write: (client, fetched) => writeAmazonOrders(client, fetched),
 };
 
-module.exports = { channel, fetchAmazonOrders, writeAmazonOrders, londonDateTime };
+module.exports = { channel, fetchAmazonOrders, writeAmazonOrders, fetchPending, writePending, londonDateTime };

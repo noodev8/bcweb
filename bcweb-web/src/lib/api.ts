@@ -2214,6 +2214,7 @@ export interface SalesReportRow {
   profit: number | null;     // net, downstream-computed; negative on a return
   marginPct: number | null;
   onCostPct: number | null; // RETURN ON COST: profit / (style's current cost × qty) — pence kept per £1 spent; null on returns / no cost
+  pending?: boolean;         // Amazon order not confirmed yet — price / profit are ESTIMATES (amz_pending_order)
 }
 // Headline totals over the WHOLE window (never bounded by the row cap). Units split sold / returned / net (mirrors the legacy footer).
 export interface SalesReportSummary {
@@ -2229,6 +2230,8 @@ export interface SalesReportSummary {
   marginPct: number | null;  // profit / netRevenue: profit is already ex-VAT, so the denominator has to be too
   onCostPct: number | null;  // RETURN ON COST over the lines with a cost (net of returns) — what the screen shows in margin's place
   products: number;          // distinct styles in the matched set (product mode: >1 = total spans multiple products)
+  pendingUnits?: number;     // of the totals, Amazon units not yet confirmed (estimated price / profit)
+  pendingProfit?: number;
 }
 // Short windows carry the line list; long windows (7/30/90d) are summary-only (totals, no rows).
 export type SalesWindow = 'today' | 'yesterday' | '3d' | '7d' | '30d' | '90d';
