@@ -3264,6 +3264,26 @@ export function markAmzShipmentBoxArrived(box: number, expect: AmzBoxExpect) {
   }));
 }
 
+// "Do shipment" (part 1): drafts cleared, plan made, boxes sent to Amazon — in the background on the server (utils/amzInbound.js,
+// docs/amz-inbound/PLAN.md). Start sends the boxes / units the screen showed; status is polled while it runs. Held in server memory.
+export interface AmzInboundJob {
+  id: number; by: string; startedAt: string; finishedAt: string | null;
+  state: 'running' | 'done' | 'stopped' | 'failed'; step: string;
+  log: { at: string; text: string }[]; warnings: string[]; message: string | null;
+  totals: { boxes: number; units: number };
+  result: { planId: string; boxes: number; units: number; skus: number; sellerPrep: number; sellerCentral: string } | null;
+}
+export function startAmzInbound(boxes: number, units: number) {
+  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-start', method: 'POST', data: { boxes, units } }, (b) => ({
+    job: (b.job as AmzInboundJob) || null,
+  }));
+}
+export function getAmzInboundStatus() {
+  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-status', method: 'GET' }, (b) => ({
+    job: (b.job as AmzInboundJob) || null,
+  }));
+}
+
 // =============================================================================================================================
 // Order sync — the "Update orders" button (Analytics -> Sales, Customer Orders, the dashboard tile; the LABEL is the legacy term,
 // this route/fn keeps the sync naming — see components/UpdateOrdersButton.tsx).

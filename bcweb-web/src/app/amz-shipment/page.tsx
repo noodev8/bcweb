@@ -79,12 +79,20 @@ Your box shows no size in the header (the chip was removed, owner 2026-10-20); a
 (BIRK_BOX — weight left blank, it depends on the contents), and "Set" (one click, 2026-10-15) saves your box's typed size in this
 browser, or fills an empty size with the saved one — the same box size packed again and again isn't retyped.
 
-SHIPPING PLAN (owner, 2026-10-01: "a button that makes my amz shipping plan file ... essentially just a list of whats in all the boxes").
+DO SHIPMENT (part 1, 2026-11-12 — docs/amz-inbound/PLAN.md, server utils/amzInbound.js). Step 1 of the Shipment panel: ONE press sends the
+stored packed boxes to Amazon through the SP-API instead of the two files below. On the server, in the background (polled every 2 s):
+Amazon's unconfirmed drafts are cancelled (Seller Central's too, so every press starts clean — owner), prep set per SKU as Amazon allows,
+the plan made, ONE pack group only, every box's contents and size sent. Nothing that costs money is confirmed. It stops there: the
+warehouse, own DPD, delivery date and box labels are finished in Seller Central ("Open in Seller Central") until part 2 adds the one
+confirm box and Zebra labels. Sends the boxes / units shown; a box changed on another bench → STALE, the boxes are re-read. Not with a
+refill open in your box (it would send the old contents). The two files below are KEPT as the backup, behind a "Backup: files" link (owner).
+
+SHIPPING PLAN — backup (owner, 2026-10-01: "a button that makes my amz shipping plan file ... essentially just a list of whats in all the boxes").
 Downloads Amazon-ShippingPlan.txt, the Seller Central shipping-plan upload, in the legacy app's exact layout: the template's header block,
 then "Merchant SKU<TAB>Quantity", one line per Amazon SKU totalled across every stored box, CRLF line ends. No measurements in this
 file, so it doesn't wait for them.
 
-AMAZON UPLOAD (owner, 2026-10-06: "we need the amz upload to fill in the details for this file ... they need to know what items are in
+AMAZON UPLOAD — backup (owner, 2026-10-06: "we need the amz upload to fill in the details for this file ... they need to know what items are in
 what boxes and all box sizes"). Pick the box contents .xlsx Amazon gives you in Send to Amazon; the screen fills in the box count,
 each SKU's quantity per box and every box's weight and size from the stored boxes, and downloads it as <name>-filled.xlsx to upload
 back. Done in the browser by src/lib/amzBoxUpload.ts (read its header) — the file never goes to our server. Problems (quantities that
@@ -104,6 +112,7 @@ import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, deleteAmzShipmentBox, markAmzShipmentBoxArrived,
+  startAmzInbound, getAmzInboundStatus,
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -324,6 +333,14 @@ function Packing({ initial, autoBack, onShipped }: {
   const uploadRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [upload, setUpload] = useState<{ error?: string; done?: string; warnings: string[] } | null>(null);
+  // DO SHIPMENT (see the header): the server's run, polled every 2 s while it's going; the press in flight / its refusal; the backup files.
+  const inbound = useApiQuery(['amz-inbound-status'], getAmzInboundStatus, {
+    refreshInterval: (d) => (d?.job?.state === 'running' ? 2000 : 0),
+  });
+  const inboundJob = inbound.data?.job ?? null;
+  const [inboundStarting, setInboundStarting] = useState(false);
+  const [inboundError, setInboundError] = useState<string | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
 
   const refocus = () => scanRef.current?.focus();
   const shown: Box | null = view === 'mine' ? null : boxes.find((b) => b.id === view) ?? null;
@@ -553,6 +570,23 @@ function Packing({ initial, autoBack, onShipped }: {
     await onShipped(res.data);
   }
 
+  // DO SHIPMENT (see the header). Sends what this screen shows; a STALE answer re-reads the boxes so the next press sends the right ones.
+  async function doShipment() {
+    setInboundStarting(true);
+    setInboundError(null);
+    const res = await startAmzInbound(boxes.length, totalUnits);
+    setInboundStarting(false);
+    if (!res.success) {
+      if (res.return_code === 'STALE') {
+        await rereadBoxes();
+        setInboundError('The boxes changed on another bench. They have been reloaded: check them and press again.');
+      } else {
+        setInboundError(res.error || 'Couldn’t start Do shipment');
+      }
+    }
+    await inbound.refresh();
+  }
+
   // AMAZON UPLOAD (see the header). Fills from the stored boxes and downloads.
   async function onUploadFile(file: File | undefined) {
     if (uploadRef.current) uploadRef.current.value = '';   // so picking the same file again still fires
@@ -713,8 +747,8 @@ function Packing({ initial, autoBack, onShipped }: {
 
           </>)}
 
-          {/* DO SHIPMENT — the end of the job, in the order it's done: 1 the shipping plan file, 2 the Amazon box-contents upload,
-              3 Mark shipped. Opened from the ⋯ menu (owner, 2026-10-22); green once everything is packed. The status line is a guide
+          {/* SHIPMENT — the end of the job, in the order it's done: 1 Do shipment (to Amazon through the API; the old shipping-plan
+              file and box-contents upload sit behind "Backup: files"), 2 Mark shipped. Opened from the ⋯ menu (owner, 2026-10-22); green once everything is packed. The status line is a guide
               only; the steps are usable any time, Mark shipped still behind its confirm. */}
           {panel === 'ship' && (
           <div className={'overflow-hidden rounded-lg border bg-white ' + (allPacked ? 'border-emerald-300' : 'border-slate-200')}>
@@ -727,45 +761,96 @@ function Packing({ initial, autoBack, onShipped }: {
                 : `${notPacked.length} ${notPacked.length === 1 ? 'box' : 'boxes'} not packed`}
             </div>
             <div className="space-y-2 border-t border-slate-200 bg-slate-50 p-2">
+            {/* DO SHIPMENT (part 1) — one press: Amazon's unconfirmed drafts cleared, the plan made, one pack group, the boxes sent
+                (server, utils/amzInbound.js). Then the rest is done in Seller Central until part 2. */}
             <button
               type="button"
-              disabled={totalUnits === 0}
-              onClick={() => downloadShippingPlan(boxes)}
-              title={totalUnits === 0 ? 'No packed boxes yet' : `Amazon shipping plan: ${totalUnits} units across ${boxes.length} ${boxes.length === 1 ? 'box' : 'boxes'}`}
-              className={FINISH_BTN}
+              disabled={totalUnits === 0 || inboundStarting || inboundJob?.state === 'running' || refillNo !== null}
+              onClick={doShipment}
+              title={totalUnits === 0 ? 'No packed boxes yet'
+                : refillNo !== null ? `Box ${refillNo} is open in your box — pack it first`
+                : `Send ${boxes.length} ${boxes.length === 1 ? 'box' : 'boxes'} (${totalUnits} units) to Amazon`}
+              className="flex w-full items-center gap-2 rounded-lg border border-brand-600 bg-brand-600 px-3 py-2 text-left text-sm font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <span className="w-4 text-center text-xs font-semibold text-slate-400">1</span>
-              <ArrowDownTrayIcon className="h-4 w-4 text-slate-400" />
-              Shipping plan
+              <span className="w-4 text-center text-xs font-semibold text-white/70">1</span>
+              <ArrowUpTrayIcon className="h-4 w-4 text-white/80" />
+              {inboundStarting || inboundJob?.state === 'running' ? 'Sending to Amazon…' : 'Do shipment'}
             </button>
-            {/* AMAZON UPLOAD — pick Amazon's box contents .xlsx, get it back filled in (see the header). */}
-            <input ref={uploadRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onUploadFile(e.target.files?.[0])} />
-            <button
-              type="button"
-              disabled={totalUnits === 0 || uploading}
-              onClick={() => { setUpload(null); uploadRef.current?.click(); }}
-              title={totalUnits === 0 ? 'No packed boxes yet' : 'Pick the box contents file from Send to Amazon — it comes back filled in'}
-              className={FINISH_BTN}
-            >
-              <span className="w-4 text-center text-xs font-semibold text-slate-400">2</span>
-              <ArrowUpTrayIcon className="h-4 w-4 text-slate-400" />
-              {uploading ? 'Filling…' : 'Amazon upload'}
-            </button>
-            {upload && (
-              <div className={'flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs '
-                + (upload.error ? 'border-red-300 bg-red-50 text-red-800'
-                  : upload.warnings.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800')}>
-                <div className="flex-1">
-                  {upload.error ? <>Amazon upload: {upload.error}</> : upload.done}
-                  {upload.warnings.length > 0 && (
-                    <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                      {upload.warnings.map((w) => <li key={w}>{w}</li>)}
-                    </ul>
-                  )}
-                </div>
-                <button type="button" onClick={() => setUpload(null)} className="opacity-70 hover:opacity-100">×</button>
+            {refillNo === null && mineUnits > 0 && (
+              <div className="text-xs text-slate-500">Your box ({mineUnits} {mineUnits === 1 ? 'shoe' : 'shoes'}) isn’t packed, so it won’t go.</div>
+            )}
+            {inboundError && (
+              <div className="rounded-md border border-red-300 bg-red-50 px-2.5 py-2 text-xs text-red-800">{inboundError}</div>
+            )}
+            {inboundJob && (
+              <div className={'rounded-md border px-2.5 py-2 text-xs '
+                + (inboundJob.state === 'running' ? 'border-slate-200 bg-white text-slate-700'
+                  : inboundJob.state === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                  : 'border-red-300 bg-red-50 text-red-800')}>
+                {inboundJob.state === 'running' && <div className="font-medium">{inboundJob.step}…</div>}
+                {inboundJob.state === 'done' && inboundJob.result && (
+                  <div className="space-y-1">
+                    <div className="font-semibold">
+                      Sent to Amazon: {inboundJob.result.boxes} {inboundJob.result.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.result.units} units
+                      <span className="font-normal"> · {new Date(inboundJob.startedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                    <div>Finish it in Seller Central: the warehouse (one shipment), your own DPD, the delivery date and the box labels.</div>
+                    <a href={inboundJob.result.sellerCentral} target="_blank" rel="noreferrer" className="font-semibold underline">Open in Seller Central</a>
+                  </div>
+                )}
+                {(inboundJob.state === 'stopped' || inboundJob.state === 'failed') && (
+                  <div><span className="font-semibold">{inboundJob.state === 'stopped' ? 'Stopped' : 'Didn’t work'}:</span> {inboundJob.message}</div>
+                )}
+                {inboundJob.warnings.length > 0 && inboundJob.state !== 'running' && (
+                  <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-amber-800">
+                    {inboundJob.warnings.map((w) => <li key={w}>{w}</li>)}
+                  </ul>
+                )}
               </div>
             )}
+            {/* BACKUP: the old two files (shipping plan .txt, box contents .xlsx), kept for when the API can't be used. */}
+            <button type="button" onClick={() => setShowFiles((v) => !v)} className="text-xs text-slate-400 hover:text-slate-600">
+              {showFiles ? 'Hide backup files' : 'Backup: files'}
+            </button>
+            {showFiles && (<>
+              <button
+                type="button"
+                disabled={totalUnits === 0}
+                onClick={() => downloadShippingPlan(boxes)}
+                title={totalUnits === 0 ? 'No packed boxes yet' : `Amazon shipping plan: ${totalUnits} units across ${boxes.length} ${boxes.length === 1 ? 'box' : 'boxes'}`}
+                className={FINISH_BTN}
+              >
+                <ArrowDownTrayIcon className="h-4 w-4 text-slate-400" />
+                Shipping plan
+              </button>
+              {/* AMAZON UPLOAD — pick Amazon's box contents .xlsx, get it back filled in (see the header). */}
+              <input ref={uploadRef} type="file" accept=".xlsx" className="hidden" onChange={(e) => onUploadFile(e.target.files?.[0])} />
+              <button
+                type="button"
+                disabled={totalUnits === 0 || uploading}
+                onClick={() => { setUpload(null); uploadRef.current?.click(); }}
+                title={totalUnits === 0 ? 'No packed boxes yet' : 'Pick the box contents file from Send to Amazon — it comes back filled in'}
+                className={FINISH_BTN}
+              >
+                <ArrowUpTrayIcon className="h-4 w-4 text-slate-400" />
+                {uploading ? 'Filling…' : 'Amazon upload'}
+              </button>
+              {upload && (
+                <div className={'flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs '
+                  + (upload.error ? 'border-red-300 bg-red-50 text-red-800'
+                    : upload.warnings.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-800')}>
+                  <div className="flex-1">
+                    {upload.error ? <>Amazon upload: {upload.error}</> : upload.done}
+                    {upload.warnings.length > 0 && (
+                      <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                        {upload.warnings.map((w) => <li key={w}>{w}</li>)}
+                      </ul>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => setUpload(null)} className="opacity-70 hover:opacity-100">×</button>
+                </div>
+              )}
+            </>)}
             {/* MARK SHIPPED — clears the WHOLE stored shipment (owner, 2026-10-01): archive, stock off C3-Amazon, boxes emptied.
                 RED, behind an inline confirm naming the boxes, units and the stock it takes; and that your box doesn't go. */}
             {confirmShip ? (
@@ -798,7 +883,7 @@ function Packing({ initial, autoBack, onShipped }: {
                 title={totalUnits === 0 ? 'No packed boxes to ship' : 'The boxes have gone — clear the whole shipment (asks first)'}
                 className="flex w-full items-center gap-2 rounded-lg border border-red-300 bg-white px-3 py-2 text-left text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-white"
               >
-                <span className="w-4 text-center text-xs font-semibold text-red-400">3</span>
+                <span className="w-4 text-center text-xs font-semibold text-red-400">2</span>
                 <TruckIcon className="h-4 w-4 text-red-500" />
                 Mark shipped
               </button>

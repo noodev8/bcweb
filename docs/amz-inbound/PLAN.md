@@ -182,7 +182,7 @@ After Confirm, Unpack / Delete / Pack on a stored box refuse until Mark shipped.
    confirming, then `cancelInboundPlan`. That proves transport can be listed before the placement confirm (the one confirm box depends
    on it) and that a cancel before confirming is free. Needs the owner's OK: it creates a real draft in Seller Central (it shows as VOIDED,
    like the ~35 drafts already there).
-2. **Do shipment, part 1**: the button runs steps 1–2 and stops. The rest is finished in Seller Central for a while, where the plan shows up ready.
+2. **BUILT 2026-11-12, not yet used on a real shipment.** `utils/amzInbound.js` (THE copy, writes allow-listed), `POST /amz-inbound-start`, `GET /amz-inbound-status`, the Do shipment button on AMZ Shipment's Shipment panel (old files behind "Backup: files"). **Do shipment, part 1**: the button runs steps 1–2 and stops. The rest is finished in Seller Central for a while, where the plan shows up ready.
 3. **Do shipment, full**: works out 3–4, the one confirm box (warehouse, fee, DPD, date), confirm → Zebra labels.
 4. **Step 6**: the FBA15 id carried into Mark shipped's archive.
 5. **Later**: DPD tracking per box (parked). Amazon's API has no "mark shipped" call: for our own courier, sending the tracking
