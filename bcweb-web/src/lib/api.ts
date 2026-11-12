@@ -627,6 +627,48 @@ export function getAmzFastSellers() {
   );
 }
 
+// Amazon Buy Box (/amz/buybox, server routes/amz-buybox.js + amz-buybox-read.js, rules utils/amzBuyBox.js, 2026-11-12) — the LAST
+// STORED reading of who holds the Buy Box on each Amazon size, grouped. Opening the screen never asks Amazon; a read is the cron, or
+// startAmzBuyBoxRead (whole list, or one style), which runs in the background — follow it through `running`.
+export type AmzBuyBoxGroup = 'can_match' | 'room' | 'cant_match' | 'no_bb' | 'top' | 'alone' | 'unknown' | 'error';
+export type AmzBuyBoxHolder = 'US' | 'US_SHARED' | 'OTHER_FBA' | 'OTHER_MFN' | 'AMAZON' | 'NONE';
+export interface AmzBuyBoxOffer { seller: string; us?: boolean; fba: boolean; price: number | null; bb: boolean }   // us = our own offer
+export interface AmzBuyBoxRow {
+  code: string; groupid: string | null; title: string | null; brand: string | null; asin: string | null; read_at: string;
+  live: number; total: number; sold30: number; weeks_left: number | null;
+  our_price: number | null;     // our offer as Amazon showed it at the read, postage included
+  price_now: number | null;     // amzfeed.amzprice now — differs when a price was set since the read
+  rrp: number | null;
+  holder: AmzBuyBoxHolder; bb_price: number | null; rivals: number; rival_price: number | null; rival_seller: string | null;
+  next_up: number | null; rival_at_our_price: boolean; amazon_retail: boolean;
+  foep: number | null; foep_status: string | null; competitive_price: number | null;
+  offers: AmzBuyBoxOffer[]; error: string | null;
+  group: AmzBuyBoxGroup; target: number | null; kept: number | null; walk: number | null;
+}
+export interface AmzBuyBoxRun {
+  id: number; scope?: string; status?: string; started_at: string; finished_at?: string | null; by_name: string;
+  total: number; done?: number; changed?: number | null; error?: string | null;
+}
+export interface AmzBuyBoxData {
+  rows: AmzBuyBoxRow[]; counts: Record<AmzBuyBoxGroup, number>;
+  last_all: AmzBuyBoxRun | null; last_run: AmzBuyBoxRun | null; running: AmzBuyBoxRun | null;
+}
+export function getAmzBuyBox() {
+  return request<AmzBuyBoxData>(
+    { url: '/amz-buybox', method: 'GET' },
+    (b) => ({
+      rows: (b.rows || []) as AmzBuyBoxRow[], counts: (b.counts || {}) as Record<AmzBuyBoxGroup, number>,
+      last_all: b.last_all ?? null, last_run: b.last_run ?? null, running: b.running ?? null,
+    })
+  );
+}
+export function startAmzBuyBoxRead(groupid?: string) {
+  return request<{ run: { id: number; scope: string; total: number } }>(
+    { url: '/amz-buybox-read', method: 'POST', data: groupid ? { groupid } : {} },
+    (b) => ({ run: b.run })
+  );
+}
+
 // Amazon Order — landing list: every managed SKU + Amazon profit / unit profit, best performers first. No server-side search or cap —
 // the ~520-row set ships whole and is searched client-side (mirrors getInvStyles).
 export function getAmazonOrderList() {
