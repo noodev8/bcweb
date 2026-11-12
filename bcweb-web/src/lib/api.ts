@@ -637,7 +637,7 @@ export interface AmzBuyBoxRow {
   code: string; groupid: string | null; title: string | null; brand: string | null; asin: string | null; read_at: string;
   live: number; total: number; sold30: number; weeks_left: number | null;
   our_price: number | null;     // our offer as Amazon showed it at the read, postage included
-  price_now: number | null;     // amzfeed.amzprice now — differs when a price was set since the read
+  set_since: number | null;     // a price set AFTER this reading (amz_price_log, newest) — null when none
   rrp: number | null;
   holder: AmzBuyBoxHolder; bb_price: number | null; rivals: number; rival_price: number | null; rival_seller: string | null;
   next_up: number | null; rival_at_our_price: boolean; amazon_retail: boolean;

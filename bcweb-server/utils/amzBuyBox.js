@@ -296,7 +296,12 @@ function classify(r) {
 async function readScreen(db) {
   const rows = await db.query(
     `SELECT b.*, b.read_at::text AS read_at_text, m.groupid, t.shopifytitle AS title, sk.brand,
-            ${safeNumeric('a.amzprice')} AS price_now, COALESCE(a.amzlive,0)::int AS live, COALESCE(a.amztotal,0)::int AS total,
+            -- A price SET AFTER this reading (any screen; the newest) — the row then says the reading is out of date for it.
+            -- Not amzfeed.amzprice: on 2026-11-12, 40 sizes showed a false "changed" because amzfeed still held the price from
+            -- BEFORE changes Amazon had already taken (the nightly report catches it up); the Amazon reading was right.
+            (SELECT l.new_price FROM amz_price_log l WHERE l.code = b.code AND l.changed_at > b.read_at
+             ORDER BY l.id DESC LIMIT 1) AS set_since,
+            COALESCE(a.amzlive,0)::int AS live, COALESCE(a.amztotal,0)::int AS total,
             GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0)::int AS sold30,
             a.fbafee, sk.cost, sk.tax, ${safeNumeric('sk.rrp')} AS rrp
      FROM amz_buybox_now b
@@ -311,7 +316,7 @@ async function readScreen(db) {
     return {
       code: r.code, groupid: r.groupid, title: r.title, brand: r.brand, asin: r.asin, read_at: r.read_at_text,
       live: r.live, total: r.total, sold30: r.sold30, weeks_left: weeks,
-      our_price: num(r.our_price), price_now: num(r.price_now), rrp: num(r.rrp),
+      our_price: num(r.our_price), set_since: num(r.set_since), rrp: num(r.rrp),
       holder: r.holder, bb_price: num(r.bb_price), rivals: Number(r.rivals), rival_price: num(r.rival_price), rival_seller: r.rival_seller,
       next_up: num(r.next_up), rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail,
       foep: num(r.foep), foep_status: r.foep_status, competitive_price: num(r.competitive_price),

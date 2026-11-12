@@ -3,9 +3,10 @@
 API Route: amz_buybox_read
 =======================================================================================================================================
 Method: POST
-Purpose: Start a Buy Box read from the screen (owner, 2026-11-12): the whole list ("Read all now" — ~360 sizes, 4–5 minutes, paced to
-         Amazon's rate limits) or ONE style ("Read this style", after a price change — a few seconds). Rules in utils/amzBuyBox.js.
-         Normally the cron does the whole-list read (scripts/amz-buybox-read.js); these buttons are for "now".
+Purpose: Start a Buy Box read from the screen (owner, 2026-11-12): ONE style ("Read this style", after a price change — a few
+         seconds). Rules in utils/amzBuyBox.js. The whole list is the hourly cron's job (scripts/amz-buybox-read.js); the screen's
+         "Read all now" button was taken off the same day (owner: "It runs every hour. Not sure I need to manually run it?"), but a
+         body without a groupid still reads the whole list (~360 sizes, 4–5 minutes), so the button can come back without a server change.
 
          The read runs IN THE BACKGROUND on the server: this route claims the read (one at a time — a press while another read, or the
          cron, is running answers BUSY with that read's progress), answers at once, and the screen follows the progress through GET

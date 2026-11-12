@@ -7,9 +7,9 @@ Purpose: Who holds the Buy Box on each of our Amazon sizes, and what to do about
          Server routes/amz-buybox.js (READ ONLY) + amz-buybox-read.js; THE rules are utils/amzBuyBox.js.
 
 WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12: "is the screen just a result of what we have in our database anyway?" — yes). Opening
-         the screen never asks Amazon: it shows the last stored reading and says how old it is. The cron does the regular read; the
-         buttons are only for "now" — Read all now (4–5 minutes, in the background, with progress) and, on an open row, Read this
-         style (seconds — after a price change). New / sold-out sizes need nothing: each read takes the sizes in FBA stock at the time.
+         the screen never asks Amazon: it shows the last stored reading and says how old it is. The cron reads the whole list every hour
+         (owner, 2026-11-12: "It runs every hour. Not sure I need to manually run it?" — Read all now and the "by cron" wording were
+         taken off); the one button is Read this style, on an open row (seconds — after a price change). New / sold-out sizes need nothing: each read takes the sizes in FBA stock at the time.
 
 THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost):
          Losing, can match · Winning, room to go up · Losing, can't match · No Buy Box · Winning, at the top · Alone.
@@ -21,7 +21,9 @@ READ ONLY for now: no Match / Raise presses yet (PLAN.md step 3, after the owner
          size's Amazon price screen, where a price can be set as usual.
 
 TAGS (colour restraint — small solid tags, no row tints): "following us" = a rival at our exact price to the penny (a repricer?) ·
-         "Amazon" = Amazon Retail sells the size · "price changed" = our price now differs from the price at the read.
+         "Amazon" = Amazon Retail sells the size · "set £x" = a price was set AFTER the reading (amz_price_log), so the row is out of
+         date for it. Our price is always what AMAZON showed at the read — not amzfeed, which can lag a day (2026-11-12: 40 sizes looked
+         "changed" because amzfeed still held the price from before changes Amazon had already taken).
 =======================================================================================================================================
 */
 
@@ -130,42 +132,37 @@ export default function AmzBuyBoxPage() {
 
   const lastAllMs = toMs(data?.last_all?.finished_at);
   const lastRun = data?.last_run;
-  const stale = lastAllMs !== null && now - lastAllMs > 3 * 3600 * 1000;
+  // Amber only when an hourly read looks missed: over 2 hours old during the hours it runs (UK 9am–8pm). Overnight it is
+  // naturally ~14 hours old by morning — no warning for that.
+  const ukHour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/London' }).format(now));
+  const stale = lastAllMs !== null && now - lastAllMs > 2 * 3600 * 1000 && ukHour >= 9 && ukHour < 20;
 
   return (
     <AppShell title="Buy Box">
-      {/* THE READING LINE — what the screen is showing and how old it is. */}
+      {/* THE READING LINE — how old the reading on screen is (owner, 2026-11-12: no "by cron", no Read all now — "It runs every hour").
+          The whole list is read hourly by the cron; a style can be re-read from its open row. */}
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="text-sm text-slate-700">
           {running ? (
             <span className="inline-flex items-center gap-1.5 font-medium text-brand-700">
               <ArrowPathIcon className="h-4 w-4 animate-spin" />
-              Reading Amazon{running.scope && running.scope !== 'all' ? ` (${running.scope})` : ''}… {running.done ?? 0} of {running.total} sizes
+              {running.scope && running.scope !== 'all'
+                ? <>Reading {running.scope}…</>
+                : <>Reading Amazon… {running.done ?? 0} of {running.total} sizes</>}
             </span>
           ) : data?.last_all ? (
-            <span title={clock(lastAllMs)}>
-              Showing the reading from <span className={stale ? 'font-medium text-amber-700' : 'font-medium text-slate-900'}>{ago(lastAllMs, now)}</span>
-              <span className="text-slate-500"> · {data.last_all.total} sizes · by {data.last_all.by_name}</span>
-              {lastRun && lastRun.scope !== 'all' && lastRun.status === 'ok' && (
-                <span className="text-slate-500"> · {lastRun.scope} re-read {ago(toMs(lastRun.finished_at), now)}</span>
-              )}
+            <span title={`${clock(lastAllMs)} — read every hour`}>
+              Read <span className={stale ? 'font-medium text-amber-700' : 'font-medium text-slate-900'}>{ago(lastAllMs, now)}</span>
+              <span className="text-slate-500"> · {data.last_all.total} sizes</span>
+              {stale && <span className="text-amber-700"> — the hourly read may have stopped</span>}
             </span>
           ) : (
-            <span className="text-slate-500">No full reading yet — press Read all now.</span>
+            <span className="text-slate-500">No reading yet — the hourly read fills this in.</span>
           )}
           {lastRun && lastRun.status === 'error' && !running && (
             <span className="ml-2 text-red-600" title={lastRun.error || ''}>Last read failed: {lastRun.error}</span>
           )}
         </div>
-        <button
-          type="button"
-          onClick={() => read()}
-          disabled={!!running}
-          title="Ask Amazon about every size in FBA stock now (4–5 minutes). Normally the scheduled read does this."
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
-        >
-          <ArrowPathIcon className="h-3.5 w-3.5" /> Read all now
-        </button>
         {msg && <span className="text-xs text-slate-500">{msg}</span>}
       </div>
 
@@ -202,7 +199,10 @@ export default function AmzBuyBoxPage() {
             </p>
           </div>
 
-          <div className="max-h-[calc(100vh_-_20rem)] min-h-[16rem] overflow-auto rounded-lg border border-slate-200 bg-white shadow-sm">
+          {/* ONE SCROLLBAR (owner, 2026-11-12: "avoid double vertical scrollbars"): the table scrolls with the page — no inner scroll box
+              — so its sticky headings stick to the top of the window. No overflow on this box or any parent, or the sticky th stops
+              working (a scroll container captures it). */}
+          <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
             <table className="min-w-full text-sm">
               <thead className="text-xs text-slate-500">
                 <tr>
@@ -244,7 +244,8 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, busy }: {
   r: AmzBuyBoxRow; isOpen: boolean; showGroup: boolean; onToggle: () => void; onReadStyle: () => void; busy: boolean;
 }) {
   const us = r.holder === 'US' || r.holder === 'US_SHARED';
-  const changed = r.price_now !== null && r.our_price !== null && Math.abs(r.price_now - r.our_price) >= 0.005;
+  // A price set AFTER this reading — the Buy Box columns are from before it, so Read this style to see where it stands now.
+  const setSince = r.set_since !== null && (r.our_price === null || Math.abs(r.set_since - r.our_price) >= 0.005) ? r.set_since : null;
   const g = GROUPS.find((x) => x.key === r.group);
   return (
     <Fragment>
@@ -263,7 +264,7 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, busy }: {
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{r.weeks_left ?? '—'}</td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
           {money(r.our_price)}
-          {changed && <Tag title={`Our price is ${money(r.price_now)} now — set since this read. Read this style to see where it stands.`}>now {money(r.price_now)}</Tag>}
+          {setSince !== null && <Tag tone="amber" title={`Set to ${money(setSince)} after this reading — open the row and Read this style to see where it stands now.`}>set {money(setSince)}</Tag>}
         </td>
         <td className="whitespace-nowrap px-2 py-1.5">
           <span className={us ? 'font-medium text-emerald-700' : r.holder === 'NONE' ? 'text-amber-700' : 'text-slate-800'}>{HOLDER[r.holder]}</span>

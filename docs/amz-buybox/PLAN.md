@@ -135,6 +135,9 @@ The calls are itemOffers (who holds the Buy Box, and every rival) plus the expec
 
 2. **The screen with buttons + storage, 12 months?** *Owner, 2026-11-12: yes, keep 12 months. Happy for it to go in the cron; "I just don't want to get confused with what I'm seeing and whether or not I should press the button."* So **the screen only ever shows the database**: it says how old the reading is, the cron does the regular read, and the buttons are only for "now" (Read all now, and Read this style after a price change). **New and sold-out sizes need nothing**: each read takes the sizes in FBA stock (live + inbound) at that moment. The migration was approved by the owner and applied 2026-11-12.
 
+3. **Manual whole-list read?** *Owner, 2026-11-12: "It runs every hour. Not sure I need to manually run it?"* The **Read all now** button and the "by cron" wording were taken off. The top line says "Read 20 min ago · 358 sizes". It turns amber ("the hourly read may have stopped") only when the reading is over 2 hours old between 9am and 8pm UK time. **Read this style** stays on an open row, for after a price change. The route still reads the whole list when given no style, so the button could come back without a server change.
+   - Found the same day: the first build tagged 40 sizes "now £x" because BCWEB's stored Amazon price (`amzfeed`) still held the price from **before** changes Amazon had already taken. Amazon's reading was right. The tag now shows only for a price **set after the reading** (`amz_price_log`).
+
 ### Built 2026-11-12 (step 2, read only)
 
 - Tables `amz_buybox_now` / `amz_buybox_history` / `amz_buybox_run` (`bcweb-server/migrations/20261112_amz_buybox.sql`).
@@ -143,7 +146,7 @@ The calls are itemOffers (who holds the Buy Box, and every rival) plus the expec
 - `scripts/amz-buybox-read.js [GROUPID]`, which is what the cron calls.
 - Screen `/amz/buybox`: a "Buy Box" tile in the dashboard's Pricing group.
 - **First full read (2026-11-12 00:40, 358 sizes, 4½ min, 0 failed):** 116 Losing, can match · 128 Winning, room to go up · 50 Losing, can't match · 7 No Buy Box · 34 Winning, at the top · 23 Alone. We held the Buy Box (alone or shared) on 178 of 358 sizes. Rivals: 141 self-posters and 17 FBA sellers held it, and Amazon Retail held 8. 56 sizes had a rival at our exact price, and Amazon Retail sold 61. History held 358 rows in 120 kB (about 340 bytes a row), in line with the storage estimate.
-- **Cron line for the owner to add on the VPS** (then re-pull `docs/crontab.txt`). Hourly, 8:20 to 18:20, clear of Update Orders on the hour:
+- **Cron line for the owner to add on the VPS** (then re-pull `docs/crontab.txt`). Hourly at :20 from 08 to 18 server time (GMT), i.e. 9:20am–7:20pm BST, clear of Update Orders on the hour. At the owner's request, the line was put in the local `docs/crontab.txt` ahead of time, for reference:
   `20 8-18 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/amz-buybox-read.js`
 
 Still to ask, one at a time, after that: read frequency (hourly, working hours?) · in-stock only, or inbound too (lean: both) · Match floor = the £3 walk-away (lean: yes) · review after Match / Raise (lean: 3 days, later kept) · where the screen lives (Pricing group; count on Daily?) · the Daily figure · Auto (after a month of readings).

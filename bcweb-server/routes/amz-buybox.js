@@ -17,7 +17,7 @@ Success Response:
   "running":  { "id": 5, "scope": "all", "started_at": "...", "by_name": "Andreas", "total": 358, "done": 120 } | null,
   "rows": [ { "code": "FLE030-IVES-WHITE-06", "groupid": "FLE030-IVES-WHITE", "title": "...", "brand": "Lunar", "asin": "B07QB8LS24",
               "read_at": "...", "live": 23, "total": 59, "sold30": 10, "weeks_left": 25.3,
-              "our_price": 39.49, "price_now": 39.49, "rrp": 45.00,
+              "our_price": 39.49, "set_since": null, "rrp": 45.00,   // set_since = a price set AFTER this reading (amz_price_log), else null
               "holder": "OTHER_MFN", "bb_price": 36.39, "rivals": 6, "rival_price": 36.39, "rival_seller": "A1LS…", "next_up": 39.99,
               "rival_at_our_price": true, "amazon_retail": false, "foep": 31.43, "foep_status": "VALID_FOEP", "competitive_price": 45.00,
               "offers": [ { "seller": "A1LS…", "us": false, "fba": false, "price": 36.39, "bb": true } ], "error": null,

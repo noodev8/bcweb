@@ -57,6 +57,9 @@
 # Every 2h, 9am-11pm BST (08-22 GMT) - sends un-sent Shopify price changes to Google
 0 8-22/2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-price-sweep.js
 
+# Hourly at :20, 9:20am-7:20pm BST - Amazon Buy Box read (read only, ~5 min)
+20 8-18 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/amz-buybox-read.js
+
 # ====== OTHER ==============
 # Social — publish due Facebook posts. Also runs the monthly asset cleanup (15th, 3am).
 # TIMES are GMT (server) - BST equivalent in the comment
