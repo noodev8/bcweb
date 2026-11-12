@@ -17,6 +17,11 @@ THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out f
          Amazon's own "expected winning price" is SHOWN, NEVER a target (the probe found it £5+ under prices we already win at).
          "Room to go up" is measured to the next rival above us — a guess until the history shows how far up the Buy Box holds.
 
+CLEAR (owner, 2026-11-12): no size ever drops off by itself — "it takes away the fact that I can see our position on the screen
+         without having to act". The × clears a row while working (this visit only, nothing stored; counts unchanged; Show all brings
+         them back). And NO review dates on this screen: with an hourly reading, waiting 3–30 days to act on a lost Buy Box makes no
+         sense (owner: "if we are updating EVERY hour, what is the point of not acting for a possible 3, 7 or 30 days?").
+
 READ ONLY for now: no Match / Raise presses yet (PLAN.md step 3, after the owner has watched a few readings). The row links to the
          size's Amazon price screen, where a price can be set as usual.
 
@@ -29,7 +34,7 @@ TAGS (colour restraint — small solid tags, no row tints): "following us" = a r
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import { getAmzBuyBox, startAmzBuyBoxRead, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzBuyBoxRun } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -102,6 +107,10 @@ export default function AmzBuyBoxPage() {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  // CLEARED rows (owner, 2026-11-12: "no to drop off but yes to being able to clear the screen and focus what I'm working on"): the ×
+  // hides a row from the list in THIS visit only — nothing is stored, the group counts stay the true position, and Show all (or
+  // reopening the page) brings every row back. The same soft cut as Fast sellers / New Additions.
+  const [cleared, setCleared] = useState<Set<string>>(() => new Set());
 
   const counts = data?.counts;
   // Default group = the first in screen order that has sizes.
@@ -111,6 +120,7 @@ export default function AmzBuyBoxPage() {
     const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const all = data?.rows ?? [];
     const list = all.filter((r) => {
+      if (cleared.has(r.code)) return false;
       if (terms.length) {
         const hay = `${r.code} ${r.title || ''} ${r.brand || ''}`.toLowerCase();
         return terms.every((t) => hay.includes(t));
@@ -119,7 +129,7 @@ export default function AmzBuyBoxPage() {
     });
     // Most pairs sold first — where the Buy Box matters most.
     return [...list].sort((a, b) => b.sold30 - a.sold30 || b.total - a.total || a.code.localeCompare(b.code));
-  }, [data, shown, search]);
+  }, [data, shown, search, cleared]);
 
   async function read(groupid?: string) {
     setMsg(null);
@@ -197,6 +207,12 @@ export default function AmzBuyBoxPage() {
             <p className="text-sm text-slate-500">
               {search ? `${rows.length} sizes match, across all groups.` : GROUPS.find((g) => g.key === shown)?.rule}
             </p>
+            {cleared.size > 0 && (
+              <span className="text-sm text-slate-500">
+                {cleared.size} cleared ·{' '}
+                <button type="button" onClick={() => setCleared(new Set())} className="font-medium text-brand-700 hover:underline">Show all</button>
+              </span>
+            )}
           </div>
 
           {/* ONE SCROLLBAR (owner, 2026-11-12: "avoid double vertical scrollbars"): the table scrolls with the page — no inner scroll box
@@ -208,6 +224,7 @@ export default function AmzBuyBoxPage() {
                 <tr>
                   {[
                     ['Size', 'Our SKU — hover for the name', 'left'],
+                    ['Brand', 'The style’s brand', 'left'],
                     ['FBA', 'Sellable at FBA now, + on its way in', 'right'],
                     ['Sold 30d', 'Net pairs sold on Amazon, last 30 days', 'right'],
                     ['Weeks left', 'Stock ÷ the last 30 days’ pace', 'right'],
@@ -221,15 +238,17 @@ export default function AmzBuyBoxPage() {
                   ].map(([l, t, a]) => (
                     <th key={l} title={t} className={`sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-2 py-1.5 font-medium shadow-[inset_0_-1px_0_rgb(226_232_240)] ${a === 'right' ? 'text-right' : 'text-left'} ${l === 'Size' ? 'pl-3' : ''}`}>{l}</th>
                   ))}
+                  <th className="sticky top-0 z-10 w-8 bg-slate-50 shadow-[inset_0_-1px_0_rgb(226_232_240)]" aria-label="Clear" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.length === 0 && (
-                  <tr><td colSpan={11} className="px-3 py-6 text-center text-slate-400">{search ? 'Nothing matches.' : 'No sizes in this group.'}</td></tr>
+                  <tr><td colSpan={13} className="px-3 py-6 text-center text-slate-400">{search ? 'Nothing matches.' : cleared.size ? 'Nothing left here — Show all brings the cleared rows back.' : 'No sizes in this group.'}</td></tr>
                 )}
                 {rows.map((r) => (
                   <BuyBoxRow key={r.code} r={r} isOpen={open === r.code} showGroup={!!search}
-                    onToggle={() => setOpen(open === r.code ? null : r.code)} onReadStyle={() => r.groupid && read(r.groupid)} busy={!!running} />
+                    onToggle={() => setOpen(open === r.code ? null : r.code)} onReadStyle={() => r.groupid && read(r.groupid)} busy={!!running}
+                    onClear={() => { setCleared((prev) => new Set(prev).add(r.code)); if (open === r.code) setOpen(null); }} />
                 ))}
               </tbody>
             </table>
@@ -240,8 +259,8 @@ export default function AmzBuyBoxPage() {
   );
 }
 
-function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, busy }: {
-  r: AmzBuyBoxRow; isOpen: boolean; showGroup: boolean; onToggle: () => void; onReadStyle: () => void; busy: boolean;
+function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy }: {
+  r: AmzBuyBoxRow; isOpen: boolean; showGroup: boolean; onToggle: () => void; onReadStyle: () => void; onClear: () => void; busy: boolean;
 }) {
   const us = r.holder === 'US' || r.holder === 'US_SHARED';
   // A price set AFTER this reading — the Buy Box columns are from before it, so Read this style to see where it stands now.
@@ -257,6 +276,8 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, busy }: {
             <span title={r.title || undefined}>{r.code}</span>
           </span>
         </td>
+        {/* Brand (owner, 2026-11-12): narrow and cut short with … so it doesn't take room from the figures; full name on hover. */}
+        <td className="max-w-[7rem] truncate whitespace-nowrap px-2 py-1.5 text-xs text-slate-600" title={r.brand || undefined}>{r.brand || '—'}</td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
           {r.live}{r.total > r.live && <span className="text-slate-400"> +{r.total - r.live}</span>}
         </td>
@@ -279,10 +300,17 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, busy }: {
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{money(r.walk)}</td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{us ? money(r.next_up) : ''}</td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-400" title={r.foep_status || undefined}>{money(r.foep)}</td>
+        <td className="py-1.5 pr-2 text-right">
+          <button type="button" onClick={(e) => { e.stopPropagation(); onClear(); }}
+            title="Clear from the list while you work — Show all brings it back" aria-label={`Clear ${r.code}`}
+            className="rounded p-0.5 text-slate-300 hover:bg-slate-200 hover:text-slate-700">
+            <XMarkIcon className="h-4 w-4" />
+          </button>
+        </td>
       </tr>
       {isOpen && (
         <tr className="bg-slate-50/70">
-          <td colSpan={11} className="px-3 py-3">
+          <td colSpan={13} className="px-3 py-3">
             <div className="mb-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 pl-4">
               <span className="text-sm font-medium text-slate-900">{r.title || r.code}</span>
               <Link href={`/amz/sku/${encodeURIComponent(r.code)}?from=${encodeURIComponent('/amz/buybox')}`} className="text-xs text-brand-700 hover:underline">
