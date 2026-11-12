@@ -44,6 +44,7 @@ import AppShell from '@/components/AppShell';
 import AmzTeamWeek from '@/components/AmzTeamWeek';
 import { getAmzBuyBox, startAmzBuyBoxRead, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzBuyBoxRun } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { getAmzBuyBoxDeck } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Screen order = the order to work them: money left on the table first (owner, 2026-11-12), then what can be won back, then what to leave.
@@ -69,6 +70,9 @@ const HOLDER: Record<AmzBuyBoxHolder, string> = {
   US: 'Us', US_SHARED: 'Us + shared', OTHER_FBA: 'Rival (FBA)', OTHER_MFN: 'Rival (self-post)', AMAZON: 'Amazon', NONE: 'Nobody',
 };
 
+// The amber "set £x" tag beside Our price (a price set after this reading). Hidden 2026-11-12 (owner: "hide it, will bring back if I
+// need it") — flip to true to bring it back; the server still sends set_since and Go through still uses it.
+const SHOW_SET_SINCE = false;
 const money = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `£${v.toFixed(2)}`);
 
 // pg timestamptz text ("2026-11-12 00:39:55.13+00") -> ms. A real instant, so Date is right here (not a date-only string).
@@ -115,6 +119,13 @@ export default function AmzBuyBoxPage() {
     refreshInterval: (d) => (d?.running ? 3000 : 0),
   });
   const running: AmzBuyBoxRun | null = data?.running ?? null;
+  // THE TO DO TILES' NUMBER = what Go through will show, for BOTH To do groups (owner, 2026-11-12: "seeing 118 in the room to go
+  // up box, then pressing go through to only see 18"; "Losing can match should be the same principle"). The deck's own count, from
+  // the same server rules (utils/amzBuyBoxDeck.js); the group's full size count sits under it. Its OWN cache key, never the deck
+  // page's (that one is the snapshot the deck works from), keyed on the reading so a finished read recounts.
+  const { data: deck } = useApiQuery(['amz-buybox-deck-counts', data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(), {
+    revalidateIfStale: false, revalidateOnReconnect: false,
+  });
 
   const [group, setGroup] = useState<AmzBuyBoxGroup | null>(null);
   const [search, setSearch] = useState('');
@@ -213,6 +224,7 @@ export default function AmzBuyBoxPage() {
           <div className="mb-3 flex flex-wrap gap-2">
             {GROUPS.filter((g) => ACTION_GROUPS.includes(g.key)).map((g) => {
               const n = counts?.[g.key] ?? 0;
+              const toGo = deck?.counts?.[g.key as 'room' | 'can_match'];
               const on = !search && shown === g.key;
               // GO THROUGH (2026-11-12, a trial): the group one size at a time with one suggested move — /amz/buybox/deck,
               // rules utils/amzBuyBoxDeck.js. A link beside the tile's button, not inside it (no link inside a button).
@@ -223,7 +235,10 @@ export default function AmzBuyBoxPage() {
                     <div className="flex items-center gap-1.5 text-sm text-slate-600">
                       <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} /> {g.label}
                     </div>
-                    <div className="text-3xl font-semibold tabular-nums text-slate-900">{n}</div>
+                    <div className="text-3xl font-semibold tabular-nums text-slate-900" title="To go through: sold in 30 days, with a move to make">
+                      {toGo ?? '…'}
+                    </div>
+                    <div className="text-xs tabular-nums text-slate-500" title="Every size in this position — click the tile for the full list">of {n} in this position</div>
                   </button>
                   <Link href={`/amz/buybox/deck?g=${g.key}`} title="One size at a time, with one suggested move — the sizes that sold in 30 days"
                     className="block px-4 pb-2 text-xs font-medium text-brand-700 hover:underline">
@@ -335,7 +350,7 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums text-slate-600">{r.weeks_left ?? '—'}</td>
         <td className="whitespace-nowrap px-2 py-1.5 text-right tabular-nums">
           {money(r.our_price)}
-          {setSince !== null && <Tag tone="amber" title={`Set to ${money(setSince)} after this reading — open the row and Read this style to see where it stands now.`}>set {money(setSince)}</Tag>}
+          {SHOW_SET_SINCE && setSince !== null && <Tag tone="amber" title={`Set to ${money(setSince)} after this reading — open the row and Read this style to see where it stands now.`}>set {money(setSince)}</Tag>}
         </td>
         <td className="whitespace-nowrap px-2 py-1.5">
           <span className={us ? 'font-medium text-emerald-700' : r.holder === 'NONE' ? 'text-amber-700' : 'text-slate-800'}>{HOLDER[r.holder]}</span>

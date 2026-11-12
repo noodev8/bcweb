@@ -267,7 +267,9 @@ export default function AmzBuyBoxDeckPage() {
             )}
             {leftOut && (
               <p className="mt-2 text-xs text-slate-400">
-                Not in the deck: {leftOut.not_selling} that sold nothing in 30 days
+                Not in the deck — sold nothing in 30 days: {leftOut.not_selling_recent ?? 0} sold in the last 3 months (wait — the review
+                dates bring them back) · {leftOut.not_selling - (leftOut.not_selling_recent ?? 0)} not sold in 3+ months or never, a demand
+                and price question for <Link href="/analytics/slow-sizes" className="text-brand-700 hover:underline">Range</Link>, not the Buy Box
                 {leftOut.waiting > 0 && <> · {leftOut.waiting} with a price set since the reading (back after the next one)</>}
                 {leftOut.not_eligible > 0 && <> · {leftOut.not_eligible} not eligible for the Buy Box (Seller Central)</>}
                 {(leftOut.raised_waiting ?? 0) > 0 && <> · {leftOut.raised_waiting} raised, waiting for a sale at the new price</>}

@@ -706,7 +706,8 @@ export interface AmzDeckCard {
   stake: number;
 }
 // cheaper_rival / raised_waiting: room only — already 2%+ over a cheaper rival · raised, nothing sold since (back once a pair sells)
-export interface AmzDeckLeftOut { not_selling: number; waiting: number; not_eligible: number; cheaper_rival?: number; raised_waiting?: number }
+// not_selling = sold nothing in 30 days, of which not_selling_recent last sold on Amazon within 90 days (wait); the rest: Range.
+export interface AmzDeckLeftOut { not_selling: number; not_selling_recent?: number; waiting: number; not_eligible: number; cheaper_rival?: number; raised_waiting?: number }
 export interface AmzDeckData {
   cards: AmzDeckCard[]; counts: Record<AmzDeckKind, number>; left_out: Record<AmzDeckKind, AmzDeckLeftOut>;
   last_all: AmzBuyBoxRun | null; running: AmzBuyBoxRun | null;

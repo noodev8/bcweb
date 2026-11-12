@@ -101,17 +101,29 @@ function suggest(r) {
 async function readDeck(db) {
   const screen = await readScreen(db);
   const counts = Object.fromEntries(DECKS.map((d) => [d, 0]));
-  const leftOut = Object.fromEntries(DECKS.map((d) => [d, { not_selling: 0, waiting: 0, not_eligible: 0, cheaper_rival: 0, raised_waiting: 0 }]));
+  const leftOut = Object.fromEntries(DECKS.map((d) => [d, { not_selling: 0, not_selling_recent: 0, waiting: 0, not_eligible: 0, cheaper_rival: 0, raised_waiting: 0 }]));
 
   const picked = [];
+  const notSelling = [];
   for (const r of screen.rows) {
     if (!DECKS.includes(r.group)) continue;
     if (r.set_since !== null) { leftOut[r.group].waiting += 1; continue; }
-    if (!(r.sold30 > 0)) { leftOut[r.group].not_selling += 1; continue; }
+    if (!(r.sold30 > 0)) { leftOut[r.group].not_selling += 1; notSelling.push(r); continue; }
     if (r.group === 'can_match' && r.our_eligible === false) { leftOut[r.group].not_eligible += 1; continue; }
     const s = suggest(r);
     if (!s) { if (r.group === 'room' && cheaperRival(r) !== null) leftOut[r.group].cheaper_rival += 1; continue; }
     picked.push({ r, s });
+  }
+
+  // NOT SELLING, SPLIT (owner, 2026-11-12: "Do we never go down here? ... is the feeling here, just wait"): the Buy Box isn't the
+  // question for a size that sold nothing in 30 days — we're shown on most of them — demand and price are. So the note says where
+  // each is handled: `not_selling_recent` = last net Amazon sale within 90 days (slowed, mostly season: wait — the review dates
+  // bring it back); the rest (never sold on Amazon, or 90+ days ago) are Range / Clearance's job. `not_selling` stays the total.
+  if (notSelling.length) {
+    const recent = new Set((await db.query(
+      `SELECT DISTINCT code FROM sales WHERE channel = 'AMZ' AND qty > 0 AND code = ANY($1) AND solddate >= CURRENT_DATE - 90`,
+      [notSelling.map((r) => r.code)])).rows.map((x) => x.code));
+    for (const r of notSelling) if (recent.has(r.code)) leftOut[r.group].not_selling_recent += 1;
   }
 
   // The style's picture (the thumbnails' imagename), one query for the whole deck.
