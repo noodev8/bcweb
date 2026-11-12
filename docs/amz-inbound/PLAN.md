@@ -16,6 +16,7 @@ forth to Seller Central's Send to Amazon with the shipping-plan .txt and the box
 | 7 | **Tracking numbers: parked**, sorted later. Not part of the first build. |
 | 8 | **ONE PACK GROUP, ALWAYS.** Only a packing option with exactly one pack group is ever confirmed. If Amazon offers none, stop, confirm nothing and cancel the plan. Never pack to more than one group. |
 | 9 | **Mark shipped stays its own button**, pressed when DPD collects. Not part of Do shipment. |
+| 10 | **The FBA15 id / plan id are NOT stored on the archive.** Mark shipped stays as it is, no migration. |
 
 ## Today (what this replaces)
 
@@ -159,7 +160,7 @@ Everything comes from the stored packed boxes (`amzshipment`). Your unpacked box
 | **3 Warehouse** | `generatePlacementOptions` → `listPlacementOptions` → **only an option with exactly ONE shipment** → `confirmPlacementOption`. | **NEVER SPLIT, REGARDLESS OF PRICE** (owner, 2026-11-12). Price never decides anything here: a split is never taken, even if it's cheaper. If Amazon offers more than one single-shipment option (unlikely), take Amazon's first. If there's none, stop, confirm nothing and offer Cancel plan. The fee and the warehouse are shown before the press, for information only. **Placement fees are charged from this confirm on.** |
 | **4 Carrier + dates** | `generateTransportationOptions` (ready-to-ship date **picked on screen**) → choose `USE_YOUR_OWN_CARRIER` / `GROUND_SMALL_PARCEL` / carrier **DPD `DPDX`** → delivery window (`generateDeliveryWindowOptions` → `confirmDeliveryWindowOptions`, every shipment has one) → `confirmTransportationOptions`. | **Our local DPD only, NEVER Amazon's DPD.** Anything `AMAZON_PARTNERED_CARRIER` is filtered out in code and never confirmed, even if it's the only one or the cheapest. If no own-carrier DPDX option comes back, stop. |
 | **5 Box labels** | `getShipment` → shipment confirmation id (FBA15…); v0 `getLabels`, `PageType=PackageLabel_Thermal`, `LabelType=UNIQUE`, one per box. | PDF → `printPdfBase64` (QZ Tray → Zebra), the same path as the Royal Mail labels. Reprint any time. |
-| **6 Shipped** | The existing Mark shipped (+ the FBA15 id onto the archive). | **Tracking (`updateShipmentTrackingDetails`) is parked** (owner, 2026-11-12: sort later), entered in Seller Central meanwhile. |
+| **6 Shipped** | The existing Mark shipped, unchanged (no FBA15 id on the archive, owner 2026-11-12). | **Tracking (`updateShipmentTrackingDetails`) is parked** (owner, 2026-11-12: sort later), entered in Seller Central meanwhile. |
 
 Steps 1–5 all run from the ONE button (above). The only human press is the confirm before 3 and 4 are CONFIRMED. **Cancel plan**
 (`cancelInboundPlan`) is available up to that confirm. What it costs after the confirm is to check in the test plan.
@@ -168,8 +169,8 @@ Steps 1–5 all run from the ONE button (above). The only human press is the con
 
 No resume state (every press starts clean, above). BCWEB only needs to know about a CONFIRMED shipment, for Reprint labels and Mark
 shipped: its plan id, shipment id and FBA15 id. It can always re-read these from Amazon (ACTIVE plans with a confirmed placement),
-so storing them is only a convenience. At Mark shipped the FBA15 id + plan id go onto the archived rows as **columns on
-`amzshipment_archive`** (one migration, no new table), linking our shipment number to Amazon's.
+so nothing is stored. **Not on the archive either** (owner, 2026-11-12: not needed): `amzshipment_archive` gets no FBA15 id /
+plan id columns, no migration.
 
 **Boxes are frozen once a plan is CONFIRMED.** Before that, changing a box is fine: the next press cancels the draft and starts again.
 After Confirm, Unpack / Delete / Pack on a stored box refuse until Mark shipped. Otherwise what Amazon booked and what we packed drift apart.
@@ -184,7 +185,7 @@ After Confirm, Unpack / Delete / Pack on a stored box refuse until Mark shipped.
    like the ~35 drafts already there).
 2. **BUILT 2026-11-12, not yet used on a real shipment.** `utils/amzInbound.js` (THE copy, writes allow-listed), `POST /amz-inbound-start`, `GET /amz-inbound-status`, the Do shipment button on AMZ Shipment's Shipment panel (old files behind "Backup: files"). **Do shipment, part 1**: the button runs steps 1–2 and stops. The rest is finished in Seller Central for a while, where the plan shows up ready.
 3. **Do shipment, full**: works out 3–4, the one confirm box (warehouse, fee, DPD, date), confirm → Zebra labels.
-4. **Step 6**: the FBA15 id carried into Mark shipped's archive.
+4. ~~**Step 6**: the FBA15 id carried into Mark shipped's archive.~~ **Dropped** (owner, 2026-11-12: not needed). Mark shipped stays as it is.
 5. **Later**: DPD tracking per box (parked). Amazon's API has no "mark shipped" call: for our own courier, sending the tracking
    (`updateShipmentTrackingDetails`) is what tells Amazon the boxes are on their way. Proposal for then: BCWEB's Mark shipped asks
    for the DPD numbers (scan each box's label) and sends them, so one press does both. Received-per-SKU tracking is NOT wanted (owner: checked on Amazon).
