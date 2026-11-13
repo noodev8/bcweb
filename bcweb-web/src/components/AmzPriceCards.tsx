@@ -14,6 +14,9 @@ Purpose: Owner: "the usual price change screen but reduced to cards to make it e
                                            move, not due, on its way in: NOTHING HIDDEN. Walked in order, start to end. A status line
                                            says which each one is; a not-due size's Leave is "Next" (looking writes nothing — its
                                            review date is not touched).
+           ONE STYLE    /amz/search-cards?g=<groupid>&from=&back=  the search cards for one style exactly (server matchesStyle) —
+                                           the product menu's Amazon Price card (components/ProductNavCards; owner, 2026-11-13, from
+                                           New Additions: "choose a style … and go through the cards"). Back returns to ?from=.
          Data: GET /amz-all-list ?cards=1 (getAmzDueCards / getAmzSearchCards).
 
 NO SUGGESTION of its own (owner: "no suggestion — I'll type the price or give me the options like we have on the amazon price
@@ -52,6 +55,7 @@ import { REVIEW_PERIODS, seasonPark } from '@/lib/reviewPeriods';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useAuth } from '@/contexts/AuthContext';
+import { prettyPathLabel } from '@/lib/nav';
 
 export type PriceCardsMode = 'due' | 'search';
 
@@ -105,17 +109,26 @@ type Done = { kind: 'set'; price: number; sent: boolean; message: string | null 
 export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const { logout } = useAuth();
   const q = (useUrlParam('q') ?? '').trim();
+  const g = (useUrlParam('g') ?? '').trim();   // ONE STYLE (header): the product menu's Amazon Price card — beats q
   const moodParam = useUrlParam('mood');
   const mood: AmzMood = moodParam === 'fierce' || moodParam === 'climb' ? moodParam : 'chilled';
   const at = useUrlParam('at');   // the card to open on (the full price screen's Back)
+  // CAME FROM ANOTHER SCREEN (the product menu passes ?from= / ?back=): Back returns there. Our own paths only.
+  const fromRaw = useUrlParam('from');
+  const from = fromRaw && fromRaw.startsWith('/') && !fromRaw.startsWith('//') ? fromRaw : null;
+  const backLabel = useUrlParam('back') || (from ? prettyPathLabel(from) : 'Amazon Pricing');
   const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
-  const backHref = mode === 'search' && q ? `/amz?q=${encodeURIComponent(q)}` : '/amz';
-  const selfPath = mode === 'search' ? `/amz/search-cards?q=${encodeURIComponent(q)}&mood=${mood}` : '/amz/due-cards';
+  const backHref = from ?? (mode === 'search' && q ? `/amz?q=${encodeURIComponent(q)}` : '/amz');
+  const fromQs = from ? `&from=${encodeURIComponent(from)}&back=${encodeURIComponent(backLabel)}` : '';
+  const selfPath = mode === 'search'
+    ? `/amz/search-cards?${g ? `g=${encodeURIComponent(g)}` : `q=${encodeURIComponent(q)}`}&mood=${mood}${fromQs}`
+    : '/amz/due-cards';
 
   // A snapshot (header): nothing refetches by itself. Waits for the client (useUrlParam reads null until hydrated).
-  const key = !hydrated ? null : mode === 'due' ? ['amz-price-cards', 'due'] : q ? ['amz-price-cards', 'search', q, mood] : null;
+  const key = !hydrated ? null : mode === 'due' ? ['amz-price-cards', 'due']
+    : g ? ['amz-price-cards', 'style', g, mood] : q ? ['amz-price-cards', 'search', q, mood] : null;
   const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(key,
-    () => (mode === 'due' ? getAmzDueCards() : getAmzSearchCards(q, mood)),
+    () => (mode === 'due' ? getAmzDueCards() : getAmzSearchCards(g ? { g } : { q }, mood)),
     { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false });
   // FRESH ON EVERY OPEN (owner, 2026-11-13: Daily said 8 due, the screen showed 0 until Refresh — a copy from an earlier visit).
   // revalidateOnMount reads again on every open; until that read is in, nothing shows, so a card is never priced from the old copy.
@@ -194,14 +207,14 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
 
   const setCount = cards.filter((c) => done.get(c.code)?.kind === 'set').length;
   const leftCount = cards.filter((c) => done.get(c.code)?.kind === 'left').length;
-  const title = mode === 'due' ? 'Not selling · due' : `Search “${q}”`;
+  const title = mode === 'due' ? 'Not selling · due' : g ? `Style ${g}` : `Search “${q}”`;
 
   return (
     <AppShell crumb={<span className="font-medium text-slate-800">{mode === 'due' ? 'Due cards' : 'Search cards'}</span>}>
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
         {/* TOOLBAR — Back · what these cards are · progress count · Refresh. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <Link href={backHref} title="Back to Amazon Pricing"
+          <Link href={backHref} title={`Back to ${backLabel}`}
             className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
             ← Back
           </Link>
@@ -233,7 +246,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
           </div>
         )}
 
-        {mode === 'search' && !q && hydrated && <p className="text-sm text-slate-500">Type a search on <Link href="/amz" className="text-brand-700 hover:underline">Amazon Pricing</Link> first.</p>}
+        {mode === 'search' && !q && !g && hydrated && <p className="text-sm text-slate-500">Type a search on <Link href="/amz" className="text-brand-700 hover:underline">Amazon Pricing</Link> first.</p>}
         {isLoading && <p className="text-sm text-slate-400">Loading…</p>}
         {loadError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{loadError.message}</div>}
         {data?.truncated && <p className="text-sm text-amber-700">Showing the first {cards.length} of {data.total} — narrow the search.</p>}
@@ -247,7 +260,8 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
           <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
             <div className="text-lg font-medium text-slate-900">
               {mode === 'due' ? (cards.length ? 'All done — Due is clear' : 'Nothing due')
-                : cards.length ? 'End of the search' : `Nothing at Amazon matches “${q}”`}
+                : cards.length ? (g ? 'End of the style' : 'End of the search')
+                  : g ? `${g} has no sizes at Amazon` : `Nothing at Amazon matches “${q}”`}
             </div>
             <p className="mt-1 text-sm text-slate-500">
               {cards.length ? `${setCount} set · ${leftCount} left. ` : ''}

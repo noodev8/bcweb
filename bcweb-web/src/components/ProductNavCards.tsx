@@ -18,8 +18,8 @@ Do not add target="_blank" to these without re-reading that: a new tab per hop i
 EVERY DESTINATION USES THE DEEP LINK IT ALREADY HAD — this component invented no new conventions, it just stopped the operator
 retyping the groupid into five different search boxes:
   - /pricing/style/<groupid>  lands directly on the Shopify drill; reads ?from= for its back link.
-  - /amz/find?q=<groupid>     Amazon is SKU grain, so there is no single page for a style — its find fans the groupid out to a row per
-                              size, which is the correct landing for "price this product on Amazon". Reads ?from=.
+  - /amz/search-cards?g=<groupid>  Amazon is SKU grain, so there is no single page for a style — the price cards walk its sizes one
+                              at a time (since 2026-11-13; was /amz/find?q=, a row per size). Reads ?from= / ?back=.
   - /products?groupid=        Add/Modify opens straight on the edit panel. Reads ?from= plus ?back= for the label.
   - /amazon-order?q=          Reads ?from=/?back= and seeds one Include step. THE ONLY ONE THAT NEEDED WORK — that page took no query
                               params at all before this row (see its header note).
@@ -116,9 +116,11 @@ const TARGETS: (NavTarget & { group: Group })[] = [
   {
     group: 'Amazon',
     label: 'Price',
-    hint: 'Amazon Price — price this product on Amazon, one row per size, since Amazon prices per size',
+    hint: 'Amazon Price — this style’s sizes as price cards, one at a time',
     icon: BuildingStorefrontIcon,
-    build: (g, from) => `/amz/find?q=${encodeURIComponent(g)}&from=${from}`,
+    // THE PRICE CARDS for this style (owner, 2026-11-13, from New Additions: "choose a style … and go through the cards"); was the
+    // Find list (/amz/find?q=), which Amazon Pricing dropped the same day. ?g= is an exact group id (components/AmzPriceCards).
+    build: (g, from, back) => `/amz/search-cards?g=${encodeURIComponent(g)}&from=${from}&back=${back}`,
   },
   // SELLER CENTRAL (owner, 2026-11-06: "go to the Amazon web page for a GROUPID to check pricing there directly"). Manage Inventory
   // searched to the group id — our Amazon SKUs carry it (45973-24-38-2610), so every size shows, with Amazon's LIVE price, featured offer

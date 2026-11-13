@@ -226,14 +226,27 @@ function matchesSearch(r, q) {
 }
 
 /**
- * The deck for `mood`. answersOnly = stop after the answers (step 3) — no cards built: what utils/amzDue.js needs to decide Amazon
- * "due" (PLAN.md decision 26), without the card queries. q = the search (matchesSearch) — screens only; amzDue never passes it.
+ * ONE STYLE, EXACTLY (owner, 2026-11-13: "choose a style [on New Additions] and … go through the cards"): the product menu's Amazon
+ * Price card opens the search cards for the selected group id. matchesSearch is a contains-match, so a group id that sits inside a
+ * longer one would pull that style in too — this is the whole group id, case ignored. Empty = everything.
  */
-async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '' } = {}) {
+function matchesStyle(r, g) {
+  if (!g) return true;
+  return String(r.groupid || '').toLowerCase() === g;
+}
+
+/**
+ * The deck for `mood`. answersOnly = stop after the answers (step 3) — no cards built: what utils/amzDue.js needs to decide Amazon
+ * "due" (PLAN.md decision 26), without the card queries. q = the search (matchesSearch), groupid = one style (matchesStyle) — screens
+ * only; amzDue never passes them.
+ */
+async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', groupid: gIn = '' } = {}) {
   const mood = normMood(moodIn);
   const q = typeof qIn === 'string' ? qIn.trim().toLowerCase() : '';
+  const g = typeof gIn === 'string' ? gIn.trim().toLowerCase() : '';
   const screen = await readScreen(db);
-  const live = screen.rows.filter((r) => r.live > 0 && matchesSearch(r, q));   // IN STOCK ONLY (decision 13), then the search
+  // IN STOCK ONLY (decision 13), then the search / the style.
+  const live = screen.rows.filter((r) => r.live > 0 && matchesSearch(r, q) && matchesStyle(r, g));
   const liveCodes = live.map((r) => r.code);
 
   // NEW + NOT-FOR-THIS-SCREEN facts, one query for every in-stock size: the landing date (first history day live, or a ledger day
@@ -454,5 +467,5 @@ function pressFields(b) {
 
 module.exports = {
   MOODS, DEFAULT_MOOD, TABS, ANSWERS, RAISE_CAP, OVER_CHEAPER_CAP, SELF_POST_PREMIUM, NEW_DAYS, LEAVE_BACK_DAYS, REVIEW_DAYS,
-  PRESS_KEEP_MONTHS, cheaperRival, suggest, suggestNew, answerFor, profitLine, matchesSearch, readDeck, recordPress, pressFields,
+  PRESS_KEEP_MONTHS, cheaperRival, suggest, suggestNew, answerFor, profitLine, matchesSearch, matchesStyle, readDeck, recordPress, pressFields,
 };

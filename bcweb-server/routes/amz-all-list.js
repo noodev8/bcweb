@@ -32,12 +32,15 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
 
 Requires auth.
 =======================================================================================================================================
-Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&cards=1]
+Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=groupid][&cards=1]
   limit    safety cap only (utils/listLimit.js, default 100 / max 500).
   half     review = only the sizes the Buy Box doesn't answer (the review-date half).
   q        the search (owner, 2026-11-13 — "search for Caprice, see the count, press it and get the cards one by one"): only rows whose
            SKU, groupid, name or brand contain it; `total` counts the search. THE match: utils/amzBuyBoxDeck.js → matchesSearch. Used
            by the Amazon Pricing home's search card (with parked=include: due, Buy Box moves and not due) and its search cards.
+  g        ONE STYLE, exactly (utils/amzBuyBoxDeck.js → matchesStyle): the product menu's Amazon Price card opens the search cards for
+           the selected group id (owner, 2026-11-13, from New Additions). Works like q (incl. the Buy Box suggestion), without q's
+           contains-match pulling in a longer group id.
   cards    1 = PRICE CARDS (components/AmzPriceCards — Due cards and search cards, owner 2026-11-13: "the usual price change screen but
            reduced to cards"): each row also carries what a card shows — imagename, u12 (Amazon pairs, 12 months), breakeven, walk
            (the £3 walk-away, amzPricingStandard SETTINGS.WALK_AWAY_PROFIT — the Buy Box cards' floor), profit_line (profit a pair =
@@ -73,7 +76,7 @@ const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const { readBuyBoxSide, dueBy, buyBoxMoves } = require('../utils/amzDue');
-const { matchesSearch, profitLine, readDeck } = require('../utils/amzBuyBoxDeck');
+const { matchesSearch, matchesStyle, profitLine, readDeck } = require('../utils/amzBuyBoxDeck');
 const { amzProfit, priceForProfit, breakevenPrice } = require('../utils/amzProfit');
 const { SETTINGS } = require('../utils/amzPricingStandard');
 const logger = require('../utils/logger');
@@ -88,6 +91,7 @@ router.get('/', async (req, res) => {
     const includeParked = req.query.parked === 'include';
     const reviewHalf = req.query.half === 'review';
     const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100).trim().toLowerCase() : '';
+    const g = typeof req.query.g === 'string' ? req.query.g.slice(0, 100).trim().toLowerCase() : '';
     const withCards = req.query.cards === '1';
     const mood = typeof req.query.mood === 'string' ? req.query.mood : undefined;   // readDeck normalises (anything else = chilled)
 
@@ -143,7 +147,7 @@ router.get('/', async (req, res) => {
     const judged = result.rows.map((r) => ({ r, d: dueBy(side, r.code, r.review_parked !== true) }))
       .filter((x) => !reviewHalf || x.d.by === 'review')
       .filter((x) => includeParked || x.d.due)
-      .filter((x) => matchesSearch(x.r, q));
+      .filter((x) => matchesSearch(x.r, q) && matchesStyle(x.r, g));
     // Due before not-due, so the safety cap can only ever trim not-due rows: with the status rows the list passed 500 (2026-10-28)
     // and the 0-stock due SKUs, sorting last, were cut — Daily counted them, the list didn't show them. Stable: stock order kept.
     judged.sort((a, b) => Number(b.d.due) - Number(a.d.due));
@@ -199,8 +203,8 @@ router.get('/', async (req, res) => {
         row.profit_now = row.price === null ? null : amzProfit({ ...ec, price: row.price }).profit;
       }
       // The Buy Box cards' suggestion for the search's sizes (header) — the deck read narrowed to the same search.
-      if (q) {
-        const deck = await readDeck(pool, { mood, q });
+      if (q || g) {
+        const deck = await readDeck(pool, { mood, q, groupid: g });
         const cardOf = Object.fromEntries(deck.cards.map((c) => [c.code, c]));
         for (const row of rows) {
           const c = cardOf[row.code];

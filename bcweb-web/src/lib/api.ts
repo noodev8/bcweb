@@ -577,9 +577,10 @@ export function getAmzDueCards() {
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
-export function getAmzSearchCards(q: string, mood: AmzMood) {
+// `g` = one style exactly (the product menu's Amazon Price card) instead of the text search `q`.
+export function getAmzSearchCards(search: { q?: string; g?: string }, mood: AmzMood) {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
-    { url: '/amz-all-list', method: 'GET', params: { limit: 500, parked: 'include', cards: 1, q, mood } },
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, parked: 'include', cards: 1, ...(search.g ? { g: search.g } : { q: search.q }), mood } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
