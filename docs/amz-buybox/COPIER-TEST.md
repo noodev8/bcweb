@@ -58,6 +58,8 @@ Our stock: 23 live + 36 inbound. Sales: 15 pairs in October, 2 in November so fa
 | 2026-11-12 11:29 | £39.49 | £39.49 | copier 89% · cheap seller 11% · us 0% | Baseline |
 | 2026-11-12 11:41 | **£39.39** | ? | ? | **Step 1 started**: amz_price_log 3462, by Andreas, accepted by Amazon (SP-API) at 11:41. Review date 19 Nov. Read this style ~12:45. |
 | 2026-11-12 12:28 | £39.39 | £39.49 (not moved) | copier 89% · cheap seller 11% · us 0% | 47 min after: copier has NOT followed, and we're 10p under it yet still 0%. 07 unchanged (copier 91%, us 0%). Wait for the next hourly readings. |
+| 2026-11-12 18:28 | £39.39 | £39.49 (not moved) | copier 89% · cheap seller 11% · us 0% | Six more hourly readings (13:28–18:28), no change on 06 (history has no row after 12:28). 07 the same: copier 91% (£39.49), cheap seller 9%, us 0% at £39.49. No Amazon sale of 06 since 12 Nov. ~7h after step 1 the copier has NOT followed and being 10p under it won us nothing: Amazon still prefers its self-posted regional-Prime offer. Checked 2026-11-13; no cron reading since 18:28 on the 12th (amz_buybox_run #18 is the last). |
+| 2026-11-13 | £39.39 | — | — | **Owner: wait.** Hold at £39.39 and re-check at 24h after step 1 (from 2026-11-13 11:41) to see if the copier joins us. No step 2 before then. |
 
 ## How to read a step
 
