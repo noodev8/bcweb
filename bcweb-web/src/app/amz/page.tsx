@@ -66,7 +66,6 @@ export default function AmazonPricingHome() {
   const { data: notSelling } = useApiQuery(['amz-not-selling-due'], () => getAmzNotSellingDue());
 
   const answers = deck?.answers;
-  const leave = answers?.leave?.total;
 
   return (
     <AppShell title="Amazon Pricing"
@@ -121,19 +120,6 @@ export default function AmazonPricingHome() {
               href={notSelling ? '/amz/all?by=all&half=review' : null} btn={`Price ${notSelling ?? 0} →`}
               btnTitle="The list of these sizes — its Due switch, bulk moves and review dates" />
           </div>
-          {/* The bar: one segment per answer, its width its share of the sizes in stock at FBA. */}
-          <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
-            {deck && deck.in_stock > 0 && ANSWERS.map((a) => {
-              const n = answers?.[a.key]?.total ?? 0;
-              return n > 0 ? <span key={a.key} className={a.bar} style={{ width: `${(n / deck.in_stock) * 100}%` }} title={`${a.label} ${n}`} /> : null;
-            })}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-500">
-            <span title={ANSWERS.find((a) => a.key === 'leave')?.rule}>
-              <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-slate-500" />Leave — no price needed
-              <span className="ml-1.5 font-semibold tabular-nums text-slate-900">{leave ?? '…'}</span>
-            </span>
-          </div>
         </section>
       </div>
     </AppShell>
@@ -155,7 +141,7 @@ function Tile({ rule, dot, label, n, under, href, btn, btnTitle }: {
       </div>
       <div className="col-start-1 hidden text-xs tabular-nums text-slate-400 sm:block">{under}</div>
       {href ? (
-        <Link href={href} title={btnTitle} className={`${PRICE_BTN} bg-brand-600 font-semibold text-white hover:bg-brand-700`}>{btn}</Link>
+        <Link href={href} title={btnTitle} className={`${PRICE_BTN} bg-white font-semibold text-slate-800 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 hover:ring-slate-400`}>{btn}</Link>
       ) : (
         <span className={`${PRICE_BTN} bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-200`}>Nothing to price</span>
       )}

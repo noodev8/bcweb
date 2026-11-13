@@ -279,7 +279,7 @@ function Daily() {
             <CountLink href="/pricing" label="Shopify" n={due.data?.shopify ?? null} unit="due" />
             {/* AMAZON (decision 27, owner 2026-11-13): DUE (by review date, worked to zero) and BUY BOX MOVES (the Chilled cards, into
                 the Amazon Pricing home) side by side; each says under it how many it worked today. */}
-            <CountLink href="/amz/all?by=all&half=review" label="Amazon" n={due.data?.amazon ?? null} unit="due" done={due.data?.amazonDoneDue ?? null} />
+            <CountLink href="/amz/all?by=all&half=review&from=%2Fdashboard&back=Dashboard" label="Amazon" n={due.data?.amazon ?? null} unit="due" done={due.data?.amazonDoneDue ?? null} />
             <CountLink href="/amz" label="Buy Box" n={due.data?.amazonMoves ?? null} unit="moves" done={due.data?.amazonDoneMoves ?? null} />
           </div>
         </div>

@@ -44,7 +44,7 @@ LAYOUT (2026-11-13, owner: "too busy … no need for the list to always show …
          rivals, our move, RRP on one line — replaced the Lead / Next dearer / Walk-away / RRP facts) → three facts (Buy Box, Selling,
          Stock) → decide (price, keeps £x, Leave, Set at the far right; one reserved line for warnings / the Due date) · the last
          result as one quiet line under the card. COLOUR: the answer's colour (New violet, Raise emerald, Cut rose) only on the tab
-         dot, the verb tag and the ladder arrow; green = sold / set, amber = look twice, red = under the floor only, indigo = Set.
+         dot, the verb tag and the ladder arrow; green = sold / set, amber = look twice, red = under the floor only, emerald = Set (was indigo, 2026-11-13).
          FIXED HEIGHTS on a laptop for every zone, so the buttons sit in the same place on every card. A phone gets the same card
          stacked, the decide row pinned to the bottom of the screen.
 
@@ -257,11 +257,16 @@ export default function AmzBuyBoxDeckPage() {
   const leftCount = cards.filter((c) => done.get(c.code)?.kind === 'left').length;
 
   return (
-    <AppShell backHref="/amz" backLabel="Amazon Pricing" crumb={<span className="font-medium text-slate-800">Pricing</span>}>
+    <AppShell crumb={<span className="font-medium text-slate-800">Pricing</span>}>
       {/* ONE CENTRED COLUMN (LAYOUT, header): toolbar, progress, card and the result line all the same width. */}
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
         {/* 1 TOOLBAR — tabs · mood badge · how old the reading is. No result message here any more (it sits under the card). */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {/* Back to the mood + tiles — worded "Back", not "Amazon Pricing", so it isn't read as the nav button (owner, 2026-11-13). */}
+          <Link href="/amz" title="Back to the mood and the New / Raise / Cut tiles"
+            className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
+            ← Back
+          </Link>
           <div className="inline-flex w-full rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm sm:w-auto">
             {DECKS.map((d) => (
               <Link key={d.key} href={`/amz/buybox/deck?g=${d.key}&mood=${mood}`} title={d.rule}
@@ -681,7 +686,7 @@ function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, on
                   Leave <Kbd>→</Kbd>
                 </button>
                 <button type="button" onClick={submit} disabled={busy || p2 === null || same} title="Set (Enter) — sent to Amazon at once"
-                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-50 sm:w-44 sm:flex-none">
+                  className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 sm:w-44 sm:flex-none">
                   {busy ? 'Sending…' : p2 !== null ? `Set ${money(p2)}` : 'Set'} <Kbd light>⏎</Kbd>
                 </button>
               </>
