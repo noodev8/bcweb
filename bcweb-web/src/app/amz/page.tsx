@@ -89,7 +89,9 @@ export default function AmazonPricingHome() {
   const answers = deck?.answers;
 
   return (
-    <AppShell title="Amazon Pricing"
+    // BIG TITLE (owner, 2026-11-13: "make the Amazon Pricing text bigger so it fills it in") — the headline % and reading age on the
+    // right are two lines tall; the large title fills that row instead of leaving a gap under a small one.
+    <AppShell title="Amazon Pricing" bigTitle
       headerRight={
         <div className="flex flex-col items-end gap-2">
           <AmzBuyBoxReading data={data} />

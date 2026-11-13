@@ -177,6 +177,9 @@ export default function AmzBuyBoxDeckPage() {
 
   const cards = useMemo(() => (data?.cards ?? []).filter((c) => c.deck === deck), [data, deck]);
   const open = cards.filter((c) => !done.has(c.code));
+  // THE TAB COUNTS = still to do (owner, 2026-11-13: "I fixed the NEW but the count in the little bar at the top didnt update") — the
+  // snapshot's cards less those set or left on this visit, so a tab counts down as you work (was the server's fixed counts).
+  const toDo = (k: AmzDeckKind) => (data ? data.cards.filter((c) => c.deck === k && !done.has(c.code)).length : null);
   // The current card: the one you moved to, else the first still to do.
   const current = cards.find((c) => c.code === cur[deck]) ?? open[0] ?? null;
   const index = current ? cards.indexOf(current) : -1;
@@ -276,7 +279,7 @@ export default function AmzBuyBoxDeckPage() {
               <Link key={d.key} href={`/amz/buybox/deck?g=${d.key}&mood=${mood}`} title={d.rule}
                 className={'inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm sm:flex-none ' + (d.key === deck ? 'bg-slate-100 font-medium text-slate-900 ring-1 ring-inset ring-slate-200' : 'text-slate-600 hover:bg-slate-50')}>
                 <span className={`inline-block h-2 w-2 rounded-full ${d.dot}`} /> {d.label}
-                <span className="font-semibold tabular-nums text-slate-900">{data?.counts?.[d.key] ?? ''}</span>
+                <span className="font-semibold tabular-nums text-slate-900">{toDo(d.key) ?? ''}</span>
               </Link>
             ))}
           </div>
