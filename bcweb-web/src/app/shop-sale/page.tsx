@@ -24,10 +24,11 @@ out of its location to show in the shop, or a wrong count. When the system holds
 the sale is booked with no stock move.
 
 WHICH SHELF (owner, 2026-10-09: "make sure our stock is kept up to date"). Whenever the system shows stock for the size, a "Taken
-from" row offers each shelf PLUS "No location" — for a pair already taken off its shelf by hand, where taking another would
-double-count. One shelf: it is preselected. More than one: nothing is preselected and one must be chosen, no shelf favoured, so a later
-pick isn't sent to a shelf whose pair was already sold. Pairs already in the basket are taken off the counts shown, so a second pair of
-the same size can't be sent to a shelf whose last pair is already in the basket.
+from" choice is shown. NO LOCATION IS THE MAIN OPTION AND THE DEFAULT (owner, 2026-11-13 — shoes are taken out of their locations to be
+shown in the shop, so the pair sold is usually already out): a large first choice, "Already out of its location — the stock count isn't
+changed". The shelves follow as small buttons ("or take it off a shelf"), for a pair fetched from its shelf, so that shelf's count drops.
+Pairs already in the basket are taken off the shelf counts shown, so a second pair of the same size can't be sent to a shelf whose last
+pair is already in the basket.
 
 THE TITLE IS LEFT-ALIGNED like every other titled page, and the form sits left under it.
 
@@ -101,7 +102,7 @@ function Picture({ imagename, alt }: { imagename: string | null; alt: string }) 
   );
 }
 
-const INPUT = 'rounded-md border border-slate-300 text-base focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500';
+const INPUT = 'rounded-md border border-slate-300 text-base focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500';
 
 function PriceBox({ id, value, onChange, onCommit, className = 'w-32' }: {
   id?: string; value: string; onChange: (v: string) => void; onCommit?: () => void; className?: string;
@@ -214,9 +215,8 @@ export default function ShopSalePage() {
 
   function pickSize(c: string, lines: { location: string; units: number }[]) {
     setCode(c);
-    const left = shelvesLeft(c, lines);
-    // One shelf: preselect it. Several: leave it to the operator.
-    setLocation(left.length === 1 ? left[0].location : null);
+    // No location is the default whenever the system shows stock (see the header); a shelf is a deliberate second choice.
+    setLocation(shelvesLeft(c, lines).length > 0 ? NO_STOCK : null);
   }
 
   function addToBasket() {
@@ -300,7 +300,7 @@ export default function ShopSalePage() {
             type="button"
             disabled={!canAdd}
             onClick={addToBasket}
-            className="rounded-md bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-semibold text-slate-800 transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400 disabled:hover:bg-white"
           >
             Add to basket
           </button>
@@ -350,7 +350,7 @@ export default function ShopSalePage() {
                       {l.detail}
                       {l.code && (
                         <span className="text-slate-400">
-                          {' · '}{l.location === NO_STOCK ? 'no location' : l.location ? `from ${l.location}` : 'none on the system'}
+                          {' · '}{l.location === NO_STOCK ? 'no location, count unchanged' : l.location ? `off shelf ${l.location}` : 'none on the system'}
                         </span>
                       )}
                     </div>
@@ -407,7 +407,7 @@ export default function ShopSalePage() {
                   type="button"
                   disabled={!canRecord}
                   onClick={record}
-                  className="rounded-md bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   {saving ? 'Recording…' : `Record sale${basket.length > 1 ? ` · ${basket.length} items` : ''}`}
                 </button>
@@ -438,10 +438,10 @@ export default function ShopSalePage() {
                           type="button"
                           onClick={() => pickSize(z.code, z.lines)}
                           className={`min-w-[3.5rem] rounded-md border px-3 py-2 text-center text-sm transition ${
-                            on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-800 hover:border-brand-500'}`}
+                            on ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-300 bg-white text-slate-800 hover:border-slate-500'}`}
                         >
                           <div className="font-semibold">{z.size}</div>
-                          <div className={`text-xs ${on ? 'text-brand-100' : 'text-slate-400'}`}>{freeLeft(z.code, z.free)}</div>
+                          <div className={`text-xs ${on ? 'text-slate-300' : 'text-slate-400'}`}>{freeLeft(z.code, z.free)}</div>
                         </button>
                       );
                     })}
@@ -450,20 +450,32 @@ export default function ShopSalePage() {
                 {hasStock && (
                   <div>
                     <div className="mb-2 text-sm font-medium text-slate-700">Taken from</div>
-                    <div className="flex flex-wrap gap-2">
-                      {[...shelves, { location: NO_STOCK, units: 0 }].map((l) => {
+                    <button
+                      type="button"
+                      onClick={() => setLocation(NO_STOCK)}
+                      className={`flex w-full max-w-sm items-start gap-3 rounded-md border px-4 py-2.5 text-left transition ${
+                        location === NO_STOCK ? 'border-slate-800 bg-slate-50' : 'border-slate-300 bg-white hover:border-slate-500'}`}
+                    >
+                      <span className={`mt-1 h-4 w-4 shrink-0 rounded-full border-2 ${
+                        location === NO_STOCK ? 'border-slate-800 bg-slate-800 ring-2 ring-inset ring-white' : 'border-slate-400'}`} />
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900">No location</span>
+                        <span className="block text-xs text-slate-500">Already out of its location — the stock count isn&apos;t changed</span>
+                      </span>
+                    </button>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-500">or take it off a shelf:</span>
+                      {shelves.map((l) => {
                         const on = l.location === location;
                         return (
                           <button
                             key={l.location}
                             type="button"
                             onClick={() => setLocation(l.location)}
-                            className={`rounded-md border px-3 py-1.5 text-sm transition ${
-                              on ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-brand-500'}`}
+                            className={`rounded-md border px-2.5 py-1 text-xs transition ${
+                              on ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-300 bg-white text-slate-600 hover:border-slate-500'}`}
                           >
-                            {l.location === NO_STOCK ? 'No location' : (
-                              <>{l.location} <span className={on ? 'text-brand-100' : 'text-slate-400'}>({l.units})</span></>
-                            )}
+                            {l.location} <span className={on ? 'text-slate-300' : 'text-slate-400'}>({l.units})</span>
                           </button>
                         );
                       })}
