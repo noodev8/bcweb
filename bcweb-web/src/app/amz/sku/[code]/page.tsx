@@ -60,6 +60,8 @@ function DrillContent() {
   const backLabel = (() => {
     if (!backTo || backTo === '/amz') return 'Amazon Pricing';
     if (backTo.startsWith('/amz/find')) return 'Search';
+    if (backTo.startsWith('/amz/due-cards')) return 'Due cards';
+    if (backTo.startsWith('/amz/search-cards')) return 'Search cards';
     // Reached from outside the Amazon segment lists (e.g. an Analytics screen linked straight in) — a plain readable name, no mode.
     if (!backTo.startsWith('/amz/')) return prettyPathLabel(backTo);
     const [path, qs = ''] = backTo.split('?');

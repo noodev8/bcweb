@@ -145,9 +145,13 @@ export default function AmzBuyBoxDeckPage() {
   }, []);
 
   // A snapshot: nothing refetches by itself, so the deck doesn't reshuffle while you work. Refresh reloads it; each mood is its own key.
-  const { data, error: loadError, isLoading, refresh } = useApiQuery(hydrated ? ['amz-buybox-deck', mood] : null, () => getAmzBuyBoxDeck(mood), {
-    revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false,
+  const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(hydrated ? ['amz-buybox-deck', mood] : null, () => getAmzBuyBoxDeck(mood), {
+    revalidateOnFocus: false, revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
   });
+  // FRESH ON EVERY OPEN (owner, 2026-11-13: Daily said 8 due, the screen showed 0 until Refresh — a copy from an earlier visit).
+  // revalidateOnMount reads again on every open; until that read is in, nothing shows, so a card is never priced from the old copy.
+  // Nothing refetches while you work (focus / reconnect off), so the list still stays put.
+  const data = isLoading ? undefined : raw;
 
   const [done, setDone] = useState<Map<string, Done>>(() => new Map());
   const [cur, setCur] = useState<Partial<Record<AmzDeckKind, string>>>({});

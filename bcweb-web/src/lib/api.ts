@@ -559,6 +559,45 @@ export function getAmzNotSellingDue() {
   return request<number>({ url: '/amz-all-list', method: 'GET', params: { limit: 1, half: 'review' } }, (b) => Number(b.total) || 0);
 }
 
+// PRICE CARDS (components/AmzPriceCards, owner 2026-11-13): a size with what a card shows (server /amz-all-list ?cards=1).
+//   Due cards    (/amz/due-cards)    the Not selling · due sizes.
+//   Search cards (/amz/search-cards) every size the Amazon Pricing search matches, due or not, nothing hidden (?q=).
+export interface AmzPriceCard extends AmzWinnerRow {
+  imagename: string | null;
+  u12: number;                                                  // Amazon pairs sold, 12 months
+  breakeven: number | null; walk: number | null;                // profit £0 / the £3 walk-away price (null = no cost)
+  profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound × price + at_zero
+  profit_now: number | null;
+  // A Buy Box move in the chosen mood (search cards only): the Buy Box cards' suggestion, shown — never applied by itself.
+  bb_suggest?: number | null; bb_suggest_note?: string | null; bb_deck?: AmzDeckKind | null;
+}
+export function getAmzDueCards() {
+  return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, half: 'review', cards: 1 } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
+  );
+}
+export function getAmzSearchCards(q: string, mood: AmzMood) {
+  return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, parked: 'include', cards: 1, q, mood } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
+  );
+}
+// The Amazon Pricing home's SEARCH CARD: how many sizes the search matches and how they split — due (worked by review date), a Buy Box
+// move (a card in Chilled), the rest not due. Counted from the plain list rows (no card figures), split by the server's own flags.
+export function getAmzSearchSummary(q: string) {
+  return request<{ q: string; total: number; due: number; moves: number; notDue: number }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, parked: 'include', q } },
+    (b) => {
+      const rows: AmzWinnerRow[] = b.rows || [];
+      const due = rows.filter((r) => !r.parked).length;
+      const moves = rows.filter((r) => r.parked && r.bb_card).length;
+      const total = Number(b.total) || 0;
+      return { q, total, due, moves, notDue: Math.max(0, total - due - moves) };
+    }
+  );
+}
+
 // The Amazon twin — every amzfeed SKU whose style carries the status, 0 FBA included, same row shape as getAmzWinners (units = 30d).
 // `bar` works as on getStatusList (WINNERS only, a dial mark, on the stamped revenue).
 export function getAmzStatusList(status: string, bar?: number | null) {
@@ -1002,9 +1041,9 @@ export function markAmzUploaded(ids: number[]) {
 
 // Amazon Pricing — batch "mark reviewed" (W-A2). Parks a selection of SKUs left UNCHANGED (no price applied) so they drop off the
 // winners/losers queue and the derived Amazon segment clock advances. Returns how many rows were parked + the review date set.
-export function markAmzReviewed(codes: string[], reviewDays: number) {
+export function markAmzReviewed(codes: string[], reviewDays: number, note?: string) {
   return request<{ updated: number; nextReview: string | null }>(
-    { url: '/amz-review', method: 'POST', data: { codes, reviewDays } },
+    { url: '/amz-review', method: 'POST', data: { codes, reviewDays, ...(note ? { note } : {}) } },
     (b) => ({ updated: b.updated, nextReview: b.nextReview ?? null })
   );
 }

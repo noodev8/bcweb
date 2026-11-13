@@ -215,13 +215,25 @@ function answerFor(r, mood) {
 }
 
 /**
- * The deck for `mood`. answersOnly = stop after the answers (step 3) — no cards built: what utils/amzDue.js needs to decide Amazon
- * "due" (PLAN.md decision 26), without the card queries.
+ * SEARCH (owner, 2026-11-13: "how can I just look at Caprice and see the cards for it?"): any text — brand, style name, groupid or SKU
+ * — narrows the deck to the sizes whose `code groupid title brand` contains it (case ignored; the same haystack as Sizes at Amazon's
+ * search box). Applied to the in-stock sizes BEFORE they are answered, so the counts, the answers and the cards all agree with it.
+ * Empty = everything. The rules for a size don't change — a filter only narrows which sizes are looked at.
  */
-async function readDeck(db, { mood: moodIn, answersOnly = false } = {}) {
+function matchesSearch(r, q) {
+  if (!q) return true;
+  return `${r.code} ${r.groupid || ''} ${r.title || ''} ${r.brand || ''}`.toLowerCase().includes(q);
+}
+
+/**
+ * The deck for `mood`. answersOnly = stop after the answers (step 3) — no cards built: what utils/amzDue.js needs to decide Amazon
+ * "due" (PLAN.md decision 26), without the card queries. q = the search (matchesSearch) — screens only; amzDue never passes it.
+ */
+async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '' } = {}) {
   const mood = normMood(moodIn);
+  const q = typeof qIn === 'string' ? qIn.trim().toLowerCase() : '';
   const screen = await readScreen(db);
-  const live = screen.rows.filter((r) => r.live > 0);          // IN STOCK ONLY (decision 13)
+  const live = screen.rows.filter((r) => r.live > 0 && matchesSearch(r, q));   // IN STOCK ONLY (decision 13), then the search
   const liveCodes = live.map((r) => r.code);
 
   // NEW + NOT-FOR-THIS-SCREEN facts, one query for every in-stock size: the landing date (first history day live, or a ledger day
@@ -299,7 +311,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false } = {}) {
     a.reasons[x.reason] = (a.reasons[x.reason] || 0) + 1;
     answerOf[x.r.code] = [x.answer, x.reason];
   }
-  if (answersOnly) return { mood, answers, answer_of: answerOf, in_stock: live.length, last_all: screen.last_all };
+  if (answersOnly) return { mood, q, answers, answer_of: answerOf, in_stock: live.length, last_all: screen.last_all };
 
   // 4) the cards — the ready ones, with what the card shows.
   const picked = all.filter((x) => x.reason === 'ready');
@@ -402,7 +414,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false } = {}) {
 
   const counts = Object.fromEntries(TABS.map((t) => [t, cards.filter((c) => c.deck === t).length]));
   return {
-    mood, cards, counts, answers, answer_of: answerOf, in_stock: live.length,
+    mood, q, cards, counts, answers, answer_of: answerOf, in_stock: live.length,
     last_all: screen.last_all, running: screen.running,
   };
 }
@@ -442,5 +454,5 @@ function pressFields(b) {
 
 module.exports = {
   MOODS, DEFAULT_MOOD, TABS, ANSWERS, RAISE_CAP, OVER_CHEAPER_CAP, SELF_POST_PREMIUM, NEW_DAYS, LEAVE_BACK_DAYS, REVIEW_DAYS,
-  PRESS_KEEP_MONTHS, cheaperRival, suggest, suggestNew, answerFor, profitLine, readDeck, recordPress, pressFields,
+  PRESS_KEEP_MONTHS, cheaperRival, suggest, suggestNew, answerFor, profitLine, matchesSearch, readDeck, recordPress, pressFields,
 };

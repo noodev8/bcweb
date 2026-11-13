@@ -32,9 +32,20 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
 
 Requires auth.
 =======================================================================================================================================
-Request: GET /amz-all-list[?parked=include][&half=review][&limit=N]
+Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&cards=1]
   limit    safety cap only (utils/listLimit.js, default 100 / max 500).
   half     review = only the sizes the Buy Box doesn't answer (the review-date half).
+  q        the search (owner, 2026-11-13 — "search for Caprice, see the count, press it and get the cards one by one"): only rows whose
+           SKU, groupid, name or brand contain it; `total` counts the search. THE match: utils/amzBuyBoxDeck.js → matchesSearch. Used
+           by the Amazon Pricing home's search card (with parked=include: due, Buy Box moves and not due) and its search cards.
+  cards    1 = PRICE CARDS (components/AmzPriceCards — Due cards and search cards, owner 2026-11-13: "the usual price change screen but
+           reduced to cards"): each row also carries what a card shows — imagename, u12 (Amazon pairs, 12 months), breakeven, walk
+           (the £3 walk-away, amzPricingStandard SETTINGS.WALK_AWAY_PROFIT — the Buy Box cards' floor), profit_line (profit a pair =
+           per_pound × price + at_zero, utils/amzBuyBoxDeck.js → profitLine, so a typed price is priced without a second copy of the
+           formula), profit_now. One query for the returned rows. Display only — nothing here blocks a price.
+           With q, a size that has a Buy Box card in ?mood= (default chilled) also carries that card's suggestion — bb_suggest,
+           bb_suggest_note, bb_deck (new / raise / cut) — from utils/amzBuyBoxDeck.js → readDeck (the same rules as the Buy Box
+           cards, never a second copy). Shown on the search card with a "Use it" button; never applied by itself.
 
 Success Response:
 {
@@ -62,6 +73,9 @@ const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const { readBuyBoxSide, dueBy, buyBoxMoves } = require('../utils/amzDue');
+const { matchesSearch, profitLine, readDeck } = require('../utils/amzBuyBoxDeck');
+const { amzProfit, priceForProfit, breakevenPrice } = require('../utils/amzProfit');
+const { SETTINGS } = require('../utils/amzPricingStandard');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -73,6 +87,9 @@ router.get('/', async (req, res) => {
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';
     const reviewHalf = req.query.half === 'review';
+    const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100).trim().toLowerCase() : '';
+    const withCards = req.query.cards === '1';
+    const mood = typeof req.query.mood === 'string' ? req.query.mood : undefined;   // readDeck normalises (anything else = chilled)
 
     // Every member is read (no SQL limit, no Due filter) because "due" is decided below in JS by THE rule (utils/amzDue.js) — the
     // Buy Box half needs the stored reading's answers. ~700 rows; the safety cap is applied after.
@@ -125,7 +142,8 @@ router.get('/', async (req, res) => {
     const side = await readBuyBoxSide(pool);
     const judged = result.rows.map((r) => ({ r, d: dueBy(side, r.code, r.review_parked !== true) }))
       .filter((x) => !reviewHalf || x.d.by === 'review')
-      .filter((x) => includeParked || x.d.due);
+      .filter((x) => includeParked || x.d.due)
+      .filter((x) => matchesSearch(x.r, q));
     // Due before not-due, so the safety cap can only ever trim not-due rows: with the status rows the list passed 500 (2026-10-28)
     // and the 0-stock due SKUs, sorting last, were cut — Daily counted them, the list didn't show them. Stable: stock order kept.
     judged.sort((a, b) => Number(b.d.due) - Number(a.d.due));
@@ -159,6 +177,39 @@ router.get('/', async (req, res) => {
       bb_holder: r.bb_holder || null,
       bb_read_at: r.bb_read_at || null,
     }));
+
+    // CARDS (header, ?cards=1): the card's economics and picture for the returned rows, in one query.
+    if (withCards && rows.length) {
+      const econ = (await query(
+        `SELECT a.code, a.fbafee, sk.cost, sk.tax, sk.imagename,
+                (SELECT COALESCE(SUM(s.qty), 0) FROM sales s WHERE s.channel = 'AMZ' AND s.code = a.code AND s.qty > 0
+                   AND s.solddate >= CURRENT_DATE - 365)::int AS u12
+         FROM amzfeed a JOIN skusummary sk ON sk.groupid = a.groupid
+         WHERE a.code = ANY($1)`, [rows.map((r) => r.code)])).rows;
+      const econOf = Object.fromEntries(econ.map((e) => [e.code, e]));
+      for (const row of rows) {
+        const e = econOf[row.code];
+        if (!e) continue;
+        const ec = { cost: e.cost, fbafee: e.fbafee, tax: e.tax };
+        row.imagename = e.imagename || null;
+        row.u12 = Number(e.u12) || 0;
+        row.breakeven = breakevenPrice(ec);
+        row.walk = priceForProfit(ec, SETTINGS.WALK_AWAY_PROFIT);
+        row.profit_line = profitLine(ec);
+        row.profit_now = row.price === null ? null : amzProfit({ ...ec, price: row.price }).profit;
+      }
+      // The Buy Box cards' suggestion for the search's sizes (header) — the deck read narrowed to the same search.
+      if (q) {
+        const deck = await readDeck(pool, { mood, q });
+        const cardOf = Object.fromEntries(deck.cards.map((c) => [c.code, c]));
+        for (const row of rows) {
+          const c = cardOf[row.code];
+          row.bb_suggest = c ? c.suggest : null;
+          row.bb_suggest_note = c ? c.suggest_note : null;
+          row.bb_deck = c ? c.deck : null;
+        }
+      }
+    }
 
     // DONE TODAY (owner, 2026-11-13: "an indicator or tick to say done today") — Daily's ticks, sizes worked since UK midnight:
     //   buybox = sizes Set or Left on a card (amz_buybox_press; an Undo isn't work);

@@ -106,13 +106,13 @@ function BuyBoxBySize() {
   // While a read is running (ours, another person's or the cron's) the page follows its progress every 3 s and picks up the new
   // readings when it ends; otherwise nothing refetches by itself — the readings only change on a read.
   const { data, error: loadError, isLoading, refresh } = useApiQuery(['amz-buybox'], () => getAmzBuyBox(), {
-    revalidateIfStale: false, revalidateOnReconnect: false,
+    revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
     refreshInterval: (d) => (d?.running ? 3000 : 0),
   });
   const running = data?.running ?? null;
   // THE ANSWERS for the mood — the same key as the home's, so the counts match it.
   const { data: deck } = useApiQuery(['amz-buybox-answers', mood, data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(mood), {
-    revalidateIfStale: false, revalidateOnReconnect: false,
+    revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
   });
 
   const [answer, setAnswer] = useState<AmzAnswer | null>(null);
