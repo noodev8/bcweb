@@ -76,11 +76,11 @@ export default function AmzTeamWeek() {
               <thead>
                 <tr className="border-b border-slate-200 text-xs text-slate-500">
                   <th className="py-1 text-left font-medium">Person</th>
-                  <th className="py-1 text-right font-medium" title="Shown to more views after a cut that reached the lead price">Won back</th>
-                  <th className="py-1 text-right font-medium" title="Raised, and still shown to the same views or more">Raises kept</th>
-                  <th className="py-1 text-right font-medium" title="Extra profit on the pairs sold at the raised price since (today's cost and FBA fee)">Extra profit</th>
-                  <th className="py-1 text-right font-medium" title="For context only, not the score">Price changes</th>
-                  <th className="py-1 text-right font-medium" title="Waiting for the next reading, or made before the Buy Box readings began / on a size with no rival">Not judged</th>
+                  <th className="py-1 text-right font-medium">Won back</th>
+                  <th className="py-1 text-right font-medium">Raises kept</th>
+                  <th className="py-1 text-right font-medium">Extra profit</th>
+                  <th className="py-1 text-right font-medium">Price changes</th>
+                  <th className="py-1 text-right font-medium">Not judged</th>
                 </tr>
               </thead>
               <tbody>
@@ -91,13 +91,12 @@ export default function AmzTeamWeek() {
                     <td className="py-1.5 text-right text-base font-semibold tabular-nums text-slate-900">{p.raises_kept}</td>
                     <td className="py-1.5 text-right tabular-nums text-slate-700">
                       {p.kept_profit > 0 ? <span className="text-emerald-700">+{money(p.kept_profit)}</span>
-                        : p.raises_kept > 0 && p.kept_pairs === 0 ? <span className="text-xs text-slate-400" title="Counted from booked sales at the raised price — none yet">none sold yet</span>
+                        : p.raises_kept > 0 && p.kept_pairs === 0 ? <span className="text-xs text-slate-400">none sold yet</span>
                         : '—'}
                       {p.kept_pairs > 0 && <span className="text-xs text-slate-400"> · {p.kept_pairs} pairs</span>}
                     </td>
-                    <td className="py-1.5 text-right tabular-nums text-slate-400" title={`${p.cuts} down · ${p.raises} up · ${p.holds} held at the same price`}>{p.changes}</td>
-                    <td className="py-1.5 text-right tabular-nums text-slate-400"
-                      title={`${p.waiting} waiting for the next reading · ${p.superseded} changed again first · ${p.not_judged} before the readings began or no rival`}>
+                    <td className="py-1.5 text-right tabular-nums text-slate-400">{p.changes}</td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-400">
                       {p.waiting + p.superseded + p.not_judged || '—'}
                     </td>
                   </tr>

@@ -123,16 +123,13 @@ export default function AmazonPricingHome() {
               const s = answers?.[a.key];
               const ready = s?.ready ?? 0;
               return (
-                <Tile key={a.key} rule={a.rule} dot={a.dot} label={a.label} n={s ? ready : null}
+                <Tile key={a.key} dot={a.dot} label={a.label} n={s ? ready : null}
                   under={`of ${s?.total ?? 0} in ${a.label}${a.key === 'new' ? ' · the mood doesn’t change it' : ''}`}
-                  href={ready > 0 ? `/amz/buybox/deck?g=${a.key}&mood=${mood}` : null} btn="Price →"
-                  btnTitle="One size at a time, one suggested move — in the mood chosen above" />
+                  href={ready > 0 ? `/amz/buybox/deck?g=${a.key}&mood=${mood}` : null} btn="Price →" />
               );
             })}
-            <Tile rule="Sold nothing on Amazon in 30 days, on its way in, or out of stock — another seller isn’t the reason. Priced from the list when its review date comes round."
-              dot="bg-slate-400" label="Not selling · due" n={notSelling ?? null} under="by review date — in any mood"
-              href={notSelling ? '/amz/due-cards' : null} btn="Price →"
-              btnTitle="One size at a time — up / down, Set or Leave, a review date" />
+            <Tile dot="bg-slate-400" label="Not selling · due" n={notSelling ?? null} under="by review date — in any mood"
+              href={notSelling ? '/amz/due-cards' : null} btn="Price →" />
           </div>
         </section>
 
@@ -142,12 +139,12 @@ export default function AmazonPricingHome() {
           <div className={GRID}>
             <SearchTile search={search} onSearch={setSearch} found={found ?? null} counting={counting}
               href={found && found.total > 0 ? `/amz/search-cards?q=${encodeURIComponent(found.q)}&mood=${mood}` : null} />
-            <Tile rule="The full list of the not-selling sizes — its Due switch, bulk moves and review dates" dot="bg-slate-400"
+            <Tile dot="bg-slate-400"
               label="Not selling list" n={notSelling ?? null} unit="due" under="bulk moves · review dates"
-              href="/amz/all?by=all&half=review" btn="Open →" btnTitle="The list of these sizes — its Due switch, bulk moves and review dates" />
-            <Tile rule="Who Amazon shows on each size — the sizes on their way in are there too (search)" dot="bg-slate-400"
+              href="/amz/all?by=all&half=review" btn="Open →" />
+            <Tile dot="bg-slate-400"
               label="Sizes at Amazon" n={deck?.in_stock ?? null} unit="in stock" under="who Amazon shows on each size"
-              href={`/amz/buybox?mood=${mood}`} btn="Open →" btnTitle="Who Amazon shows on each size" />
+              href={`/amz/buybox?mood=${mood}`} btn="Open →" />
           </div>
         </section>
       </div>
@@ -156,11 +153,11 @@ export default function AmazonPricingHome() {
 }
 
 // One tile: the count (big) and what it counts (`unit`), a line under it, and ONE button into the work — or "Nothing to price".
-function Tile({ rule, dot, label, n, unit = 'to price', under, href, btn, btnTitle }: {
-  rule: string; dot: string; label: string; n: number | null; unit?: string; under: string; href: string | null; btn: string; btnTitle: string;
+function Tile({ dot, label, n, unit = 'to price', under, href, btn }: {
+  dot: string; label: string; n: number | null; unit?: string; under: string; href: string | null; btn: string;
 }) {
   return (
-    <div title={rule} className={'grid grid-cols-[1fr_auto] items-center gap-x-3 rounded-xl border border-slate-200 px-4 py-3 sm:grid-cols-1 sm:gap-y-0.5'}>
+    <div className={'grid grid-cols-[1fr_auto] items-center gap-x-3 rounded-xl border border-slate-200 px-4 py-3 sm:grid-cols-1 sm:gap-y-0.5'}>
       <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
         <span className={`inline-block h-2.5 w-2.5 rounded-full ${dot}`} /> {label}
       </div>
@@ -170,7 +167,7 @@ function Tile({ rule, dot, label, n, unit = 'to price', under, href, btn, btnTit
       </div>
       <div className="col-start-1 hidden text-xs tabular-nums text-slate-400 sm:block">{under}</div>
       {href ? (
-        <Link href={href} title={btnTitle} className={`${PRICE_BTN} bg-white font-semibold text-slate-800 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 hover:ring-slate-400`}>{btn}</Link>
+        <Link href={href} className={`${PRICE_BTN} bg-white font-semibold text-slate-800 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 hover:ring-slate-400`}>{btn}</Link>
       ) : (
         <span className={`${PRICE_BTN} bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-200`}>Nothing to price</span>
       )}
@@ -186,7 +183,7 @@ function SearchTile({ search, onSearch, found, counting, href }: {
   const typed = search.trim() !== '';
   const n = !typed ? null : found ? found.total : null;
   return (
-    <div title="Any brand, style name or SKU — every size it matches, due or not, one card at a time"
+    <div
       className="grid grid-cols-[1fr_auto] items-center gap-x-3 rounded-xl border border-slate-200 px-4 py-3 sm:grid-cols-1 sm:gap-y-0.5">
       <div className="relative">
         <MagnifyingGlassIcon className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -194,7 +191,7 @@ function SearchTile({ search, onSearch, found, counting, href }: {
           aria-label="Search the Amazon sizes by brand, style or SKU"
           className="h-7 w-full rounded-md border border-slate-300 pl-8 pr-7 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
         {typed && (
-          <button type="button" onClick={() => onSearch('')} aria-label="Clear the search" title="Clear"
+          <button type="button" onClick={() => onSearch('')} aria-label="Clear the search"
             className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded px-1 text-slate-400 hover:text-slate-700">×</button>
         )}
       </div>
@@ -206,7 +203,7 @@ function SearchTile({ search, onSearch, found, counting, href }: {
         {typed && found && found.total > 0 ? `${found.due} due · ${found.moves} Buy Box · ${found.notDue} not due` : 'brand, name or SKU'}
       </div>
       {href && !counting ? (
-        <Link href={href} title="Every size the search found, one card at a time — nothing hidden"
+        <Link href={href}
           className={`${PRICE_BTN} bg-white font-semibold text-slate-800 ring-1 ring-inset ring-slate-300 hover:bg-slate-50 hover:ring-slate-400`}>Price →</Link>
       ) : (
         <span className={`${PRICE_BTN} bg-slate-50 text-slate-400 ring-1 ring-inset ring-slate-200`}>

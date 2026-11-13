@@ -33,10 +33,6 @@ function ago(ms: number | null, now: number): string {
   const d = Math.floor(h / 24);
   return `${d} day${d === 1 ? '' : 's'} ago`;
 }
-function clock(ms: number | null): string {
-  if (ms === null) return '';
-  return new Date(ms).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
 
 export default function AmzBuyBoxReading({ data, msg }: { data: AmzBuyBoxData | undefined; msg?: string | null }) {
   // The clock for "n min ago" — ticks every 30 s. Taken in state, never during a render (react-hooks/purity).
@@ -55,7 +51,7 @@ export default function AmzBuyBoxReading({ data, msg }: { data: AmzBuyBoxData | 
   return (
     <div className="flex flex-col items-end gap-0.5 text-right">
       {data?.headline && data.headline.sizes > 0 && (
-        <div className="flex items-baseline gap-2" title={`Our share of page views, averaged across the ${data.headline.sizes} sizes live at FBA`}>
+        <div className="flex items-baseline gap-2">
           <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{data.headline.avg_share !== null ? `${Math.round(data.headline.avg_share)}%` : '—'}</span>
           <span className="text-sm text-slate-500">of page views show our offer</span>
         </div>
@@ -69,7 +65,7 @@ export default function AmzBuyBoxReading({ data, msg }: { data: AmzBuyBoxData | 
               : <>Reading Amazon… {running.done ?? 0} of {running.total} sizes</>}
           </span>
         ) : data?.last_all ? (
-          <span title={`${clock(lastAllMs)} — read every hour`}>
+          <span>
             Buy Box read <span className={stale ? 'font-medium text-amber-700' : 'text-slate-700'}>{ago(lastAllMs, now)}</span>
             {' '}· {data.last_all.total} sizes
             {stale && <span className="text-amber-700"> — the hourly read may have stopped</span>}
@@ -78,7 +74,7 @@ export default function AmzBuyBoxReading({ data, msg }: { data: AmzBuyBoxData | 
           <span>No Buy Box reading yet — the hourly read fills this in.</span>
         ) : null}
         {lastRun && lastRun.status === 'error' && !running && (
-          <span className="ml-2 text-red-600" title={lastRun.error || ''}>Last read failed: {lastRun.error}</span>
+          <span className="ml-2 text-red-600">Last read failed: {lastRun.error}</span>
         )}
         {msg && <span className="ml-2 text-xs">{msg}</span>}
       </div>

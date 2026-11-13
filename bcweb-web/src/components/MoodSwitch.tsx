@@ -59,7 +59,7 @@ function Face({ mood, size = 'h-7 w-8' }: { mood: AmzMood; size?: string }) {
 export function MoodBadge({ mood }: { mood: AmzMood }) {
   const m = MOODS.find((x) => x.key === mood)!;
   return (
-    <span title={`${m.label} — ${m.sub}. Raise: ${m.raise}. Cut: ${m.cut}.`}
+    <span
       className={`inline-flex shrink-0 items-center gap-1 rounded-md bg-white px-2 py-0.5 text-sm font-medium text-slate-900 shadow-sm ring-2 ${RING[mood]}`}>
       <Face mood={mood} /> {m.label}
     </span>
@@ -73,7 +73,6 @@ export default function MoodSwitch({ mood, onChange, disabled }: { mood: AmzMood
         const on = m.key === mood;
         return (
           <button key={m.key} type="button" onClick={() => onChange(m.key)} disabled={disabled} aria-pressed={on}
-            title={`${m.label} — ${m.sub}. Raise: ${m.raise}. Cut: ${m.cut}.`}
             className={'inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-sm disabled:opacity-50 ' +
               (on ? `bg-slate-50 font-medium text-slate-900 ring-2 ${RING[m.key]}` : 'text-slate-500 hover:bg-slate-50')}>
             <Face mood={m.key} /> {m.label}
@@ -97,7 +96,6 @@ export function MoodCards({ mood, onChange, disabled }: { mood: AmzMood; onChang
         const on = m.key === mood;
         return (
           <button key={m.key} type="button" role="radio" aria-checked={on} onClick={() => onChange(m.key)} disabled={disabled}
-            title={`${m.label} — ${m.sub}. Raise: ${m.raise}. Cut: ${m.cut}.`}
             className={'relative flex flex-col items-center gap-1 rounded-xl border px-2 py-3 text-center transition disabled:opacity-50 sm:flex-row sm:items-center sm:gap-4 sm:px-4 sm:text-left ' +
               (on ? `border-transparent bg-white shadow-sm ring-2 ${RING[m.key]}` : 'border-slate-200 bg-slate-50 hover:bg-white')}>
             <Face mood={m.key} size="h-12 w-14 shrink-0 sm:h-16 sm:w-20" />

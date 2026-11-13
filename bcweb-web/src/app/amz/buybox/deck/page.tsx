@@ -61,7 +61,6 @@ import StyleThumb from '@/components/StyleThumb';
 import PriceLadder from '@/components/PriceLadder';
 import { MoodBadge } from '@/components/MoodSwitch';
 import { applyAmzPrice, getAmzBuyBoxDeck, leaveAmzBuyBox, type AmzBuyBoxFeatured, type AmzDeckCard, type AmzDeckKind, type AmzMood, type AmzSendOutcome } from '@/lib/api';
-import { reasonLabel } from '@/lib/buyboxAnswers';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useAuth } from '@/contexts/AuthContext';
@@ -173,7 +172,6 @@ export default function AmzBuyBoxDeckPage() {
 
   // The tab: the link's, else New when it has cards (the guide: "Go through first, starting with the New tab"), else Raise.
   const deck: AmzDeckKind = gWanted ?? ((data?.counts?.new ?? 0) > 0 ? 'new' : 'raise');
-  const meta = DECKS.find((d) => d.key === deck)!;
 
   const cards = useMemo(() => (data?.cards ?? []).filter((c) => c.deck === deck), [data, deck]);
   const open = cards.filter((c) => !done.has(c.code));
@@ -258,8 +256,6 @@ export default function AmzBuyBoxDeckPage() {
 
   const lastSet = setOrder.length ? setOrder[setOrder.length - 1] : null;
   const readMs = toMs(data?.last_all?.finished_at);
-  // This tab's sizes with no card, by reason (waiting, or no move) — the footnote.
-  const waiting = Object.entries(data?.answers?.[deck]?.reasons ?? {}).filter(([k, n]) => k !== 'ready' && n > 0);
   const setCount = cards.filter((c) => done.get(c.code)?.kind === 'set').length;
   const leftCount = cards.filter((c) => done.get(c.code)?.kind === 'left').length;
 
@@ -349,26 +345,10 @@ export default function AmzBuyBoxDeckPage() {
               </div>
             )}
 
-            {/* 6 UNDER THE CARD — the last result as ONE quiet line (a ✓ and Undo; red / amber TEXT, never a coloured bar), in a fixed
-                slot so nothing above moves when it appears. Then what isn't on a card, in one line. */}
-            <div className="flex h-6 min-w-0 items-center gap-2.5 whitespace-nowrap text-sm" title={msg?.text}>
-              {msg && (
-                <>
-                  {msg.tone === 'ok' && <span className="font-bold text-emerald-600">✓</span>}
-                  <span className={'min-w-0 truncate ' + (msg.tone === 'err' ? 'text-red-600' : msg.tone === 'warn' ? 'text-amber-700' : 'text-slate-600')}>{msg.text}</span>
-                  {msg.undo && done.get(msg.undo)?.kind === 'set' && (
-                    <button type="button" onClick={() => undo(msg.undo!)} disabled={busy}
-                      className="inline-flex shrink-0 items-center gap-1 text-brand-700 underline disabled:opacity-50">
-                      <ArrowUturnLeftIcon className="h-3.5 w-3.5" /> Undo
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-            <p className="truncate text-xs text-slate-400" title={waiting.map(([k, n]) => `${n} ${reasonLabel(k).toLowerCase()}`).join(' · ') || undefined}>
-              {waiting.length > 0 && <>{meta.label}, not on a card: {waiting.map(([k, n]) => `${n} ${reasonLabel(k).toLowerCase()}`).join(' · ')}. </>}
-              Every size in stock is on <Link href={`/amz/buybox?mood=${mood}`} className="text-brand-700 hover:underline">Sizes at Amazon</Link>.
-            </p>
+            {/* 6 UNDER THE CARD — only a failure shows (owner 2026-11-13: the ✓ / Undo / waiting lines were clutter). */}
+            {msg && msg.tone !== "ok" && (
+              <p className={"text-sm " + (msg.tone === "err" ? "text-red-600" : "text-amber-700")}>{msg.text}</p>
+            )}
           </>
         )}
       </div>

@@ -40,7 +40,6 @@ export function AmzUploadButton() {
   const [menu, setMenu] = useState(false);
   if (pending || (count === 0 && !lastSend && !sending)) return null;
 
-  const failedText = lastSend ? lastSend.failed.map((f) => `${f.code} £${f.price.toFixed(2)}: ${f.message}`).join('\n') : '';
   const resultParts = lastSend
     ? [lastSend.sent ? `${lastSend.sent} sent` : '', lastSend.failed.length ? `${lastSend.failed.length} not sent` : ''].filter(Boolean)
     : [];
@@ -51,7 +50,6 @@ export function AmzUploadButton() {
         lastSend.error
           ? <span className="text-xs font-medium text-red-600">{lastSend.error}</span>
           : <span
-              title={failedText || undefined}
               className={`text-xs font-medium ${lastSend.failed.length ? 'cursor-help text-red-600' : 'text-green-700'}`}
             >
               {resultParts.join(' · ') || 'Nothing to send'}
@@ -62,7 +60,6 @@ export function AmzUploadButton() {
           type="button"
           onClick={send}
           disabled={sending}
-          title="Sends these prices to Amazon now — live within a few minutes"
           // A quiet white control like Repricing's "Update now" (owner, 2026-09-25: "blend the design in"); the count chip carries the weight.
           className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1.5 pl-3 pr-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-60"
         >
@@ -74,7 +71,6 @@ export function AmzUploadButton() {
         <button
           type="button"
           onClick={() => setMenu((v) => !v)}
-          title="Backup: the Seller Central upload file"
           aria-label="More Amazon options"
           className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
         >
