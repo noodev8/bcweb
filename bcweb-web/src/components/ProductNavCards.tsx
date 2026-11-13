@@ -63,7 +63,7 @@ const PRODUCT_TARGET: NavTarget = {
 };
 
 // Grouped by channel (owner, 2026-09-26 — "group shopify with shopify and amazon with amazon"): the general cards first, then a
-// captioned Shopify pair and Amazon pair in the SAME order (Order, Price), so the two channels line up card-for-card. Inside a group
+// captioned Shopify pair and Amazon group (Order, Price; Amazon Price first since 2026-11-13 — owner). Inside a group
 // the label drops the channel word — the caption already says it; the tooltip still names it in full.
 type Group = 'general' | 'Shopify' | 'Amazon';
 const GROUPS: Group[] = ['general', 'Shopify', 'Amazon'];
@@ -106,13 +106,7 @@ const TARGETS: (NavTarget & { group: Group })[] = [
     icon: CurrencyPoundIcon,
     build: (g, from) => `/pricing/style/${encodeURIComponent(g)}?from=${from}`,
   },
-  {
-    group: 'Amazon',
-    label: 'Order',
-    hint: 'Amazon Order — what Amazon needs of this product: what to buy in, and what to send from the local shelf',
-    icon: ClipboardDocumentListIcon,
-    build: (g, from, back) => `/amazon-order?q=${encodeURIComponent(g)}&from=${from}&back=${back}`,
-  },
+  // AMAZON: PRICE FIRST (owner, 2026-11-13: "Can we have Price first?") — Price · Order · Live. Shopify keeps Order · Price.
   {
     group: 'Amazon',
     label: 'Price',
@@ -121,6 +115,13 @@ const TARGETS: (NavTarget & { group: Group })[] = [
     // THE PRICE CARDS for this style (owner, 2026-11-13, from New Additions: "choose a style … and go through the cards"); was the
     // Find list (/amz/find?q=), which Amazon Pricing dropped the same day. ?g= is an exact group id (components/AmzPriceCards).
     build: (g, from, back) => `/amz/search-cards?g=${encodeURIComponent(g)}&from=${from}&back=${back}`,
+  },
+  {
+    group: 'Amazon',
+    label: 'Order',
+    hint: 'Amazon Order — what Amazon needs of this product: what to buy in, and what to send from the local shelf',
+    icon: ClipboardDocumentListIcon,
+    build: (g, from, back) => `/amazon-order?q=${encodeURIComponent(g)}&from=${from}&back=${back}`,
   },
   // SELLER CENTRAL (owner, 2026-11-06: "go to the Amazon web page for a GROUPID to check pricing there directly"). Manage Inventory
   // searched to the group id — our Amazon SKUs carry it (45973-24-38-2610), so every size shows, with Amazon's LIVE price, featured offer

@@ -107,6 +107,7 @@ const NEW_SKUS_SQL = `
          COALESCE(loc.qty, 0) AS local_stock, COALESCE(fba.qty, 0) AS fba_stock, sz.bought,
          -- Amazon (per size)
          (a.code IS NOT NULL) AS on_amz,
+         COALESCE(a.amzlive, 0) AS amz_live,   -- sellable at FBA now, Amazon's own count (New Additions' "not in stock at Amazon" badge)
          -- The CURRENT Amazon price: a change logged since the last import (uploaded, or still pending in the basket) beats the feed —
          -- utils/amzNow.js → AMZ_NOW_CTES. New Additions' bulk % works off this, so two moves before an upload don't both start from
          -- the stale feed price.

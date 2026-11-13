@@ -31,16 +31,21 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     while several are — it acts on one style); Amazon greyed for Birkenstock.
   - MULTI-SELECT LIKE WINDOWS (owner, 2026-11-06: "Allow multi select like windows (Shift and ctrl etc.) Have a cut button that does
     a soft cut"): click = just that row (again = let it go), Ctrl/⌘-click = add / take off one, Shift-click = the range from the
-    last plain/Ctrl click, Ctrl+Shift-click = add the range, Ctrl+A = every row on screen, Esc = none (those two once you've clicked in the list). ?sel=a,b. The bulk bar's
-    CUT soft-cuts the selected rows (the same ?cut= as a row's ×); a PERMANENT REFRESH brings every cut row back, clears the selection
-    and reloads the data (owner, same day: no cut count, no "Reset · n hidden" — "just cut and have a permanent REFRESH").
+    last plain/Ctrl click, Ctrl+Shift-click = add the range, Ctrl+A = every row on screen, Esc = none (those two once you've clicked in the list). ?sel=a,b. CUT
+    soft-cuts the selected rows (the same ?cut= as a row's ×); a PERMANENT REFRESH brings every cut row back, clears the selection
+    and reloads the data (owner, same day: no cut count, no "Reset · n hidden" — "just cut and have a permanent REFRESH"). Both sit
+    at the right end of the sticky product menu (owner, 2026-11-13, when the bulk line under it went: "move the cut and refresh
+    somewhere else and clear that whole line"); no style count.
     Because the bar is sticky, the table header no longer is (two sticky bars fought for the top).
   - A SMALL PICTURE OF THE SHOE beside the group id (owner, same day: "directly in the list if it doesnt drag it" — 56px, no taller
     than the group id + title + tiles, so the rows don't grow). No picture = an empty box, so the codes still line up.
   - NO DROP-DOWN (owner, 2026-11-05: "the dropdown on each style isnt do much for me" — option A). The shortcuts straight to pricing
     stay: the Shopify PRICE opens the Shopify drill; a WHITE TILE opens that size's Amazon drill (both with Prev / Next through this
     list). (The row itself opened the Shopify drill until 2026-11-06; it selects now.)
-    An unsold size with no Amazon listing is a plain white tile, not a link (its amber dot was taken off — owner, 2026-11-05). Stock, sold and the Amazon price per size are in the
+    An unsold size with no Amazon listing is a plain white tile, not a link (its amber dot was taken off — owner, 2026-11-05); since
+    2026-11-13 the row carries a "Not in stock at Amazon" / "n not in stock at Amazon" badge (unsold new sizes with amzLive 0 —
+    owner: "In stock in Amazon is what im interested in"), each such size a tiny grey corner dot, and the menu's Amazon group greys
+    ("Not on Amazon yet") for a style with no size listed. Stock, sold and the Amazon price per size are in the
     tile's tooltip. The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
     the upload file) — git history.
 
@@ -50,7 +55,7 @@ NO DUE SWITCH — A REVIEW COLUMN INSTEAD (owner, 2026-11-06: the team sets long
          Shopify) and the earliest unsold, listed Amazon size — as "now" (passed, today, or never set: the pricing screens read no date
          as due) or "3d"; the tooltip splits it by channel. It sorts, soonest first, which is the "due within a week" view without a
          filter. Blank on a complete style (nothing left to price) or one on neither channel. Display only — dates are set on the
-         drills / bulk bar as before. (The Due switch / ?due=1, option A of 2026-11-05, is gone — git history.)
+         drills as before. (The Due switch / ?due=1, option A of 2026-11-05, is gone — git history.)
          AMAZON GOES BY THE ONE RULE (2026-11-13, server utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26): a size the Buy Box
          answers (selling at FBA, or New — most unsold new sizes once they land) has no date and is left out of the column — it is
          never due, its cards are worked on Amazon Pricing (decision 27); every other size by its review date, as before.
@@ -59,16 +64,10 @@ PREV / NEXT ON THE DRILLS (owner, same day: "price navigation back and forth"): 
          list as it stands (components/DrillListNav) — Shopify: the styles on Shopify in screen order; Amazon: the unsold, listed sizes
          in screen order — and the drill steps through it with ‹ Prev · Next ›.
 
-SOFT CUT + BULK PRICE (owner, 2026-11-06: "a soft cut button which hides away and we action whats left. A reset brings them all back"
-         … "change prices here in bulk. Increase or decrease by a percentage"). Each row has an × that hides it from the screen (?cut=,
-         nothing stored; Refresh brings every row back). What's LEFT after the cuts is what the bulk bar acts on, no ticks:
-           Shopify ± x%: every style left that is on Shopify and still has an unsold new size (a complete style is skipped) — W1, live.
-           Amazon ± x%: every UNSOLD, listed new size of the styles left (owner: "unsold sizes only") — W-A1, into the upload basket.
-         % off the CURRENT price (Amazon: a pending / uploaded change since the last import beats the feed), to the penny, the normal
-         price log with the person and the note "Bulk New Additions ±x%". EACH CHANGED ITEM IS REVIEWED IN 3 DAYS, no choice (owner,
-         2026-11-06 — so it drops off Due and isn't priced again before the move has had a chance; "Can we just set it to 3 days"),
-         and a review date already LATER is kept ("keep the later date" — a deliberate long park isn't undone by a bulk move). Preview then Apply; under cost /
-         break-even and over RRP are flagged, never blocked. components/BulkPercentPrice owns the control.
+SOFT CUT (owner, 2026-11-06: "a soft cut button which hides away and we action whats left. A reset brings them all back"). Each row
+         has an × that hides it from the screen (?cut=, nothing stored; Refresh brings every row back).
+NO BULK PRICE (owner, 2026-11-13: "remove the bulk pricing %. We price elsewhere now" — the drills and Amazon Pricing's cards). The
+         Shopify / Amazon ± x% bar (components/BulkPercentPrice, 3-day review, its only user) is in git history.
 
 VIEW STATE LIVES IN THE URL (owner, 2026-09-26): ?show= ?band= ?sort= ?dir= ?sel= ?cut=, read once into state and written back with
          router.replace from the handlers (never an effect). The back arrow reads ?from= / ?back=.
@@ -84,11 +83,9 @@ import AppShell from '@/components/AppShell';
 import ProductNavCards from '@/components/ProductNavCards';
 import StyleThumb from '@/components/StyleThumb';
 import ListTitle from '@/components/ListTitle';
-import BulkPercentPrice, { movePrice, type BulkPlan, type BulkPlanItem } from '@/components/BulkPercentPrice';
-import { useAuth } from '@/contexts/AuthContext';
 import { saveDrillList, drillListHref } from '@/components/DrillListNav';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { applyAmzPrice, applyPrice, getProcessOverview, type ProcessOtherSize, type ProcessSizeRow } from '@/lib/api';
+import { getProcessOverview, type ProcessOtherSize, type ProcessSizeRow } from '@/lib/api';
 import { isSold } from '@/lib/process';
 
 // Fixed 90-day window (server-side, NEW_DAYS) — a SKU leaves the list 90 days after its first Goods In arrival, sold or not.
@@ -104,14 +101,8 @@ const SHOW_FILTERS = false;
 // THE INTAKE CARDS ARE HIDDEN too (owner, 2026-11-05: "Lets get rid of some noise. The 3 boxes and bars above the list can go"). Kept,
 // not deleted — flip to true to bring them back; while hidden a ?band= in an old link is ignored.
 const SHOW_INTAKES = false;
-// THE BULK PRICE CHANGE'S REVIEW — fixed, no choice (owner, 2026-11-06); a review already later is kept. See the header.
-const BULK_REVIEW_DAYS = 3;
-// Today in London as YYYY-MM-DD (en-CA formats as ISO), and n days on — date strings only, never a Date at local midnight (CLAUDE.md).
+// Today in London as YYYY-MM-DD (en-CA formats as ISO) — date strings only, never a Date at local midnight (CLAUDE.md).
 const londonToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
-function addDaysIso(iso: string, days: number) {
-  const [y, m, d] = iso.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
-}
 // Days from today to a review date (both YYYY-MM-DD). No date = 0, due now — the pricing screens read a missing review as due.
 const isoDay = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
 const daysTo = (review: string | null, today: string) => (review ? Math.round(isoDay(review) - isoDay(today)) : 0);
@@ -238,7 +229,6 @@ function NewAdditionsPageInner() {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('dir') === 'desc' ? 'desc' : 'asc'));
   // THE SOFT CUT — group ids hidden from the screen (?cut=a,b). Nothing stored; Refresh (or a fresh visit) brings them all back.
   const [cut, setCut] = useState<string[]>(() => (searchParams.get('cut') || '').split(',').filter(Boolean));
-  const { logout } = useAuth();
 
   // The URL for a given view. from/back are carried through untouched so this screen's own back arrow survives the round trip.
   const viewUrl = (v: { show: Show; band: BandId | null; sort: SortKey | null; dir: 'asc' | 'desc'; sel: string[]; cut: string[] }) => {
@@ -368,7 +358,7 @@ function NewAdditionsPageInner() {
     </button>
   );
 
-  // WHAT'S ON SCREEN — the sorted list less the soft cuts. The drill lists and the bulk bar act on exactly this.
+  // WHAT'S ON SCREEN — the sorted list less the soft cuts. The drill lists act on exactly this.
   const visibleGroups = useMemo(() => {
     const hidden = new Set(cut);
     return sortedGroups.filter((g) => !hidden.has(g.groupid));
@@ -410,7 +400,7 @@ function NewAdditionsPageInner() {
   };
 
   // CTRL+A selects every row on screen, ESC clears. On the list itself (focusable, so a row click focuses it) — not the whole page,
-  // so Ctrl+A in the bulk % box still selects its text. No effect needed.
+  // so Ctrl+A in any other box still selects its text. No effect needed.
   const onListKey = (e: ReactKeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); setView({ sel: visibleGroups.map((g) => g.groupid) }); }
     else if (e.key === 'Escape') setView({ sel: [] });
@@ -437,69 +427,6 @@ function NewAdditionsPageInner() {
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-
-  // THE BULK PLANS — which rows a ± x% move touches, off what's on screen (see the header).
-  const sign = (p: number) => (p > 0 ? `+${p}` : String(p));
-  const bulkNote = (p: number) => `Bulk New Additions ${sign(p)}%`;
-  // THE REVIEW: 3 days, or null (leave it) when the item is already parked later than that — see the header.
-  const reviewOn = addDaysIso(londonToday(), BULK_REVIEW_DAYS);
-  const reviewFor = (current: string | null) => (current && current > reviewOn ? null : BULK_REVIEW_DAYS);
-  const reviewNote = `Each one reviewed in ${BULK_REVIEW_DAYS} days — one already reviewed later keeps its date.`;
-  const flagFor = (next: number, floor: number | null, rrp: number | null) =>
-    floor !== null && next < floor ? 'BELOW_COST' as const : rrp !== null && next > rrp ? 'ABOVE_RRP' as const : null;
-
-  const planShopify = (p: number): BulkPlan => {
-    const items: BulkPlanItem[] = [];
-    let offShopify = 0, complete = 0, noPrice = 0;
-    for (const g of visibleGroups) {
-      const r = g.sizes[0];
-      if (g.unsold === 0) { complete++; continue; }
-      if (!r.shpLive) { offShopify++; continue; }
-      if (r.shpPrice === null) { noPrice++; continue; }
-      const next = movePrice(r.shpPrice, p);
-      items.push({ key: g.groupid, label: g.groupid, now: r.shpPrice, next, flag: flagFor(next, r.cost, r.rrp), reviewDays: reviewFor(r.shpReview) });
-    }
-    const why = [complete && `${complete} complete`, offShopify && `${offShopify} not on Shopify`, noPrice && `${noPrice} no price`].filter(Boolean);
-    return { items, skipped: why.length ? why.join(', ') : null, reviewNote };
-  };
-  const planAmazon = (p: number): BulkPlan => {
-    const items: BulkPlanItem[] = [];
-    let noPrice = 0;
-    for (const g of visibleGroups) {
-      for (const r of g.sizes) {
-        if (isSold(r) || !r.onAmz) continue;            // unsold, listed sizes only (owner)
-        if (r.amzPrice === null) { noPrice++; continue; }
-        const next = movePrice(r.amzPrice, p);
-        const floor = r.cost !== null && r.amzFbaFee !== null ? r.cost + r.amzFbaFee : null;   // the W-A1 break-even
-        items.push({ key: r.code, label: r.code, now: r.amzPrice, next, flag: flagFor(next, floor, r.rrp), reviewDays: reviewFor(r.amzReview) });
-      }
-    }
-    return { items, skipped: noPrice ? `${noPrice} with no Amazon price` : null, reviewNote };
-  };
-
-  // THE WRITES — the shared W1 / W-A1 routes, one item at a time (every Shopify push and per-item bound runs), each with its review.
-  const applyShopify = async (items: BulkPlanItem[], p: number, onProgress: (done: number) => void) => {
-    let ok = 0, failed = 0, notPushed = 0;
-    for (let i = 0; i < items.length; i++) {
-      const res = await applyPrice(items[i].key, items[i].next, items[i].reviewDays, bulkNote(p));
-      if (res.return_code === 'UNAUTHORIZED') { logout(); throw new Error('Signed out — sign in and check the prices'); }
-      if (res.success && res.data) { ok++; if (res.data.shopify && res.data.shopify.pushed === false) notPushed++; } else failed++;
-      onProgress(i + 1);
-    }
-    await refresh();
-    return `Changed ${ok} on Shopify${notPushed ? ` · ${notPushed} saved but didn't reach Shopify — open and re-Apply` : ''}${failed ? ` · ${failed} failed` : ''}`;
-  };
-  const applyAmazon = async (items: BulkPlanItem[], p: number, onProgress: (done: number) => void) => {
-    let ok = 0, failed = 0, notSent = 0;
-    for (let i = 0; i < items.length; i++) {
-      const res = await applyAmzPrice(items[i].key, items[i].next, bulkNote(p), items[i].reviewDays);
-      if (res.return_code === 'UNAUTHORIZED') { logout(); throw new Error('Signed out — sign in and check the prices'); }
-      if (res.success) { ok++; if (res.data?.amazon && !res.data.amazon.sent) notSent++; } else failed++;
-      onProgress(i + 1);
-    }
-    await refresh();
-    return `Changed ${ok} on Amazon${notSent ? ` · ${notSent} saved but NOT sent to Amazon — Send to Amazon on Amazon Pricing` : ' · sent to Amazon'}${failed ? ` · ${failed} failed` : ''}`;
-  };
 
   const soldPct = pct(totals.sold, totals.skus);
 
@@ -570,34 +497,32 @@ function NewAdditionsPageInner() {
               {/* THE PRODUCT MENU — sticky, acts on the selected row (see the header). Same bar as Inventory's; the page background so rows
                   scrolling under it don't show through. */}
               <div ref={menuRef} className="sticky top-0 z-20 -mx-4 mb-3 border-b border-slate-200 bg-slate-100 px-4 pb-3 pt-1">
-                <ProductNavCards
-                  groupid={menuGroupid}
-                  from={selfUrl}
-                  showProduct
-                  amazonOff={selectedGroup && isBirk(selectedGroup.brand) ? 'Birkenstock — not sold on Amazon' : undefined}
-                />
-              </div>
-
-              {/* THE BULK BAR — what's on screen (less cuts), Cut and Refresh, then Shopify / Amazon ± x% on exactly those rows. */}
-              <div className="mb-3 flex flex-wrap items-start gap-x-8 gap-y-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-                <div className="flex items-center gap-3 pt-1 text-sm text-slate-600">
-                  <span className="tabular-nums">{visibleGroups.length} style{visibleGroups.length === 1 ? '' : 's'}</span>
-                  {/* CUT — the selected rows (Ctrl / Shift-click to pick several). Greyed with nothing picked. */}
-                  <button type="button" onClick={cutSelected} disabled={selectedHere.length === 0}
-                          title="Hide the selected rows — Ctrl / Shift-click to pick several, Ctrl+A for all, Esc for none"
-                          className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-300 disabled:hover:bg-white">
-                    Cut
-                  </button>
-                  {/* REFRESH — always there (owner, 2026-11-06: "a permanent REFRESH button that refreshes the whole screen. Unselect any
-                      items with the refresh"): every cut row back, nothing selected, the data fetched again. No counts on either button. */}
-                  <button type="button" onClick={refreshScreen}
-                          title="Bring every cut row back, clear the selection and reload the list"
-                          className="rounded-md border border-slate-300 bg-white px-2.5 py-0.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50">
-                    Refresh
-                  </button>
+                <div className="flex flex-wrap items-end gap-x-6 gap-y-2">
+                  <ProductNavCards
+                    groupid={menuGroupid}
+                    from={selfUrl}
+                    showProduct
+                    // NOT ON AMAZON YET (owner, 2026-11-13: "no point [clicking to price] if not there yet") — the Amazon group greys
+                    // for a style with no size listed, as it does for Birkenstock.
+                    amazonOff={!selectedGroup ? undefined : isBirk(selectedGroup.brand) ? 'Birkenstock — not sold on Amazon'
+                      : !selectedGroup.sizes.some((r) => r.onAmz) ? 'Not on Amazon yet' : undefined}
+                  />
+                  {/* CUT + REFRESH — at the menu's right end (owner, 2026-11-13: the bulk line went; "the refresh sorts them out"). No
+                      count, no restore. Cut = the selected rows (Ctrl / Shift-click for several), greyed with nothing picked; Refresh
+                      (owner, 2026-11-06: "a permanent REFRESH") = every cut row back, nothing selected, the data fetched again. */}
+                  <div className="ml-auto flex items-center gap-2">
+                    <button type="button" onClick={cutSelected} disabled={selectedHere.length === 0}
+                            title="Hide the selected rows — Ctrl / Shift-click to pick several, Ctrl+A for all, Esc for none"
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none">
+                      Cut
+                    </button>
+                    <button type="button" onClick={refreshScreen}
+                            title="Bring every cut row back, clear the selection and reload the list"
+                            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50">
+                      Refresh
+                    </button>
+                  </div>
                 </div>
-                <BulkPercentPrice channel="shopify" plan={planShopify} apply={applyShopify} disabled={visibleGroups.length === 0} />
-                <BulkPercentPrice channel="amazon" plan={planAmazon} apply={applyAmazon} disabled={visibleGroups.length === 0} />
               </div>
 
               {/* THE QUICK FILTERS — hidden (SHOW_FILTERS); their row only exists when they're shown. */}
@@ -681,6 +606,20 @@ function NewAdditionsPageInner() {
                               <div className="flex items-center gap-1.5">
                                 <span className={'truncate font-mono text-base font-semibold text-slate-900 ' + fade}>{g.groupid}</span>
                                 {done && <CheckIcon className="h-5 w-5 shrink-0 text-emerald-600" aria-label="Every new size sold" />}
+                                {/* NOT IN STOCK AT AMAZON BADGE (owner, 2026-11-13: "a badge on the row to make it obvious we havnt sent
+                                    them yet" … "In stock in Amazon is what im interested in"): the unsold new sizes with nothing sellable
+                                    at FBA (amzLive 0 — listed or not) — the whole style, or how many. Small slate tag (colour restraint);
+                                    never on Birkenstock or a complete style. */}
+                                {!done && !isBirk(g.brand) && (() => {
+                                  const unsold = g.sizes.filter((r) => !isSold(r));
+                                  const out = unsold.filter((r) => r.amzLive === 0).length;
+                                  if (out === 0) return null;
+                                  return (
+                                    <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
+                                      {out === unsold.length ? 'Not in stock at Amazon' : `${out} not in stock at Amazon`}
+                                    </span>
+                                  );
+                                })()}
                               </div>
                               <div className={'mt-0.5 truncate text-xs text-slate-500 ' + fade}><span title={g.title || undefined}>{g.title || 'Untitled'}</span></div>
                               <div className={fade}><SizeRun g={g} amzHref={amzHref} onAmz={openAmazon} /></div>
@@ -705,7 +644,7 @@ function NewAdditionsPageInner() {
                             <td className={'whitespace-nowrap border-l border-slate-100 py-3 pl-3 pr-4 align-top ' + fade}>
                               <AmazonCell g={g} />
                             </td>
-                            {/* SOFT CUT — hide this row from the screen (and from the bulk bar). Refresh brings it back. */}
+                            {/* SOFT CUT — hide this row from the screen. Refresh brings it back. */}
                             <td className="border-l border-slate-100 px-2 py-3 text-center align-top">
                               <button type="button" aria-label={`Hide ${g.groupid}`}
                                       onClick={(e) => { e.stopPropagation(); setView({ cut: [...cut, g.groupid], sel: selected.filter((x) => x !== g.groupid) }); }}
@@ -738,19 +677,26 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
       {g.run.map((t) => {
         const state = sizeState(t);
         const r = t.row;
+        // NOT IN STOCK AT AMAZON (owner, 2026-11-13): an unsold new size with nothing sellable at FBA gets a tiny grey corner dot — only
+        // when the style has other unsold sizes in stock there (otherwise the row's badge says the whole style); never Birkenstock.
+        const missing = state === 'todo' && r && r.amzLive === 0 && !isBirk(g.brand) && g.sizes.some((x) => !isSold(x) && x.amzLive > 0);
+        const dot = missing && <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-slate-400" />;
         if (state === 'todo' && r && r.onAmz) {
           return (
-            <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`}
+            <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`} title={missing ? 'Not in stock at Amazon' : undefined}
                   onClick={(e) => { e.stopPropagation(); onAmz(); }}
                   className={tile + SIZE_TILE.todo +
                     ' transition hover:bg-brand-50 hover:ring-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400'}>
               {t.size}
+              {dot}
             </Link>
           );
         }
         return (
-          <span key={t.code} onClick={(e) => e.stopPropagation()} className={tile + SIZE_TILE[state]}>
+          <span key={t.code} onClick={(e) => e.stopPropagation()} className={tile + SIZE_TILE[state]}
+                title={missing ? 'Not in stock at Amazon' : undefined}>
             {t.size}
+            {dot}
           </span>
         );
       })}

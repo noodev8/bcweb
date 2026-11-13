@@ -5209,6 +5209,7 @@ export interface ProcessSizeRow {
   ageDays: number;               // days since then (London date)
   daysLeft: number;              // 90 − ageDays: days before it leaves the list (sold or not)
   localStock: number; fbaStock: number;
+  amzLive: number;   // sellable at FBA now (amzfeed.amzlive) — fbaStock also counts Amazon-bound local pairs
   bought: number;                // pairs booked in on Goods In (every arrival of the SKU)
   onAmz: boolean;                // the size has an amzfeed listing (FBA, 0-stock ones too)
   // PRICE DUE — the pricing screens' own Due. Amazon per SIZE; Shopify per STYLE (the same on each of its sizes).

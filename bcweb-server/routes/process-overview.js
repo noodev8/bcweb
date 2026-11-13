@@ -81,7 +81,7 @@ router.get('/', async (req, res) => {
         code: r.code, groupid: r.groupid, title: r.title, brand: r.brand, size: r.size,
         firstIn: r.first_in, ageDays, daysLeft: NEW_DAYS - ageDays,
         localStock: Number(r.local_stock), fbaStock: Number(r.fba_stock), bought: Number(r.bought),
-        onAmz: r.on_amz === true, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
+        onAmz: r.on_amz === true, amzLive: Number(r.amz_live) || 0, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
         amzDue: r.amz_due === true,
         amzBb: r.amz_bb === true,     // the Buy Box decides this size, not its review date (utils/amzDue.js)
         rrp: money(r.rrp), cost: money(r.cost), amzFbaFee: money(r.amz_fbafee), imagename: r.imagename || null,
