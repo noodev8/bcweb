@@ -6,7 +6,7 @@ Component: MoodSwitch — the Buy Box mood: Fierce · Chilled · Climb (2026-11-
 Three buttons with the owner's cartoon faces (Fierce = a red angry face with a broom, Chilled = sunglasses, Climb = gold, reaching for a
 star — drawn as in the staff guide), Chilled in the middle. The mood is chosen A LEVEL ABOVE THE CARDS (owner, 2026-11-13: "fierce,
 chilled, climb should be a level above the cards. We should drill down into the cards with a mood already chosen"): MoodSwitch sits on
-the Buy Box screen, held in plain React state there (every load starts on Chilled, nothing stored), and Pricing (the cards) is opened with the
+the Amazon Pricing home (/amz — the Buy Box screen until 2026-11-13), held in plain React state there (every load starts on Chilled, nothing stored), and Pricing (the cards) is opened with the
 chosen mood in its link (?mood=) and shows it with MoodBadge — no switch beside the cards. The mood changes raises everywhere and cuts
 outside New (rules in utils/amzBuyBoxDeck.js); the hover says what it does.
 =======================================================================================================================================
@@ -55,7 +55,7 @@ function Face({ mood, size = 'h-7 w-8' }: { mood: AmzMood; size?: string }) {
   );
 }
 
-/** The chosen mood, read only — Pricing (the cards) shows it (the mood is picked a level above, on the Buy Box screen). */
+/** The chosen mood, read only — Pricing (the cards) shows it (the mood is picked a level above, on the Amazon Pricing home). */
 export function MoodBadge({ mood }: { mood: AmzMood }) {
   const m = MOODS.find((x) => x.key === mood)!;
   return (
@@ -87,7 +87,7 @@ export default function MoodSwitch({ mood, onChange, disabled }: { mood: AmzMood
 // The mood colour as text (the chosen card's name) — full class names for Tailwind's scanner.
 const TEXT: Record<AmzMood, string> = { fierce: 'text-red-600', chilled: 'text-blue-600', climb: 'text-amber-600' };
 
-/** STEP 1 on the Buy Box screen (2026-11-13, owner: the faces "should be nice size here as well rather than tucked away"): three big
+/** STEP 1 on the Amazon Pricing home (was the Buy Box screen; 2026-11-13, owner: the faces "should be nice size here as well rather than tucked away"): three big
  *  cards as in the staff guide — a large face, the name, the short line and what it does to raises and cuts. The chosen one gets a
  *  ring in its own colour. Three across on every width; the words under the name drop on a phone. */
 export function MoodCards({ mood, onChange, disabled }: { mood: AmzMood; onChange: (m: AmzMood) => void; disabled?: boolean }) {

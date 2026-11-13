@@ -31,6 +31,10 @@ Key domain rules baked into the SQL:
 Schema landmines respected: amzfeed is FBA-only, READ ONLY. amzprice is a junk-prone VARCHAR -> read via safeNumeric. amzlive is a real
 integer. Size = the code's suffix after the last '-'. Human name from title.shopifytitle (not the overloaded colour tag). Requires auth.
 =======================================================================================================================================
+DUE = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in Chilled
+(selling at FBA, or New) is due when it has a card; every other size when its review date has come round. `parked` keeps its name on
+the wire but means NOT DUE by that rule; `due_by` / `bb_answer` say which half decides. Due rows sort first.
+
 Request Query Params:
   segment    (string)         - the segment to shortlist within — give exactly one of segment / status
   status     (string)         - a portfolio status instead of a segment. Accepted (utils/pricingGroup.js), but the Repricing screen
@@ -72,6 +76,8 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { parseGroup } = require('../utils/pricingGroup');
+const { readBuyBoxSide, sideParams, dueSql } = require('../utils/amzDue');
+const { pool } = require('../database');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -97,7 +103,12 @@ router.get('/', async (req, res) => {
     }
     const includeParked = req.query.parked === 'include';
 
-    // $1 group name, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked.
+    // THE one Amazon due rule (utils/amzDue.js, PLAN.md decision 26): the Buy Box half as two code lists for SQL.
+    const side = await readBuyBoxSide(pool);
+    const sp = sideParams(side);
+    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$7', '$8');
+
+    // $1 group name, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked, $7 Buy Box codes, $8 those with a card.
     // win: units in the window + last-sold per SKU. s7: 7-day units (secondary signal + tiebreak). The INNER JOIN to `win` drops SKUs
     // with no sales in the window; the amzlive>0 filter drops out-of-stock SKUs; LIMIT tops the shortlist back up to N.
     const result = await query(`
@@ -127,7 +138,7 @@ router.get('/', async (req, res) => {
              COALESCE(s7.u7,0) AS u7,
              to_char(w.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             NOT ${DUE} AS parked,                                        -- NOT DUE by THE one Amazon rule (utils/amzDue.js)
              COUNT(*) OVER () AS total_rows              -- full qualifying count: window functions run BEFORE the LIMIT, so this is the
                                                          -- pre-cap total (free — no second round-trip to count)
       FROM amzfeed a
@@ -138,10 +149,10 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t ON t.groupid = a.groupid
       WHERE ${group.column} = $1
         AND COALESCE(a.amzlive,0) > 0                     -- in FBA stock now
-        AND ($6::boolean OR (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE))  -- un-parked only unless ?parked=include (§10.4)
-      ORDER BY w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
+        AND ($6::boolean OR ${DUE})                       -- due only unless ?parked=include (THE one Amazon rule)
+      ORDER BY ${DUE} DESC, w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
       LIMIT $3::int
-    `, [group.name, days, limit, MIN_UNITS, MIN_PROFIT, includeParked]);
+    `, [group.name, days, limit, MIN_UNITS, MIN_PROFIT, includeParked, sp.bb, sp.cards]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -159,7 +170,9 @@ router.get('/', async (req, res) => {
       units: Number(r.units),
       last_sold: r.last_sold || null,
       next_review: r.next_review || null,
-      parked: r.parked === true,   // only ever true with ?parked=include
+      parked: r.parked === true,   // only ever true with ?parked=include — NOT DUE by THE one Amazon rule
+      due_by: side.has(r.code) ? 'buybox' : 'review',
+      bb_answer: side.get(r.code)?.answer ?? null,
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.

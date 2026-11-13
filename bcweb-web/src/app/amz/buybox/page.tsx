@@ -1,33 +1,28 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /amz/buybox  (Pricing — Buy Box)
+Page: /amz/buybox  (SIZES AT AMAZON — the table; was the Buy Box screen until 2026-11-13, then "Buy Box by size" the same day)
 =======================================================================================================================================
-Purpose: Who holds the Buy Box on each of our Amazon sizes, and what to do about it (owner, 2026-11-12; docs/amz-buybox/PLAN.md).
-         Server routes/amz-buybox.js (READ ONLY) + amz-buybox-read.js; THE rules are utils/amzBuyBox.js.
+Purpose: Where we stand on every Amazon size — who Amazon features, at what price, our share of views — for looking things up and checking
+         a reason. Server routes/amz-buybox.js (READ ONLY) + amz-buybox-read.js; THE rules are utils/amzBuyBox.js.
 
-WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12: "is the screen just a result of what we have in our database anyway?" — yes). Opening
-         the screen never asks Amazon: it shows the last stored reading and says how old it is. The cron reads the whole list every hour
-         (owner, 2026-11-12: "It runs every hour. Not sure I need to manually run it?" — Read all now and the "by cron" wording were
-         taken off); the one button is Read this style, on an open row (seconds — after a price change). New / sold-out sizes need nothing: each read takes the sizes in FBA stock at the time.
+MOVED BEHIND A LINK (owner, 2026-11-13, PLAN.md decisions 23–24): the Buy Box screen became the AMAZON PRICING HOME (/amz — the mood,
+         the New / Raise / Cut / Not selling tiles, Team week); this table went to its own page, opened from the home's "Sizes at Amazon
+         →" (owner: "Move it behind a link"). "Buy Box" now names the reading, the % and this table — never a place to price. The
+         headline % and the reading's age show here too (components/AmzBuyBoxReading).
+         RENAMED "SIZES AT AMAZON" (owner, 2026-11-13, asking "Is 'Buy Box by Size' actually all sizes?"): it isn't every Amazon size —
+         only the sizes with stock AT AMAZON (live, or on its way in: what the hourly read covers, utils/amzBuyBox.js → sizesToRead).
+         Sold-out sizes and sizes never sent to FBA aren't on it; Find covers those.
 
-THE LAYOUT (2026-11-13, owner: "Looks clunky too … the mood faces … should be nice size here as well rather than tucked away"):
-         the screen reads in the order the job is done. Title row: "Buy Box", with the headline % and how old the reading is on its
-         right. Team week (one collapsed line, laptop only). STEP 1 TODAY'S MOOD — three big mood cards (components/MoodSwitch →
-         MoodCards, the faces from the staff guide). STEP 2 PRICE — New / Raise / Cut as tiles: the cards ready (big), "of n" under it,
-         and a "Price n →" button into PRICING (/amz/buybox/deck, the cards — on screen "Pricing", was "Go through" until 2026-11-13,
-         owner: "We are pricing here") in the chosen mood; Leave and Not for this screen sit quietly beside them as "No price needed";
-         one bar under them adds up to the sizes in stock. STEP 3 SIZES — the list, with its OWN answer tabs (the tiles are for
-         pricing), the reasons, search, then the table (unchanged).
+WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12): opening the page never asks Amazon — it shows the last stored reading and how old it is.
+         The cron reads the whole list every hour; the one button is Read this style, on an open row (seconds — after a price change).
 
-THE ANSWERS (PLAN.md decisions 13–15, 2026-11-12 — replaced the "To do" tiles and the "Where we stand" row; owner: "remove all the
-         other boxes ... that aren't a decision factor"): every size IN STOCK AT AMAZON has ONE answer for the chosen MOOD — New · Raise
-         · Cut · Leave · Not for this screen (utils/amzBuyBoxDeck.js, via GET /amz-buybox-deck). Click an answer's tab for its sizes
-         and its REASONS (the old groups, or why a card waits) — a reason narrows the list. The mood is chosen HERE, a level above the
-         cards (owner, 2026-11-13: "We should drill down into the cards with a mood already chosen"): it starts on Chilled on every
-         load, nothing stored, and the Price buttons carry it (?mood=). Sizes not live at FBA have no answer — search finds them.
+THE ANSWERS: every size IN STOCK AT AMAZON has ONE answer for the MOOD — New · Raise · Cut · Leave · Not selling (utils/amzBuyBoxDeck.js,
+         via GET /amz-buybox-deck). The mood comes from the home's link (?mood=, Chilled when absent) and shows beside the tabs — it is
+         chosen on the home, never here. Click an answer's tab for its sizes and its REASONS (the old groups, or why a card waits) — a
+         reason narrows the list. Sizes not live at FBA have no answer — search finds them.
 
-THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost) are now REASONS:
+THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost) are REASONS:
          Winning, room to go up · Losing, can match · Losing, can't match · No Buy Box · Winning, at the top · Alone.
          The Buy Box price includes postage. "Kept" = our profit a pair at the Buy Box price (at our own price where we hold it); "Walk-away" = the £3-a-pair price.
          SHARE OF VIEWS (owner, 2026-11-12): Amazon splits the Buy Box by customer group, each with a share of page views. "Buy Box"
@@ -36,32 +31,28 @@ THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out f
          it was checked — £31.43 on IVES-WHITE-06 was a rival's price minus 1p without its postage).
          "Room to go up" is measured to the next rival above us — a guess until the history shows how far up the Buy Box holds.
 
-CLEAR (owner, 2026-11-12): no size ever drops off by itself — "it takes away the fact that I can see our position on the screen
-         without having to act". The × clears a row while working (this visit only, nothing stored; counts unchanged; Show all brings
-         them back). And NO review dates on this screen: with an hourly reading, waiting 3–30 days to act on a lost Buy Box makes no
-         sense (owner: "if we are updating EVERY hour, what is the point of not acting for a possible 3, 7 or 30 days?").
+CLEAR (owner, 2026-11-12): no size ever drops off by itself. The × clears a row while working (this visit only, nothing stored; counts
+         unchanged; Show all brings them back). No review dates on this page.
 
-THIS SCREEN WRITES NOTHING. The presses are on PRICING (/amz/buybox/deck), opened by the Price buttons on New / Raise / Cut: one size at a
-         time, one suggested move (utils/amzBuyBoxDeck.js). The row links to the size's Amazon price screen, where a price can be set as
-         usual.
+THIS PAGE WRITES NOTHING. The presses are on PRICING (/amz/buybox/deck), opened from the home. The row links to the size's Amazon price
+         screen, where a price can be set as usual.
 
 TAGS (colour restraint — small solid tags, no row tints): "following us" = a rival at our exact price to the penny (a repricer?) ·
-         "Amazon" = Amazon Retail sells the size · "set £x" = a price was set AFTER the reading (amz_price_log), so the row is out of
-         date for it · "not eligible" (red) = Amazon won't consider OUR offer for the Buy Box at all (IsFeaturedMerchant false, 2026-11-12)
-         — 0% whatever the price, so the fix is in Seller Central. Our price is always what AMAZON showed at the read — not amzfeed, which can lag a day (2026-11-12: 40 sizes looked
-         "changed" because amzfeed still held the price from before changes Amazon had already taken).
+         "Amazon" = Amazon Retail sells the size · "set £x" = a price was set AFTER the reading (amz_price_log) — hidden, SHOW_SET_SINCE ·
+         "not eligible" (red) = Amazon won't consider OUR offer for the Buy Box at all (IsFeaturedMerchant false) — 0% whatever the
+         price, so the fix is in Seller Central. Our price is always what AMAZON showed at the read — not amzfeed, which can lag a day.
 =======================================================================================================================================
 */
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
-import AmzTeamWeek from '@/components/AmzTeamWeek';
-import { MoodCards } from '@/components/MoodSwitch';
-import { getAmzBuyBox, startAmzBuyBoxRead, type AmzAnswer, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzBuyBoxRun, type AmzMood } from '@/lib/api';
+import AmzBuyBoxReading, { toMs } from '@/components/AmzBuyBoxReading';
+import { MoodBadge } from '@/components/MoodSwitch';
+import { getAmzBuyBox, getAmzBuyBoxDeck, startAmzBuyBoxRead, type AmzAnswer, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzMood } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getAmzBuyBoxDeck } from '@/lib/api';
 import { ANSWERS, reasonLabel } from '@/lib/buyboxAnswers';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -80,9 +71,6 @@ const GROUPS: { key: AmzBuyBoxGroup; label: string; rule: string; dot: string }[
   { key: 'error', label: 'Not read', rule: 'Amazon refused the read for this size — hover the row for its reason', dot: 'bg-slate-300' },
 ];
 
-// The answers with cards on Pricing (step 2's tiles open them).
-const DECK_ANSWERS: AmzAnswer[] = ['new', 'raise', 'cut'];
-
 const HOLDER: Record<AmzBuyBoxHolder, string> = {
   US: 'Us', US_SHARED: 'Us + shared', OTHER_FBA: 'Rival (FBA)', OTHER_MFN: 'Rival (self-post)', AMAZON: 'Amazon', NONE: 'Nobody',
 };
@@ -92,54 +80,37 @@ const HOLDER: Record<AmzBuyBoxHolder, string> = {
 const SHOW_SET_SINCE = false;
 const money = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `£${v.toFixed(2)}`);
 
-// pg timestamptz text ("2026-11-12 00:39:55.13+00") -> ms. A real instant, so Date is right here (not a date-only string).
-function toMs(ts: string | null | undefined): number | null {
-  if (!ts) return null;
-  const iso = ts.replace(' ', 'T').replace(/([+-]\d\d)$/, '$1:00');
-  const t = Date.parse(iso);
-  return Number.isFinite(t) ? t : null;
-}
-function ago(ms: number | null, now: number): string {
-  if (ms === null) return 'never';
-  const m = Math.max(0, Math.round((now - ms) / 60000));
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m} min ago`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} h ${m % 60} min ago`;
-  const d = Math.floor(h / 24);
-  return `${d} day${d === 1 ? '' : 's'} ago`;
-}
-function clock(ms: number | null): string {
-  if (ms === null) return '';
-  return new Date(ms).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
 function Tag({ children, title, tone = 'slate' }: { children: React.ReactNode; title: string; tone?: 'slate' | 'amber' | 'red' }) {
   const cls = tone === 'red' ? 'bg-red-100 text-red-700' : tone === 'amber' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600';
   return <span title={title} className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{children}</span>;
 }
 
-export default function AmzBuyBoxPage() {
-  const { logout } = useAuth();
-  // The clock for "n min ago" — ticks every 30 s. Taken in state, never during a render (react-hooks/purity).
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(t);
-  }, []);
+const MOOD_KEYS: AmzMood[] = ['fierce', 'chilled', 'climb'];
 
-  // While a read is running (ours, another person's or the cron's) the screen follows its progress every 3 s and picks up the new
-  // readings when it ends; otherwise nothing refetches by itself — the readings only change on a read. The server writes the run
-  // row BEFORE answering a press, so the refresh straight after it already sees `running`.
+// useSearchParams must sit inside a Suspense boundary for Next's build.
+export default function AmzBuyBoxBySizePage() {
+  return (
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
+      <BuyBoxBySize />
+    </Suspense>
+  );
+}
+
+function BuyBoxBySize() {
+  const { logout } = useAuth();
+  const searchParams = useSearchParams();
+  // The mood is chosen on the home and carried here in the link (header); Chilled when absent.
+  const moodParam = searchParams.get('mood') as AmzMood | null;
+  const mood: AmzMood = moodParam && MOOD_KEYS.includes(moodParam) ? moodParam : 'chilled';
+
+  // While a read is running (ours, another person's or the cron's) the page follows its progress every 3 s and picks up the new
+  // readings when it ends; otherwise nothing refetches by itself — the readings only change on a read.
   const { data, error: loadError, isLoading, refresh } = useApiQuery(['amz-buybox'], () => getAmzBuyBox(), {
     revalidateIfStale: false, revalidateOnReconnect: false,
     refreshInterval: (d) => (d?.running ? 3000 : 0),
   });
-  const running: AmzBuyBoxRun | null = data?.running ?? null;
-  // THE ANSWERS (header) for the mood: every in-stock size's answer + reason, from the same server rules as Pricing (so a Raise
-  // count here is Pricing's Raise tab). Its OWN cache key, never the deck page's (that one is the snapshot the deck works from),
-  // keyed on the mood and the reading so a finished read recounts. Mood = plain state: every load starts on Chilled.
-  const [mood, setMood] = useState<AmzMood>('chilled');
+  const running = data?.running ?? null;
+  // THE ANSWERS for the mood — the same key as the home's, so the counts match it.
   const { data: deck } = useApiQuery(['amz-buybox-answers', mood, data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(mood), {
     revalidateIfStale: false, revalidateOnReconnect: false,
   });
@@ -149,14 +120,12 @@ export default function AmzBuyBoxPage() {
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  // CLEARED rows (owner, 2026-11-12: "no to drop off but yes to being able to clear the screen and focus what I'm working on"): the ×
-  // hides a row from the list in THIS visit only — nothing is stored, the group counts stay the true position, and Show all (or
-  // reopening the page) brings every row back. The same soft cut as Fast sellers / New Additions.
+  // CLEARED rows (owner, 2026-11-12): the × hides a row in THIS visit only — nothing stored, counts unchanged, Show all brings them back.
   const [cleared, setCleared] = useState<Set<string>>(() => new Set());
 
   const answers = deck?.answers;
-  // Default answer = the first with cards in Pricing's order (New, Raise, Cut), else Leave.
-  const shown: AmzAnswer = answer ?? (DECK_ANSWERS.find((a) => (answers?.[a]?.ready ?? 0) > 0) ?? 'leave');
+  // Default answer = the first with cards (New, Raise, Cut), else Leave.
+  const shown: AmzAnswer = answer ?? ((['new', 'raise', 'cut'] as AmzAnswer[]).find((a) => (answers?.[a]?.ready ?? 0) > 0) ?? 'leave');
   const shownReasons = Object.entries(answers?.[shown]?.reasons ?? {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
   function pick(a: AmzAnswer, r: string | null = null) { setAnswer(a); setReason(r); setSearch(''); setOpen(null); }
 
@@ -187,180 +156,64 @@ export default function AmzBuyBoxPage() {
     await refresh();
   }
 
-  const lastAllMs = toMs(data?.last_all?.finished_at);
-  const lastRun = data?.last_run;
-  // Amber only when an hourly read looks missed: over 2 hours old during the hours it runs (UK 9am–8pm). Overnight it is
-  // naturally ~14 hours old by morning — no warning for that.
-  const ukHour = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/London' }).format(now));
-  const stale = lastAllMs !== null && now - lastAllMs > 2 * 3600 * 1000 && ukHour >= 9 && ukHour < 20;
-
-  // The reading line + the headline, in the title row's right side (LAYOUT, header) — no rows of their own in the page body.
-  const headerRight = (
-    <div className="flex flex-col items-end gap-0.5 text-right">
-      {data?.headline && data.headline.sizes > 0 && (
-        <div className="flex items-baseline gap-2" title={`Our share of page views, averaged across the ${data.headline.sizes} sizes live at FBA`}>
-          <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{data.headline.avg_share !== null ? `${Math.round(data.headline.avg_share)}%` : '—'}</span>
-          <span className="text-sm text-slate-500">of page views show our offer</span>
-        </div>
-      )}
-      <div className="text-sm text-slate-500">
-        {running ? (
-          <span className="inline-flex items-center gap-1.5 font-medium text-brand-700">
-            <ArrowPathIcon className="h-4 w-4 animate-spin" />
-            {running.scope && running.scope !== 'all'
-              ? <>Reading {running.scope}…</>
-              : <>Reading Amazon… {running.done ?? 0} of {running.total} sizes</>}
-          </span>
-        ) : data?.last_all ? (
-          <span title={`${clock(lastAllMs)} — read every hour`}>
-            Read <span className={stale ? 'font-medium text-amber-700' : 'text-slate-700'}>{ago(lastAllMs, now)}</span>
-            {' '}· {data.last_all.total} sizes
-            {stale && <span className="text-amber-700"> — the hourly read may have stopped</span>}
-          </span>
-        ) : data ? (
-          <span>No reading yet — the hourly read fills this in.</span>
-        ) : null}
-        {lastRun && lastRun.status === 'error' && !running && (
-          <span className="ml-2 text-red-600" title={lastRun.error || ''}>Last read failed: {lastRun.error}</span>
-        )}
-        {msg && <span className="ml-2 text-xs">{msg}</span>}
-      </div>
-    </div>
-  );
-
-  // Step 2's quiet rows open their list in step 3 — scrolled into view (an event handler, not an effect).
-  function showList(a: AmzAnswer) {
-    pick(a);
-    document.getElementById('bb-sizes')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
   return (
-    <AppShell title="Buy Box" headerRight={headerRight}>
+    <AppShell title="Sizes at Amazon" backHref="/amz" backLabel="Amazon Pricing"
+      headerRight={<AmzBuyBoxReading data={data} msg={msg} />}>
       {isLoading && <p className="text-sm text-slate-400">Loading…</p>}
       {loadError && <div className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{loadError.message}</div>}
 
       {data && (
-        <div className="flex flex-col gap-4">
-          {/* TEAM WEEK (owner, 2026-11-12): each person's Buy Box results, one collapsed line — components/AmzTeamWeek. A desk job:
-              hidden on a phone. (Its own box carries a bottom margin, taken back here so the steps space evenly.) */}
-          <div className="-mb-4 hidden sm:block"><AmzTeamWeek /></div>
-
-          {/* STEP 1 — THE MOOD (owner, 2026-11-13: the faces "should be nice size here as well rather than tucked away"): three big
-              cards as in the staff guide. Every load starts on Chilled, nothing stored; the Price buttons carry it to the cards. */}
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <StepHead n={1} title="Today's mood" hint="Starts on Chilled every time — change it only if you've been asked." />
-            <MoodCards mood={mood} onChange={(m) => { setMood(m); setReason(null); }} />
-          </section>
-
-          {/* STEP 2 — PRICE: the answers with cards (New, Raise, Cut) as tiles — the big number is the cards ready (owner, 2026-11-12:
-              the tile's number is the cards' count, "of n" under it) and a Price button opens them in this mood. The answers with
-              nothing to price (Leave, Not for this screen) sit quietly beside them and open the list below. One bar adds up to the
-              sizes in stock. */}
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-            <StepHead n={2} title="Price" hint="One card at a time — Set or Leave."
-              right={<>
-                <span className="font-semibold tabular-nums text-slate-900">{deck?.in_stock ?? '…'}</span> sizes in stock at Amazon
-                {notLive > 0 && <span className="text-slate-400" title="Inbound only — no answer until the stock lands; search finds them"> · {notLive} on their way in</span>}
-              </>} />
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3 lg:grid-cols-[1fr_1fr_1fr_0.85fr] lg:gap-3">
-              {ANSWERS.filter((a) => DECK_ANSWERS.includes(a.key)).map((a) => {
-                const s = answers?.[a.key];
-                const ready = s?.ready ?? 0;
+        <section>
+          {/* The mood (chosen on the home), the answer tabs, the in-stock count, search on the right. */}
+          <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <span title="The mood is chosen on Amazon Pricing"><MoodBadge mood={mood} /></span>
+            <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
+              {ANSWERS.map((a) => {
+                const on = !search && shown === a.key;
                 return (
-                  <div key={a.key} title={a.rule}
-                    className="grid grid-cols-[1fr_auto] items-center gap-x-3 rounded-xl border border-slate-200 px-4 py-3 sm:grid-cols-1 sm:gap-y-0.5">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                      <span className={`inline-block h-2.5 w-2.5 rounded-full ${a.dot}`} /> {a.label}
-                    </div>
-                    <div className="col-start-1 flex items-baseline gap-2 sm:mt-1">
-                      <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900 sm:text-4xl">{s ? ready : '…'}</span>
-                      <span className="text-sm text-slate-600">to price</span>
-                    </div>
-                    <div className="col-start-1 hidden text-xs tabular-nums text-slate-400 sm:block">
-                      of {s?.total ?? 0} in {a.label}{a.key === 'new' ? ' · the mood doesn’t change it' : ''}
-                    </div>
-                    {ready > 0 ? (
-                      <Link href={`/amz/buybox/deck?g=${a.key}&mood=${mood}`} title="One size at a time, one suggested move — in the mood chosen above"
-                        className="col-start-2 row-span-2 row-start-1 inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-brand-600 px-4 text-sm font-semibold text-white hover:bg-brand-700 sm:col-start-1 sm:row-span-1 sm:row-start-auto sm:mt-3">
-                        Price {ready} →
-                      </Link>
-                    ) : (
-                      <span className="col-start-2 row-span-2 row-start-1 inline-flex h-10 items-center justify-center rounded-lg bg-slate-50 px-4 text-sm text-slate-400 ring-1 ring-inset ring-slate-200 sm:col-start-1 sm:row-span-1 sm:row-start-auto sm:mt-3">
-                        Nothing to price
-                      </span>
-                    )}
-                  </div>
+                  <button key={a.key} type="button" onClick={() => pick(a.key)} title={a.rule}
+                    className={'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-sm ' + (on ? 'bg-slate-100 font-medium text-slate-900 ring-1 ring-inset ring-slate-200' : 'text-slate-600 hover:bg-slate-50')}>
+                    <span className={`inline-block h-2 w-2 rounded-full ${a.dot}`} /> {a.label}
+                    <span className="font-semibold tabular-nums text-slate-900">{answers?.[a.key]?.total ?? ''}</span>
+                  </button>
                 );
               })}
-              <div className="grid grid-cols-2 content-start gap-2 sm:col-span-3 lg:col-span-1 lg:grid-cols-1">
-                <div className="col-span-2 text-[11px] uppercase tracking-wider text-slate-400 lg:col-span-1">No price needed</div>
-                {ANSWERS.filter((a) => !DECK_ANSWERS.includes(a.key)).map((a) => (
-                  <button key={a.key} type="button" onClick={() => showList(a.key)} title={a.rule}
-                    className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-left text-sm text-slate-600 hover:bg-white">
-                    <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${a.dot}`} />
-                    <span className="min-w-0 truncate">{a.label}</span>
-                    <span className="ml-auto text-lg font-semibold tabular-nums text-slate-900">{answers?.[a.key]?.total ?? '…'}</span>
+            </div>
+            <span className="text-sm text-slate-500">
+              <span className="font-semibold tabular-nums text-slate-900">{deck?.in_stock ?? '…'}</span> in stock at Amazon
+              {notLive > 0 && <span className="text-slate-400" title="Inbound only — no answer until the stock lands; search finds them"> · {notLive} on their way in</span>}
+            </span>
+            <div className="relative w-full sm:ml-auto sm:w-72">
+              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2 h-5 w-5 text-slate-400" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search every size — name, brand or SKU"
+                className="w-full rounded-md border border-slate-300 py-1.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            </div>
+          </div>
+          <div className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-sm">
+            {!search && shownReasons.length > 0 && (
+              <>
+                <button type="button" onClick={() => setReason(null)}
+                  className={'rounded-full border px-2.5 py-0.5 ' + (reason === null ? 'border-slate-500 bg-white text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50')}>
+                  All <span className="font-semibold tabular-nums">{answers?.[shown]?.total ?? 0}</span>
+                </button>
+                {shownReasons.map(([k, n]) => (
+                  <button key={k} type="button" onClick={() => setReason(reason === k ? null : k)}
+                    className={'rounded-full border px-2.5 py-0.5 ' + (reason === k ? 'border-slate-500 bg-white text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50')}>
+                    {reasonLabel(k)} <span className="font-semibold tabular-nums text-slate-900">{n}</span>
                   </button>
                 ))}
-              </div>
-            </div>
-            {/* The bar: one segment per answer, its width its share of the sizes in stock. */}
-            <div className="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
-              {deck && deck.in_stock > 0 && ANSWERS.map((a) => {
-                const n = answers?.[a.key]?.total ?? 0;
-                return n > 0 ? <span key={a.key} className={a.bar} style={{ width: `${(n / deck.in_stock) * 100}%` }} title={`${a.label} ${n}`} /> : null;
-              })}
-            </div>
-          </section>
-
-          {/* STEP 3 — THE SIZES, for looking things up: its OWN tabs (the tiles above are for pricing), the answer's reasons (a reason
-              narrows the list), search on the right, then the table. */}
-          <section id="bb-sizes" className="scroll-mt-4">
-            <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
-              <h2 className="text-base font-semibold text-slate-900">Sizes</h2>
-              <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
-                {ANSWERS.map((a) => {
-                  const on = !search && shown === a.key;
-                  return (
-                    <button key={a.key} type="button" onClick={() => pick(a.key)} title={a.rule}
-                      className={'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-sm ' + (on ? 'bg-slate-100 font-medium text-slate-900 ring-1 ring-inset ring-slate-200' : 'text-slate-600 hover:bg-slate-50')}>
-                      <span className={`inline-block h-2 w-2 rounded-full ${a.dot}`} /> {a.label}
-                      <span className="font-semibold tabular-nums text-slate-900">{answers?.[a.key]?.total ?? ''}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="relative w-full sm:ml-auto sm:w-72">
-                <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-2 h-5 w-5 text-slate-400" />
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search every size — name, brand or SKU"
-                  className="w-full rounded-md border border-slate-300 py-1.5 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-              </div>
-            </div>
-            <div className="mb-3 flex flex-wrap items-center gap-x-1.5 gap-y-1.5 text-sm">
-              {!search && shownReasons.length > 0 && (
-                <>
-                  <button type="button" onClick={() => setReason(null)}
-                    className={'rounded-full border px-2.5 py-0.5 ' + (reason === null ? 'border-slate-500 bg-white text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50')}>
-                    All <span className="font-semibold tabular-nums">{answers?.[shown]?.total ?? 0}</span>
-                  </button>
-                  {shownReasons.map(([k, n]) => (
-                    <button key={k} type="button" onClick={() => setReason(reason === k ? null : k)}
-                      className={'rounded-full border px-2.5 py-0.5 ' + (reason === k ? 'border-slate-500 bg-white text-slate-900' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50')}>
-                      {reasonLabel(k)} <span className="font-semibold tabular-nums text-slate-900">{n}</span>
-                    </button>
-                  ))}
-                </>
-              )}
-              <span className="ml-1 text-slate-400">
-                {search ? `${rows.length} sizes match, across every size read.` : reason ? reasonLabel(reason) : ANSWERS.find((a) => a.key === shown)?.rule}
+              </>
+            )}
+            <span className="ml-1 text-slate-400">
+              {search ? `${rows.length} sizes match, across every size read.` : reason ? reasonLabel(reason) : ANSWERS.find((a) => a.key === shown)?.rule}
+            </span>
+            {cleared.size > 0 && (
+              <span className="ml-auto text-slate-500">
+                {cleared.size} cleared ·{' '}
+                <button type="button" onClick={() => setCleared(new Set())} className="font-medium text-brand-700 hover:underline">Show all</button>
               </span>
-              {cleared.size > 0 && (
-                <span className="ml-auto text-slate-500">
-                  {cleared.size} cleared ·{' '}
-                  <button type="button" onClick={() => setCleared(new Set())} className="font-medium text-brand-700 hover:underline">Show all</button>
-                </span>
-              )}
-            </div>
+            )}
+          </div>
 
           {/* ONE SCROLLBAR (owner, 2026-11-12: "avoid double vertical scrollbars"): the table scrolls with the page — no inner scroll box
               — so its sticky headings stick to the top of the window. No overflow on this box or any parent, or the sticky th stops
@@ -400,22 +253,9 @@ export default function AmzBuyBoxPage() {
               </tbody>
             </table>
           </div>
-          </section>
-        </div>
+        </section>
       )}
     </AppShell>
-  );
-}
-
-// A numbered step heading (LAYOUT, header): the number is the order the job is done in — mood, then price.
-function StepHead({ n, title, hint, right }: { n: number; title: string; hint?: string; right?: React.ReactNode }) {
-  return (
-    <div className="mb-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
-      <span className="inline-grid h-6 w-6 shrink-0 place-items-center self-center rounded-full bg-slate-900 text-xs font-bold text-white">{n}</span>
-      <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-      {hint && <span className="hidden text-sm text-slate-400 sm:inline">{hint}</span>}
-      {right && <span className="ml-auto text-sm text-slate-500">{right}</span>}
-    </div>
   );
 }
 
@@ -480,7 +320,7 @@ function BuyBoxRow({ r, isOpen, showGroup, onToggle, onReadStyle, onClear, busy 
           <td colSpan={13} className="px-3 py-3">
             <div className="mb-2 flex flex-wrap items-baseline gap-x-4 gap-y-1 pl-4">
               <span className="text-sm font-medium text-slate-900">{r.title || r.code}</span>
-              <Link href={`/amz/sku/${encodeURIComponent(r.code)}?from=${encodeURIComponent('/amz/buybox')}`} className="text-xs text-brand-700 hover:underline">
+              <Link href={`/amz/sku/${encodeURIComponent(r.code)}?from=${encodeURIComponent('/amz/buybox')}&back=${encodeURIComponent('Sizes at Amazon')}`} className="text-xs text-brand-700 hover:underline">
                 Amazon price screen →
               </Link>
               {r.asin && (

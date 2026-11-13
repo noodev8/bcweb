@@ -18,8 +18,12 @@ Purpose: Repricing — the AMAZON list behind one PORTFOLIO STATUS (WINNERS | ST
          is AMZ or BOTH — a Shopify-led winner earns ~nothing here, so it is on the Shopify list instead. Same predicate as the
          overview (utils/portfolioStatus.js → channelFilterSql).
 
-         Order: Amazon units in 30 days descending, then FBA stock descending, then code. Parked SKUs (skumap.next_amz_price_review in
-         the future) are dropped unless ?parked=include — the Due switch.
+         Order: due first, then Amazon units in 30 days descending, then FBA stock descending, then code. Not-due SKUs are dropped
+         unless ?parked=include — the Due switch.
+
+         DUE = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in
+         Chilled (selling at FBA, or New) is due when it has a card; every other size when its review date has come round. `parked`
+         keeps its name on the wire but means NOT DUE by that rule; `due_by` / `bb_answer` say which half decides.
 
 Requires auth.
 =======================================================================================================================================
@@ -56,6 +60,8 @@ const { parseListLimit } = require('../utils/listLimit');
 const { parseGroup } = require('../utils/pricingGroup');
 const { WINNER_BAR_LADDER } = require('../utils/portfolio');
 const { channelFilterSql } = require('../utils/portfolioStatus');
+const { readBuyBoxSide, sideParams, dueSql } = require('../utils/amzDue');
+const { pool } = require('../database');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -83,7 +89,13 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // $1 status, $2 limit, $3 includeParked, $4 bar. total / oos_rows are window functions, so pre-cap.
+    // THE one Amazon due rule (header): the Buy Box half as two code lists for SQL.
+    const side = await readBuyBoxSide(pool);
+    const sp = sideParams(side);
+    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$5', '$6');
+
+    // $1 status, $2 limit, $3 includeParked, $4 bar, $5 Buy Box codes, $6 those with a card. total / oos_rows are window functions,
+    // so pre-cap.
     const result = await query(`
       WITH u AS (       -- Amazon units: 30 days and 7 days, one pass (the two columns the shared table shows)
         SELECT code,
@@ -109,7 +121,7 @@ router.get('/', async (req, res) => {
              COALESCE(u.u7,0)      AS u7,
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             NOT ${DUE} AS parked,                                        -- NOT DUE by THE rule (header)
              bb.our_share AS bb_share,                                    -- Buy Box: % of views showing US (amz_buybox_now, owner 2026-11-12)
              bb.bb_price  AS bb_lead,                                     -- the lead offer's price incl. postage (the one to match)
              bb.rivals    AS bb_rivals,                                   -- 0 = Alone (no Buy Box race)
@@ -127,10 +139,11 @@ router.get('/', async (req, res) => {
       WHERE ${group.column} = $1
         AND ($4::numeric IS NULL OR sk.portfolio_revenue_12m > $4::numeric)   -- the dial's bar, on the STAMPED revenue
         AND ${channelFilterSql('sk', 'AMZ')}                                   -- Amazon-led or BOTH (see header)
-        AND ($3::boolean OR (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE))
-      ORDER BY COALESCE(u.u30,0) DESC, COALESCE(a.amzlive,0) DESC, a.code
+        AND ($3::boolean OR ${DUE})
+      -- Due first, so the safety cap can only trim not-due rows.
+      ORDER BY ${DUE} DESC, COALESCE(u.u30,0) DESC, COALESCE(a.amzlive,0) DESC, a.code
       LIMIT $2::int
-    `, [group.name, limit, includeParked, bar]);
+    `, [group.name, limit, includeParked, bar, sp.bb, sp.cards]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -149,6 +162,8 @@ router.get('/', async (req, res) => {
       last_sold: r.last_sold || null,
       next_review: r.next_review || null,
       parked: r.parked === true,
+      due_by: side.has(r.code) ? 'buybox' : 'review',
+      bb_answer: side.get(r.code)?.answer ?? null,
       bb_share: num(r.bb_share),
       bb_lead: num(r.bb_lead),
       bb_rivals: r.bb_rivals === null || r.bb_rivals === undefined ? null : Number(r.bb_rivals),

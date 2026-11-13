@@ -45,7 +45,9 @@ THE RULES (owner, 2026-11-04 — change them here and nowhere else; every number
   10. The verdict itself ignores review dates — a new price starts a new window, and the check says when there is enough evidence
       again. But WHICH sizes get checked follows the team's Amazon Due list (owner, 2026-11-04: "same system as our manual due
       dates" — `--top` ranked by 12-month sales and showed the same Ives colours every time): `dueStyles` = the sizes the Amazon
-      screens call Due (FBA stock, review date passed or none — routes/amz-all-list.js's predicate), and a
+      screens call Due (FBA stock, due by THE ONE AMAZON RULE — utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13:
+      a size the Buy Box answers in Chilled (selling at FBA, or New) is due when it has a card, every other size when its review
+      date has passed or is unset — the rule routes/amz-all-list.js uses), and a
       size the skill decides on is parked like a manual review: REVIEW_AFTER_PRICE_DAYS after a price, REVIEW_AFTER_LEAVE_DAYS
       after a "leave" (owner: "use smaller windows ... amazon sales are way before 14 days"). A later review date already set is
       kept. CAN'T TELL sizes are not parked by the skill — they stay Due for the team.
@@ -158,23 +160,30 @@ async function topStyles(db, n, to) {
   return r.rows;
 }
 
-// THE Amazon Due list, by style (rule 10). Same predicate as routes/amz-all-list.js's Due switch — FBA stock live or on its way in,
-// skumap.next_amz_price_review passed or none — so the skill and the screens mean the same by "Due".
-// Today, or a day AHEAD (`on`: what will be Due then — review dates have no history, so never a past day). `all` is the OVERRIDE
+// THE Amazon Due list, by style (rule 10). Same rule as routes/amz-all-list.js's Due switch — FBA stock live or on its way in, due by
+// THE ONE AMAZON RULE (utils/amzDue.js) — so the skill and the screens mean the same by "Due".
+// Today, or a day AHEAD (`on`: what will be Due then — review dates have no history, so never a past day; the Buy Box half is judged
+// on today's reading whatever `on` says — there is no reading of a day ahead). A Buy Box size with no card shows in `parked` as
+// "Buy Box" (no date decides it). `all` is the OVERRIDE
 // (owner, 2026-11-04: "we need to be able to override due when seeing the list" — the team prices by hand, so the Due list is
 // often empty while the top sellers still need a look): parked sizes come too, with their review date in `parked`, like the
 // screens' Due switch off. The status lists' 0-stock rows are left
 // out: no stock, no verdict.
 async function dueStyles(db, { on = null, all = false } = {}) {
+  // Required here, not at the top: utils/amzBuyBox.js reads this file's SETTINGS, and amzDue → amzBuyBoxDeck → amzBuyBox would
+  // otherwise load this file half-built (a require cycle).
+  const { readBuyBoxSide, sideParams, dueSql } = require('./amzDue');
+  const sp = sideParams(await readBuyBoxSide(db));
+  const due = dueSql('a.code', 'm.next_amz_price_review', '$3', '$4', 'COALESCE($1::date, CURRENT_DATE)');
   const r = await db.query(
     `SELECT m.groupid, array_agg(a.code ORDER BY a.code) AS codes,
-            COALESCE(jsonb_object_agg(a.code, m.next_amz_price_review::text)
-                       FILTER (WHERE m.next_amz_price_review > COALESCE($1::date, CURRENT_DATE)), '{}'::jsonb) AS parked
+            COALESCE(jsonb_object_agg(a.code, CASE WHEN a.code = ANY($3::text[]) THEN 'Buy Box' ELSE m.next_amz_price_review::text END)
+                       FILTER (WHERE NOT ${due}), '{}'::jsonb) AS parked
      FROM amzfeed a JOIN skumap m ON m.code = a.code
      WHERE (COALESCE(a.amzlive, 0) > 0 OR COALESCE(a.amztotal, 0) > 0)
-       AND ($2::boolean OR m.next_amz_price_review IS NULL OR m.next_amz_price_review <= COALESCE($1::date, CURRENT_DATE))
+       AND ($2::boolean OR ${due})
      GROUP BY m.groupid ORDER BY m.groupid`,
-    [on, all]
+    [on, all, sp.bb, sp.cards]
   );
   return r.rows;
 }

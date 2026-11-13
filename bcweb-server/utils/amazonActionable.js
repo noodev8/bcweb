@@ -24,12 +24,17 @@ broke that: WINNERS gained the two-part >=2 units / >=£2 bar, so a SKU selling 
 and a loser NO — it sat in the heatmap denominator but appeared in neither job list, and the segment could never go green (IVES-COLOUR
 showed 50/51 with nothing to action).
 
+DUE (2026-11-13) = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26): a size the Buy Box answers in Chilled
+(selling at FBA, or New) is outstanding when it has a card; every other size when its review date has come round. next_wake looks only
+at review-date sizes (a Buy Box size has no wake date — the hourly reading decides).
+
 LANDMINE: these two rules must stay in step with the route files. If the WINNERS bar or the LOSERS window moves there, move it here
 too — otherwise the gap silently reopens.
 =======================================================================================================================================
 */
 
-const { query } = require('../database');
+const { query, pool } = require('../database');
+const { readBuyBoxSide, sideParams, dueSql } = require('./amzDue');
 
 // The Amazon WINNERS bar, mirrored from routes/amz-winners.js (MIN_UNITS / MIN_PROFIT) — see the LANDMINE above.
 const AMZ_MIN_UNITS = 2;    // AMZ units sold in 30d before a SKU counts as moving
@@ -44,6 +49,7 @@ const AMZ_MIN_PROFIT = 2;   // £ realised net profit per unit (AVG of sales.pro
  * deriveShopify() treats a missing entry as zero ('ok').
  */
 async function amazonActionableByGroup(groupExpr) {
+  const sp = sideParams(await readBuyBoxSide(pool));
   const r = await query(`
     WITH w30 AS (   -- 30d Amazon units + realised per-unit margin, per SKU (same predicates as amz-winners / amz-losers)
       SELECT code, SUM(qty) AS u30, AVG(profit) AS avg_profit
@@ -54,6 +60,8 @@ async function amazonActionableByGroup(groupExpr) {
     cand AS (
       SELECT ${groupExpr} AS name,
              m.next_amz_price_review AS review,
+             ${dueSql('a.code', 'm.next_amz_price_review', '$3', '$4')} AS due,   -- THE one Amazon rule (header)
+             a.code = ANY($3::text[]) AS bb,                                       -- the Buy Box decides (no wake date)
              ( COALESCE(w30.u30, 0) >= $1::int
                AND w30.avg_profit >= $2::numeric ) AS winner,   -- NULL avg_profit fails, as in amz-winners
              COALESCE(w30.u30, 0) = 0 AS loser
@@ -64,9 +72,8 @@ async function amazonActionableByGroup(groupExpr) {
       WHERE COALESCE(a.amzlive, 0) > 0             -- in FBA stock now (nothing to price on an out-of-stock SKU)
     ),
     act AS (
-      SELECT name, review, COALESCE(winner, false) AS winner, loser,
-             (COALESCE(winner, false) OR loser) AS actionable,
-             (review IS NULL OR review <= CURRENT_DATE) AS due
+      SELECT name, review, due, bb, COALESCE(winner, false) AS winner, loser,
+             (COALESCE(winner, false) OR loser) AS actionable
       FROM cand
     )
     SELECT name,
@@ -74,10 +81,10 @@ async function amazonActionableByGroup(groupExpr) {
            COUNT(*) FILTER (WHERE actionable AND due)::int AS outstanding,
            COUNT(*) FILTER (WHERE winner AND due)::int AS selling,   -- outstanding, split by list (a SKU is one or the other)
            COUNT(*) FILTER (WHERE loser AND due)::int AS stuck,
-           MIN(review) FILTER (WHERE actionable AND review > CURRENT_DATE) AS next_wake
+           MIN(review) FILTER (WHERE actionable AND NOT bb AND review > CURRENT_DATE) AS next_wake
     FROM act
     GROUP BY name
-  `, [AMZ_MIN_UNITS, AMZ_MIN_PROFIT]);
+  `, [AMZ_MIN_UNITS, AMZ_MIN_PROFIT, sp.bb, sp.cards]);
 
   const byName = new Map();
   for (const row of r.rows) {

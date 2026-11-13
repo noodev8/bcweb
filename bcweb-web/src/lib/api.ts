@@ -116,6 +116,11 @@ export interface AmzWinnerRow {
   bb_rivals?: number | null;    // 0 = Alone
   bb_holder?: string | null;
   bb_read_at?: string | null;   // UK time, "12 Nov 13:28"
+  // THE one Amazon "due" rule (server utils/amzDue.js, PLAN.md decision 26) — sent by every Amazon list (all, status, Selling | Stuck):
+  // which half decides this size, and (Buy Box half) its Chilled answer. `parked` then means NOT DUE by that rule.
+  due_by?: 'buybox' | 'review';
+  bb_answer?: 'new' | 'raise' | 'cut' | 'leave' | null;
+  bb_reason?: string | null;
 }
 // Stage 1 LOSERS: FBA stock that sold NOTHING in the window (default 30d), most stock first. Same simplification as the Shopify
 // LoserRow above — u90/u14/cover_weeks/is_dead dropped. u7/u30 are always 0, kept for the shared table layout; last_sold /
@@ -126,7 +131,9 @@ export interface AmzLoserRow {
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   last_sold: string | null; days_since_sale: number | null;
   next_review: string | null;   // YYYY-MM-DD or null
-  parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked
+  parked: boolean;              // NOT DUE by THE one Amazon rule (server utils/amzDue.js) — only ever true when fetched with includeParked
+  due_by?: 'buybox' | 'review'; // which half decides (as AmzWinnerRow)
+  bb_answer?: 'new' | 'raise' | 'cut' | 'leave' | null;
 }
 // --- Amazon Order module (landing list only, so far) — flat "every product" view of Amazon profit, read from columns already
 // maintained by the Update Amazon import rather than recomputed: unit_profit = skumap.amzprofit (per-unit profit of the SKU's LAST
@@ -512,7 +519,8 @@ export function markAmzLoadedReview(groupids: string[], reviewDays: number) {
 }
 
 // How many styles / SKUs are DUE on the Shopify / Amazon Pricing home lists — the dashboard's Daily pricing tile. Asks for one row
-// without parked ones: `total` is the server's pre-cap count, i.e. the due list's length (the Due switch's default view).
+// without parked ones: `total` is the server's pre-cap count, i.e. the due list's length (the Due switch's default view). Amazon's
+// is "Amazon to price" since 2026-11-13: Chilled cards + the not-selling sizes due by date (THE one rule, server utils/amzDue.js).
 export function getPricingDueCounts() {
   return Promise.all([
     request<number>({ url: '/pricing-all-list', method: 'GET', params: { limit: 1 } }, (b) => Number(b.total) || 0),
@@ -528,12 +536,19 @@ export function getPricingDueCounts() {
   });
 }
 
-// Amazon Pricing's home list (2026-10-26) — every in-stock FBA SKU, parked included.
-export function getAmzAllList() {
+// Amazon's full list (/amz/all?by=all — every in-stock FBA SKU + every status SKU), not-due included. Due = THE one Amazon rule
+// (server utils/amzDue.js). half 'review' = only the sizes the Buy Box doesn't answer — the Amazon Pricing home's "Not selling · due".
+export function getAmzAllList(half?: 'review') {
   return request<{ total: number; truncated: boolean; outOfStock: number; rows: AmzWinnerRow[] }>(
-    { url: '/amz-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include' } },
+    { url: '/amz-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include', ...(half ? { half } : {}) } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, outOfStock: Number(b.out_of_stock) || 0, rows: b.rows || [] })
   );
+}
+
+// The Amazon Pricing home's "Not selling · due" tile (PLAN.md decision 23): how many sizes of the review half are due — one row asked
+// for, `total` is the server's pre-cap due count.
+export function getAmzNotSellingDue() {
+  return request<number>({ url: '/amz-all-list', method: 'GET', params: { limit: 1, half: 'review' } }, (b) => Number(b.total) || 0);
 }
 
 // The Amazon twin — every amzfeed SKU whose style carries the status, 0 FBA included, same row shape as getAmzWinners (units = 30d).
@@ -606,33 +621,6 @@ function normaliseAmazonOrderRow(r: AmazonOrderRow, onAmazon: boolean): AmazonOr
   };
 }
 
-// Amazon Fast sellers (/amz/fast, server routes/amz-fast-sellers.js) — every Amazon size sold in the last 30 days (net), with how fast it
-// sold: days from its price going live to the sale, and from its last FBA shipment to the sale (server utils/sellSpeed.js owns the rules).
-// Day counts are null when there is nothing to measure from. last_priced = the newest real price change on any date, from any screen.
-export interface AmzFastLastPriced { on: string; by: string | null; note: string | null; price: number | null; uploaded: boolean }
-// One price step (utils/sellSpeed.js PRICE STEPS): `on` = the day it went live; days held (to today for the current one); units sold at it.
-export interface AmzFastStep {
-  on: string; old: number | null; new: number | null; by: string | null; note: string | null;
-  uploaded: boolean; current: boolean; days: number | null; sold: number;
-}
-export interface AmzFastRow {
-  code: string; groupid: string; size: string; title: string | null; brand: string | null; segment: string | null;
-  price: number | null; queued_price: number | null; rrp: number | null; floor: number | null;
-  units_30d: number; units_7d: number; unit_profit: number | null; fba_live: number; fba_total: number;
-  next_review: string | null;   // skumap.next_amz_price_review, YYYY-MM-DD
-  last_sold: string | null; last_sold_price: number | null;
-  priced_on: string | null; priced_to_sold: number | null;
-  shipped_on: string | null; shipped_to_sold: number | null;
-  last_priced: AmzFastLastPriced | null;
-  price_steps: AmzFastStep[];   // last 3 real price changes, newest first
-}
-export function getAmzFastSellers() {
-  return request<{ count: number; warm_min_unit_profit: number; rows: AmzFastRow[] }>(
-    { url: '/amz-fast-sellers', method: 'GET' },
-    (b) => ({ count: b.count ?? (b.rows || []).length, warm_min_unit_profit: b.warm_min_unit_profit ?? 3, rows: (b.rows || []) as AmzFastRow[] })
-  );
-}
-
 // Amazon Buy Box (/amz/buybox, server routes/amz-buybox.js + amz-buybox-read.js, rules utils/amzBuyBox.js, 2026-11-12) — the LAST
 // STORED reading of who holds the Buy Box on each Amazon size, grouped. Opening the screen never asks Amazon; a read is the cron, or
 // startAmzBuyBoxRead (whole list, or one style), which runs in the background — follow it through `running`.
@@ -686,7 +674,7 @@ export function getAmzBuyBox() {
     })
   );
 }
-// Buy Box "Go through" (/amz/buybox/deck; server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js — answers, moods and New,
+// Buy Box PRICING, the cards (was "Go through"; /amz/buybox/deck; server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js — answers, moods and New,
 // PLAN.md decisions 13–20). READ ONLY. Every size IN STOCK AT AMAZON gets ONE answer for the mood; New / Raise / Cut sizes that are ready
 // make cards. A Set is applyAmzPrice with `buybox`; a Leave is leaveAmzBuyBox.
 export type AmzMood = 'fierce' | 'chilled' | 'climb';
@@ -704,6 +692,9 @@ export interface AmzDeckCard {
   // The 30-day strip: sold[i] = net Amazon pairs that UK day (oldest first, today last); moves = real price changes by day index;
   // last_sold_ago = days since the last pair sold (any time), null = never sold on Amazon.
   strip: { sold: number[]; moves: { day: number; by: string | null; old_price: number; new_price: number }[]; last_sold_ago: number | null };
+  // PRICED → SOLD (server utils/sellSpeed.js, moved from the retired Fast sellers, PLAN.md decision 22): days from the price the last
+  // Amazon sale went at going live to that sale; null = nothing to measure from.
+  speed: { priced_to_sold: number | null; sold_on: string | null; sold_price: number | null };
   our_price: number; rrp: number | null; walk: number | null; breakeven: number | null;
   floor: number | null;   // the card's floor: break-even on New, the £3 walk-away everywhere else
   holder: AmzBuyBoxHolder; bb_price: number | null; lead_share: number | null; our_share: number | null; next_up: number | null; rivals: number;
@@ -5163,6 +5154,9 @@ export interface ProcessSizeRow {
   // PRICE DUE — the pricing screens' own Due. Amazon per SIZE; Shopify per STYLE (the same on each of its sizes).
   amzPrice: number | null;       // the CURRENT Amazon price — a pending / uploaded change since the last import beats the feed
   amzReview: string | null; amzDue: boolean;
+  // THE one Amazon due rule (server utils/amzDue.js, PLAN.md decision 26): true = the Buy Box decides this size (selling at FBA, or
+  // New) — due when it has a card (amzDue), and its review date doesn't count.
+  amzBb: boolean;
   rrp: number | null;            // the style's RRP (per style) — read against the two prices
   cost: number | null;           // the style's cost — New Additions' bulk preview flags a Shopify price below it
   amzFbaFee: number | null;      // the size's FBA fee — with cost, the Amazon break-even the bulk preview flags

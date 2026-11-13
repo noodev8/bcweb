@@ -1,7 +1,7 @@
 'use client';
 /*
 =======================================================================================================================================
-Component: AmzTeamWeek  (the Buy Box screen's "Team week" panel — owner, 2026-11-12; docs/amz-buybox/PLAN.md point 12)
+Component: AmzTeamWeek  (the "Team week" panel on the Amazon Pricing home, /amz — was the Buy Box screen; owner, 2026-11-12; docs/amz-buybox/PLAN.md point 12)
 =======================================================================================================================================
 What each person's Amazon price changes did to the Buy Box this week (or last), and the moves to look at together. Server
 GET /amz-buybox-team; THE rules are bcweb-server/utils/amzBuyBoxTeam.js (read its header before changing a word here). READ ONLY.

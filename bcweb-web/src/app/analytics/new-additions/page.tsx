@@ -51,6 +51,9 @@ NO DUE SWITCH — A REVIEW COLUMN INSTEAD (owner, 2026-11-06: the team sets long
          as due) or "3d"; the tooltip splits it by channel. It sorts, soonest first, which is the "due within a week" view without a
          filter. Blank on a complete style (nothing left to price) or one on neither channel. Display only — dates are set on the
          drills / bulk bar as before. (The Due switch / ?due=1, option A of 2026-11-05, is gone — git history.)
+         AMAZON GOES BY THE ONE RULE (2026-11-13, server utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26): a size the Buy Box
+         answers (selling at FBA, or New — most unsold new sizes once they land) is "now" when it has a card on Amazon Pricing and has
+         no date without one; every other size by its review date, as before.
 
 PREV / NEXT ON THE DRILLS (owner, same day: "price navigation back and forth"): opening a Shopify or Amazon drill from here saves the
          list as it stands (components/DrillListNav) — Shopify: the styles on Shopify in screen order; Amazon: the unsold, listed sizes
@@ -292,7 +295,8 @@ function NewAdditionsPageInner() {
       // to sell = nothing to price = blank.
       const left = unsoldSizes.length > 0;
       const shpIn = left && sizes[0].shpLive ? daysTo(sizes[0].shpReview, today) : null;
-      const amzDays = unsoldSizes.filter((r) => r.onAmz).map((r) => daysTo(r.amzReview, today));
+      // THE one Amazon due rule (server utils/amzDue.js): a size the Buy Box decides is "now" with a card and has no date without one.
+      const amzDays = unsoldSizes.filter((r) => r.onAmz && (!r.amzBb || r.amzDue)).map((r) => (r.amzBb ? 0 : daysTo(r.amzReview, today)));
       const amzIn = amzDays.length ? Math.min(...amzDays) : null;
       const both = [shpIn, amzIn].filter((x): x is number => x !== null);
       groups.push({

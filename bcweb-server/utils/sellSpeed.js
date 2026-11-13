@@ -3,7 +3,8 @@
 Module: utils/sellSpeed.js
 =======================================================================================================================================
 Purpose: HOW FAST an Amazon size sold — two day counts per SKU (owner, 2026-10-22), in one place so every screen that shows them gives
-         the same answer. Read first by routes/amz-fast-sellers.js (the Fast sellers pricing screen).
+         the same answer. Read first by the Fast sellers screen (retired 2026-11-13, PLAN.md decision 22); now by the Buy Box Raise
+         card's Priced→sold (utils/amzBuyBoxDeck.js) and utils/amzPricingStandard.js.
 
            priced_to_sold   days from the price the last sale went at going LIVE, to that sale
            shipped_to_sold  days from the last FBA shipment carrying the size, to that sale

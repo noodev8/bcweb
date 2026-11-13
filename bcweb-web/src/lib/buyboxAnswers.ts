@@ -2,8 +2,8 @@
 =======================================================================================================================================
 Lib: buyboxAnswers — the words for the Buy Box answers, moods and reasons (2026-11-12, PLAN.md decisions 13–20)
 =======================================================================================================================================
-One copy of the on-screen wording, shared by the Buy Box screen and Pricing (the cards, /amz/buybox/deck — was "Go through", renamed 2026-11-13, owner: "We are pricing here"). The RULES are server-side
-(utils/amzBuyBoxDeck.js); this file only names them. Words chosen with the owner: "Not for this screen" (not "Not a Buy Box job");
+One copy of the on-screen wording, shared by the Amazon Pricing home (/amz), Sizes at Amazon (/amz/buybox) and Pricing (the cards, /amz/buybox/deck — was "Go through", renamed 2026-11-13, owner: "We are pricing here"). The RULES are server-side
+(utils/amzBuyBoxDeck.js); this file only names them. Words chosen with the owner: "Not for this screen" (not "Not a Buy Box job"), "Not selling" since 2026-11-13;
 moods Fierce / Chilled / Climb (names that clash with nothing BCWEB already uses — Hot, Push, Lean, Boost, Harvest, Clearance).
 =======================================================================================================================================
 */
@@ -15,10 +15,12 @@ export const ANSWERS: { key: AmzAnswer; label: string; rule: string; dot: string
   { key: 'raise', label: 'Raise', rule: 'We’re in the window and the other sellers are well above us — go up a little and stay in it. Sold in the last 30 days', dot: 'bg-emerald-500', bar: 'bg-emerald-400' },
   { key: 'cut', label: 'Cut', rule: 'Someone else is in the window and we can go under them and still keep £3 a pair. Sold in the last 30 days', dot: 'bg-red-500', bar: 'bg-red-400' },
   { key: 'leave', label: 'Leave', rule: 'Selling, nothing to gain — already in the best place, or the other seller is too cheap to follow', dot: 'bg-slate-500', bar: 'bg-slate-500' },
-  { key: 'off', label: 'Not for this screen', rule: 'Sold nothing on Amazon in 30 days — another seller isn’t the reason. These stay on the Due list', dot: 'bg-slate-300', bar: 'bg-slate-300' },
+  // 'off' is NOT SELLING on screen since 2026-11-13 (was "Not for this screen"): the Amazon Pricing home's fourth tile is "Not selling ·
+  // due" (PLAN.md decision 25), and these sizes are its in-stock part — priced from the list by their review date (decision 21).
+  { key: 'off', label: 'Not selling', rule: 'Sold nothing on Amazon in 30 days — another seller isn’t the reason. Priced from Not selling · due when its review date comes round', dot: 'bg-slate-300', bar: 'bg-slate-300' },
 ];
 
-// short = the one line on the Buy Box screen's mood card.
+// short = the one line on the Amazon Pricing home's mood card.
 export const MOODS: { key: AmzMood; label: string; sub: string; raise: string; cut: string; short: string }[] = [
   { key: 'fierce', label: 'Fierce', sub: 'Shift stock', raise: 'No raises', cut: 'More cuts — sizes that stopped selling too, and a penny under a seller copying our price', short: 'No raises · more cuts, even sizes that stopped selling' },
   { key: 'chilled', label: 'Chilled', sub: 'A normal day', raise: 'Small steps up, at most 5%', cut: 'Just under the seller in the window, keeping £3 a pair. Sold in 30 days', short: 'Raises up to 5% · cut just under the window' },

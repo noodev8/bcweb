@@ -15,6 +15,8 @@ Purpose: Turn an arbitrary origin path into a readable back-link label, for when
 const RENAMED: Record<string, string> = {
   '/segments': 'Back', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow movers', '/amz-loaded': 'AMZ loaded',
   '/ebay': 'eBay listings', '/analytics/slow-sizes': 'Range', '/analytics/deep-sizes': 'Deep sellers', '/prospects/size-gaps': 'Size gaps',
+  // /amz is the AMAZON PRICING home and /amz/buybox the Buy Box table since 2026-11-13 (docs/amz-buybox/PLAN.md decisions 23–25).
+  '/amz': 'Amazon Pricing', '/amz/buybox': 'Sizes at Amazon', '/amz/buybox/deck': 'Pricing',
 };
 
 export function prettyPathLabel(p: string): string {

@@ -41,7 +41,8 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
+const { query, pool } = require('../database');
+const { readBuyBoxSide, sideParams, dueSql } = require('../utils/amzDue');
 const { safeNumeric } = require('../utils/sql');
 const { classifyDue, isoDate } = require('../utils/segmentDue');
 const { deriveShopify } = require('../utils/segmentDerived');
@@ -66,6 +67,8 @@ router.get('/', async (req, res) => {
     const segmentId = seg.rows[0].id;
 
     // Header stats — live revenue/COGS (all channels), current sellable stock, and style count. Run in parallel; independent reads.
+    // THE one Amazon due rule's Buy Box half, for the Amazon clock below (utils/amzDue.js).
+    const sp = sideParams(await readBuyBoxSide(pool));
     const [rev, stockStyles, clocks, shp, amz] = await Promise.all([
       query(`
         SELECT SUM(s.qty * s.soldprice)               AS revenue,
@@ -143,17 +146,18 @@ router.get('/', async (req, res) => {
       // and how many are still un-parked (per-SKU review date on skumap). 1:1 join (code unique in skumap). Counts EVERY un-parked
       // in-stock SKU with no "actionable" filter — on Amazon that's already == WINNERS ∪ LOSERS (14d dead window nests inside the 30d
       // winner window → no healthy-middle gap). See the fuller note on block 2c in routes/segments.js. Keep in lockstep with it.
+      // DUE = THE ONE AMAZON RULE since 2026-11-13 (utils/amzDue.js, PLAN.md decision 26): a Buy Box size (selling at FBA, or New)
+      // is outstanding when it has a card in Chilled, others by review date; only review-date sizes give a wake date.
       query(`
         SELECT COUNT(*)::int AS instock,
-               COUNT(*) FILTER (WHERE (m.next_amz_price_review IS NULL
-                                   OR m.next_amz_price_review <= CURRENT_DATE))::int AS outstanding,
+               COUNT(*) FILTER (WHERE ${dueSql('a.code', 'm.next_amz_price_review', '$2', '$3')})::int AS outstanding,
                MIN(m.next_amz_price_review)
-                 FILTER (WHERE m.next_amz_price_review > CURRENT_DATE) AS next_wake
+                 FILTER (WHERE m.next_amz_price_review > CURRENT_DATE AND NOT a.code = ANY($2::text[])) AS next_wake
         FROM amzfeed a
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m ON m.code = a.code
         WHERE sk.segment = $1 AND COALESCE(a.amzlive, 0) > 0
-      `, [name]),
+      `, [name, sp.bb, sp.cards]),
     ]);
 
     // The derived Shopify counts (single grouped row; all-zero when the segment has no in-stock live styles).

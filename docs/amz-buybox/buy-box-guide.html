@@ -1,0 +1,279 @@
+<!doctype html>
+<!--
+  Buy Box Guide — the staff guide (source). The guide itself is the PDF in the owner's Downloads ("Buy Box Guide.pdf"); this file is
+  the claude.ai artifact's last version (2026-11-13), saved when the artifact was deleted (owner, 2026-11-13: "Remove the artifact. Go
+  straight to the PDF in the downloads folder"). Edit this, then print it to that PDF (Chrome headless --print-to-pdf). Reworded the
+  same day for the Amazon Pricing home (PLAN.md decisions 21–26): one place to price Amazon, cards then Not selling · due. For print:
+  the moods are one table (a PDF can't be clicked), backgrounds forced on.
+-->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Buy Box Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@400;500;600&display=swap">
+<style>
+:root {
+  --bg: #f4f6f8; --paper: #ffffff; --ink: #1a2230; --muted: #5d6877; --line: #dbe1e8; --accent: #2456b8;
+  --climb: #e0a21b; --chill: #3b7dd8; --fierce: #d6392f; --face-ink: #16191d;
+  --display: "Fredoka", "Segoe UI", system-ui, sans-serif; --body: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+@page { size: A4; margin: 12mm; }
+@media print { .step { break-inside: avoid; } .wrap { padding-top: 0; } }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); }
+.wrap { max-width: 780px; margin: 0 auto; padding: 36px 16px 64px; display: grid; gap: 22px; }
+h1, h2, h3 { font-family: var(--display); margin: 0; text-wrap: balance; }
+h1 { font-size: clamp(32px, 6vw, 46px); font-weight: 700; line-height: 1.05; }
+h2 { font-size: 24px; font-weight: 600; line-height: 1.2; }
+h3 { font-size: 18px; font-weight: 600; }
+p { margin: 0; max-width: 64ch; }
+.lead { font-size: 18px; color: var(--muted); }
+.small { font-size: 14px; color: var(--muted); }
+.step { background: var(--paper); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: grid; gap: 14px; min-width: 0; }
+.stephead { display: flex; gap: 12px; align-items: center; }
+.n { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--ink); color: var(--paper); font: 600 17px/34px var(--display); text-align: center; }
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: center; }
+@media (max-width: 600px) { .two { grid-template-columns: 1fr; } }
+.window { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; grid-template-columns: 96px 1fr; gap: 14px; background: var(--bg); }
+.window svg { width: 96px; height: auto; }
+.window .price { font: 600 26px var(--display); }
+.window .basket { display: inline-block; background: var(--accent); color: var(--paper); font-weight: 600; font-size: 14px; border-radius: 999px; padding: 6px 14px; }
+.window .others { font-size: 13px; color: var(--muted); }
+.checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.checks li { display: flex; gap: 10px; align-items: baseline; }
+.checks li::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); transform: translateY(-1px); }
+.answers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 560px) { .answers { grid-template-columns: 1fr; } }
+.ans { border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: start; }
+.ans svg { width: 40px; height: 40px; }
+.ans b { font-family: var(--display); font-size: 19px; font-weight: 600; display: block; }
+.ans span { font-size: 14px; color: var(--muted); }
+.ans.off { border-style: dashed; }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tabs .t { font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--paper); }
+.tabs .t.on { color: var(--ink); border-color: var(--ink); }
+.tabs .badge { margin-left: auto; font-size: 13px; font-weight: 600; padding: 2px 10px; border-radius: 8px; border: 2px solid var(--chill); background: var(--paper); color: var(--ink); }
+.tabs .change { font-size: 13px; color: var(--accent); text-decoration: underline; }
+.moods { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.mood { color: var(--ink); background: var(--bg); border: 2px solid var(--line); border-radius: 14px; padding: 12px 8px 10px; display: grid; justify-items: center; gap: 4px; }
+.mt { width: 100%; border-collapse: collapse; font-size: 14px; }
+.mt th, .mt td { border-top: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+.mt thead th { border-top: 0; font: 600 16px var(--display); }
+.mt tbody th { white-space: nowrap; font-weight: 600; }
+.mt tbody th svg { width: 18px; height: 18px; vertical-align: -4px; margin-right: 6px; }
+.mt .on { background: var(--bg); }
+.mood svg { width: 84px; height: auto; }
+.mood b { font: 600 20px var(--display); }
+.mood span { font-size: 13px; color: var(--muted); text-align: center; }
+.mood[aria-pressed="true"] { background: var(--paper); }
+.mood[data-m="climb"][aria-pressed="true"] { border-color: var(--climb); }
+.mood[data-m="chilled"][aria-pressed="true"] { border-color: var(--chill); }
+.mood[data-m="fierce"][aria-pressed="true"] { border-color: var(--fierce); }
+.effect { border-radius: 12px; border: 1px solid var(--line); overflow: hidden; }
+.effect .row { display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); align-items: start; }
+.effect .row:first-child { border-top: 0; }
+.effect .row .k { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.effect .row .k svg { width: 22px; height: 22px; flex: none; }
+.effect .row .v { font-size: 15px; }
+@media (max-width: 520px) { .effect .row { grid-template-columns: 1fr; gap: 4px; } }
+.card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 10px; background: var(--bg); }
+.card .code { font-weight: 600; }
+.card .move { font: 700 26px var(--display); }
+.card .move small { font: 500 14px var(--body); color: var(--muted); }
+.strip { display: flex; gap: 2px; }
+.strip i { flex: 1; height: 12px; border-radius: 2px; background: var(--line); }
+.strip i.s { background: var(--ink); }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn { font: 600 14px var(--body); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+.btn.go { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+kbd { font: 600 12px var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--paper); color: var(--ink); }
+.after { display: grid; gap: 14px; }
+.after ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 3px; font-size: 15px; }
+.loop { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 600px) { .loop { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.loop div { border: 1px solid var(--line); border-radius: 12px; padding: 12px; font-size: 14px; background: var(--bg); }
+.loop div b { display: block; font-family: var(--display); font-size: 16px; font-weight: 600; }
+.rules ul, .routine ol { margin: 0; padding-left: 22px; display: grid; gap: 8px; }
+.routine li b { font-weight: 600; }
+.closing { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 640px) { .closing { grid-template-columns: 1fr; } }
+</style></head><body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-raise" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 29V12M12 19l8-8 8 8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-cut" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 11v17M12 21l8 8 8-8" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-leave" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M12 20h16" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+  <symbol id="i-new" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M20 11 L22.23 16.93 L28.56 17.22 L23.61 21.17 L25.29 27.28 L20 23.8 L14.71 27.28 L16.39 21.17 L11.44 17.22 L17.77 16.93 Z" fill="currentColor"/></symbol>
+  <symbol id="i-off" viewBox="0 0 40 40"><circle cx="20" cy="20" r="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-dasharray="4 4"/><path d="M14 20h12M21 15l5 5-5 5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="wrap">
+  <header style="display:grid;gap:10px">
+    <h1>How our Amazon prices are set</h1>
+    <p class="lead">One page to read before you price Amazon. Everything is on <b>Amazon Pricing</b> (Daily → <b>Amazon to price</b>). BCWEB does the checking and works out the price. You decide: <b>Set</b> or <b>Leave</b>.</p>
+  </header>
+
+  <section class="step">
+    <div class="stephead"><span class="n">1</span><h2>Amazon's shop window</h2></div>
+    <div class="two">
+      <div style="display:grid;gap:10px">
+        <p>Lots of sellers sell the same shoe on Amazon. When a customer opens it, Amazon puts <b>one seller in the shop window</b>: the price and the "Add to basket" button. That's called the <b>Buy Box</b>.</p>
+        <p>Most customers buy from whoever is in the window. So our aim is simple: <b>be in the window, at the best price we can get.</b></p>
+      </div>
+      <div class="window" aria-label="Example product page">
+        <svg viewBox="0 0 96 80" aria-hidden="true"><rect x="2" y="2" width="92" height="76" rx="8" fill="var(--paper)" stroke="var(--line)" stroke-width="2"/><path d="M16 56 q4 -20 24 -22 l18 -2 q12 0 16 9 l8 15 z" fill="var(--ink)"/><rect x="12" y="56" width="74" height="6" rx="3" fill="var(--ink)"/></svg>
+        <div style="display:grid;gap:6px;align-content:start">
+          <div class="price">£39.49</div>
+          <div><span class="basket">Add to basket</span></div>
+          <div class="others">Sold by: whoever is in the window</div>
+          <div class="others">Other sellers: £41.30 · £44.99</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="step">
+    <div class="stephead"><span class="n">2</span><h2>Every hour, BCWEB checks Amazon</h2></div>
+    <p>For every size we have in stock at Amazon, it looks at:</p>
+    <ul class="checks">
+      <li>who is in the window, and at what price</li>
+      <li>the other sellers and their prices</li>
+      <li>whether the size sold in the last 30 days</li>
+      <li>how much we keep a pair at each price</li>
+      <li>the day the size first landed at Amazon</li>
+    </ul>
+    <p class="small">Only sizes in stock at Amazon get a card. Sizes still on their way, or sold out, don't: they go by their review date (step 6). When a size sells out, Amazon Order handles the restock.</p>
+  </section>
+
+  <section class="step">
+    <div class="stephead"><span class="n">3</span><h2>Every size gets one answer</h2></div>
+    <p>First, BCWEB asks: <b>is this size new?</b> A size is new from the day it lands at Amazon until its first sale, or for 30 days if it doesn’t sell. New sizes have their own tab with one job: <b>get the first sale.</b> If someone else is in the window, the card is a penny under them, never below break-even. After the first sale it’s like any other size.</p>
+    <div class="answers">
+      <div class="ans"><svg aria-hidden="true"><use href="#i-raise"/></svg><div><b>Raise</b><span>We're in the window and the other sellers are well above us. We can go up a little and stay in it.</span></div></div>
+      <div class="ans"><svg aria-hidden="true"><use href="#i-cut"/></svg><div><b>Cut</b><span>Someone else is in the window. We can go under them and still keep at least £3 a pair. Only sizes that sold in the last 30 days.</span></div></div>
+      <div class="ans"><svg aria-hidden="true"><use href="#i-leave"/></svg><div><b>Leave</b><span>Nothing to gain. We're already in the best place, or the other seller is too cheap to follow.</span></div></div>
+      <div class="ans off"><svg aria-hidden="true"><use href="#i-off"/></svg><div><b>Not selling</b><span>It sold nothing on Amazon in 30 days, and another seller isn't the reason. It goes by its review date instead (step 6).</span></div></div>
+    </div>
+    <p>Only <b>New</b>, <b>Raise</b> and <b>Cut</b> make cards. New sizes have their own tab, so they're never mixed with the rest. BCWEB works out the exact price for you. A selling size has no review date to wait for: <b>it shows up the moment it has a card.</b></p>
+  </section>
+
+  <section class="step">
+    <div class="stephead"><span class="n">4</span><h2>Pick a mood, then price</h2></div>
+    <p>The mood changes how hard we push. You pick it at the top of <b>Amazon Pricing</b>, <b>before</b> you open the cards. It starts on <b>Chilled</b> every time. Pick the one that fits the day: <b>Fierce</b> to shift stock, <b>Climb</b> to reach for more margin.</p>
+    <p>The New, Raise and Cut tiles show how many cards there are in that mood. <b>Price →</b> opens the cards with the mood already chosen; it shows at the top. To change it, press <b>Change</b>: it takes you back to Amazon Pricing. (Daily's number always counts Chilled.)</p>
+    <div class="moods" role="group" aria-label="Mood">
+      <div class="mood" data-m="fierce">
+        <svg viewBox="0 0 120 100" aria-hidden="true">
+          <circle cx="48" cy="56" r="34" fill="var(--fierce)"/>
+          <path d="M26 43 l17 8 M70 43 l-17 8" stroke="var(--face-ink)" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="36" cy="57" r="4" fill="var(--face-ink)"/><circle cx="60" cy="57" r="4" fill="var(--face-ink)"/>
+          <rect x="31" y="68" width="34" height="11" rx="3" fill="#fff" stroke="var(--face-ink)" stroke-width="3"/>
+          <path d="M39.5 68v11M48 68v11M56.5 68v11" stroke="var(--face-ink)" stroke-width="2"/>
+          <circle cx="16" cy="16" r="5" fill="var(--muted)" opacity=".5"/><circle cx="8" cy="8" r="3.5" fill="var(--muted)" opacity=".4"/>
+          <path d="M110 12 L97 76" stroke="var(--face-ink)" stroke-width="4" stroke-linecap="round"/>
+          <path d="M87 74 h20 l6 18 h-32 z" fill="#c9a24a" stroke="var(--face-ink)" stroke-width="2.5" stroke-linejoin="round"/>
+        </svg>
+        <b>Fierce</b><span>Shift stock</span>
+      </div>
+      <div class="mood" data-m="chilled" aria-pressed="true">
+        <svg viewBox="0 0 120 100" aria-hidden="true">
+          <circle cx="60" cy="54" r="36" fill="var(--chill)"/>
+          <rect x="34" y="44" width="22" height="14" rx="6" fill="var(--face-ink)"/><rect x="64" y="44" width="22" height="14" rx="6" fill="var(--face-ink)"/>
+          <path d="M56 49 h8" stroke="var(--face-ink)" stroke-width="3"/>
+          <path d="M44 70 q16 10 32 0" fill="none" stroke="var(--face-ink)" stroke-width="4" stroke-linecap="round"/>
+          <path d="M98 20 q6 -4 10 0 q4 4 10 0" fill="none" stroke="var(--muted)" stroke-width="2.5" stroke-linecap="round"/>
+        </svg>
+        <b>Chilled</b><span>A normal day · the default</span>
+      </div>
+      <div class="mood" data-m="climb">
+        <svg viewBox="0 0 120 100" aria-hidden="true">
+          <circle cx="48" cy="60" r="34" fill="var(--climb)"/>
+          <path d="M31 44 q7 -6 14 0 M51 44 q7 -6 14 0" fill="none" stroke="var(--face-ink)" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="39" cy="52" r="4.5" fill="var(--face-ink)"/><circle cx="59" cy="52" r="4.5" fill="var(--face-ink)"/>
+          <path d="M34 70 q14 12 28 0" fill="none" stroke="var(--face-ink)" stroke-width="4" stroke-linecap="round"/>
+          <path d="M76 44 L96 28" stroke="var(--face-ink)" stroke-width="4" stroke-linecap="round"/>
+          <circle cx="99" cy="25" r="6" fill="var(--climb)" stroke="var(--face-ink)" stroke-width="2.5"/>
+          <path d="M110 3 L112 8.25 L117.6 8.5 L113.2 12.05 L114.7 17.5 L110 14.4 L105.3 17.5 L106.8 12.05 L102.4 8.5 L108 8.25 Z" fill="#ffd23f" stroke="var(--face-ink)" stroke-width="1.5" stroke-linejoin="round"/>
+        </svg>
+        <b>Climb</b><span>Reach for more</span>
+      </div>
+    </div>
+    <table class="mt">
+      <thead><tr><th></th><th>Fierce</th><th class="on">Chilled</th><th>Climb</th></tr></thead>
+      <tbody>
+        <tr><th><svg aria-hidden="true"><use href="#i-raise"/></svg>Raise</th><td>No raises.</td><td class="on">Small steps up (up to 5%) where the other sellers are well above us.</td><td>Bigger steps up (up to 8%).</td></tr>
+        <tr><th><svg aria-hidden="true"><use href="#i-cut"/></svg>Cut</th><td>More cuts: every size where someone else is in the window, even ones that have stopped selling. A penny under a seller copying our price.</td><td class="on">Just under the seller in the window, if we still keep £3 a pair. Only sizes that sold in the last 30 days.</td><td>No cuts. Let the other sellers sell out first.</td></tr>
+        <tr><th><svg aria-hidden="true"><use href="#i-leave"/></svg>Leave</th><td>Sizes where we're already in the window.</td><td class="on">Already in the best place, or the other seller is too cheap to follow.</td><td>Everything else, including sizes we could have cut.</td></tr>
+      </tbody>
+    </table>
+    <p class="small">The mood doesn’t change the New tab. It has no raises: it always matches the window to get the first sale.</p>
+  </section>
+
+  <section class="step">
+    <div class="stephead"><span class="n">5</span><h2>One card at a time: Set or Leave</h2></div>
+    <div class="two" style="align-items:start">
+      <div class="card" aria-label="Example card">
+        <div class="tabs"><span class="t">New</span><span class="t on">Raise</span><span class="t">Cut</span><span class="badge">Chilled</span><span class="change">Change</span></div>
+        <div class="code">IVES-BLACKSOLE-06 <span class="small">· example</span></div>
+        <div class="move">Raise to £41.29 <small>now £39.89</small></div>
+        <div class="small">The next seller up is at £41.30. We're in the window for every customer.</div>
+        <div class="strip" aria-label="Sales in the last 30 days, one square a day"><i></i><i></i><i class="s"></i><i></i><i></i><i></i><i class="s"></i><i></i><i></i><i></i><i></i><i class="s"></i><i></i><i></i><i></i><i></i><i></i><i class="s"></i><i></i><i></i><i></i><i></i><i class="s"></i><i></i><i></i><i></i><i></i><i></i><i class="s"></i><i></i></div>
+        <div class="small">Last 30 days, a square a day. Dark = a pair sold. A Raise card also says <b>Priced → sold</b>: how soon the last pair sold after its price went live. A New card says how many days ago the size landed at Amazon.</div>
+        <div class="btns"><span class="btn go">Set <kbd>Enter</kbd></span><span class="btn">Leave <kbd>→</kbd></span></div>
+      </div>
+      <div class="after">
+        <div><h3>Set</h3>
+          <ul>
+            <li>The price goes to Amazon straight away.</li>
+            <li>The card goes until BCWEB has checked Amazon again (within the hour).</li>
+            <li>Its review date moves 4 weeks out. That only matters if the size stops selling.</li>
+          </ul></div>
+        <div><h3>Leave</h3>
+          <ul>
+            <li>Nothing changes on Amazon.</li>
+            <li>The card comes back if the suggested price changes, or after 7 days.</li>
+            <li>Its review date moves 4 weeks out, as with Set.</li>
+          </ul></div>
+        <p class="small">Other keys: <kbd>E</kbd> type your own price · <kbd>←</kbd> back a card · <kbd>U</kbd> undo.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="step">
+    <div class="stephead"><span class="n">6</span><h2>Then Not selling · due</h2></div>
+    <p>The fourth tile on Amazon Pricing. These are the sizes the Buy Box can't help with: sold nothing in 30 days, still on their way to Amazon, or out of stock. They work the way you're used to: <b>a list with a review date</b>. A size shows when its date comes round. Price it, or set a new review date, from the list or its price screen.</p>
+  </section>
+
+  <section class="step">
+    <div class="stephead"><span class="n">7</span><h2>Then round again</h2></div>
+    <div class="loop">
+      <div><b>BCWEB checks</b>Every hour, every size in stock.</div>
+      <div><b>Answers</b>New sizes on their own tab. The rest: Raise, Cut, Leave or Not selling.</div>
+      <div><b>You decide</b>Set or Leave on each card.</div>
+      <div><b>Next check</b>Shows if it worked. Back to the start.</div>
+    </div>
+    <p>The next check shows what your move did. A cut that put us back in the window counts as <b>won back</b>. A raise that kept us in the window counts as <b>raise kept</b>. You'll see both on Team week.</p>
+  </section>
+
+  <div class="closing">
+    <section class="step rules">
+      <h2>Always, in every mood</h2>
+      <ul>
+        <li>Never below £3 profit a pair. New sizes, until their first sale: never below break-even.</li>
+        <li>Never above the RRP.</li>
+        <li>One step at a time. After a raise, the size waits until a pair sells before it can go up again.</li>
+      </ul>
+    </section>
+    <section class="step routine">
+      <h2>Your routine</h2>
+      <ol>
+        <li><b>Open Amazon Pricing</b> (Daily → Amazon to price) and pick today's mood. It starts on Chilled.</li>
+        <li><b>Price the cards: New, then Raise, then Cut.</b> Set or Leave every card.</li>
+        <li><b>Then Not selling · due.</b> Price it or set a review date.</li>
+      </ol>
+      <p class="small">When Daily's Amazon number is 0, you're done. Need to change a size that isn't on a card? Find it and price it by hand, as you do now.</p>
+    </section>
+  </div>
+</div>
+
+
+</body></html>

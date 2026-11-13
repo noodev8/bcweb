@@ -12,9 +12,13 @@ duplicates"). The page reads top to bottom in order of importance:
      smaller"): the five jobs are equal tiles in one row; Sales is a compact figure in the band's header bar. Each says how much is waiting, so it is clear where to start:
        Sales      today's profit and units, all channels (GET /analytics-sales?window=today — the Sales screen's own headline).
                   Moved here from the menu (owner, 2026-10-26: "add sales to daily").
-       Pricing    Shopify due · Amazon due — the counts of the home lists' Due view (GET /pricing-all-list, /amz-all-list — in stock
-                  OR on a Repricing status list, 0-stock included, so nothing Repricing calls Due is missed; owner 2026-10-28),
-                  each a link to its list (/pricing, /amz). No cross-channel total, as on Repricing.
+       Pricing    Shopify due · AMAZON TO PRICE — the counts of the home lists' Due view (GET /pricing-all-list, /amz-all-list — in
+                  stock OR on a Repricing status list, 0-stock included, so nothing Repricing calls Due is missed; owner 2026-10-28),
+                  each a link to its home (/pricing, /amz). No cross-channel total, as on Repricing. Amazon's is "to price" since
+                  2026-11-13 (docs/amz-buybox/PLAN.md decisions 23 + 25 — one number, one Amazon pricing task): the Buy Box cards in
+                  Chilled + the not-selling sizes due by review date (THE one rule, server utils/amzDue.js). The Buy Box and Fast
+                  sellers tiles left the Pricing group the same day (the Buy Box screen became the Amazon Pricing home; Fast sellers
+                  was retired).
        Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
        Selling    ONE card, the two figures to keep AS HIGH AS POSSIBLE (owner, 2026-11-06: "25% as high as possible, and the longer
                   term 40% as high as possible. Do one, will help the other" — and "combine the cards so not too much highlights"):
@@ -61,7 +65,7 @@ import {
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, LightBulbIcon, BoltIcon, TrophyIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon, MagnifyingGlassIcon,
+  RectangleStackIcon, LightBulbIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon, MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -113,8 +117,6 @@ const GROUPS: Group[] = [
     tiles: [
       { title: 'Repricing', subtitle: 'Status, segment and campaign lists', description: 'Winners, steady, new and losers per channel, and the segment and campaign lists.', href: '/segments', icon: Squares2X2Icon },
       { title: 'Shopify vs Amazon', subtitle: 'Shopify never under Amazon', description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread.', href: '/pricing/vs-amazon', icon: ScaleIcon },
-      { title: 'Buy Box', subtitle: 'Who holds it on each Amazon size', description: 'Every Amazon size in stock — who has the Buy Box, at what price, and whether matching still keeps £3 a pair.', href: '/amz/buybox', icon: TrophyIcon },
-      { title: 'Fast sellers', subtitle: 'Amazon sizes selling fast', description: 'Every Amazon size sold in 30 days, fastest first — room to push the price up.', href: '/amz/fast', icon: BoltIcon },
       { title: 'Collections', subtitle: 'Shopify collection tags', description: 'Put styles in Shopify collections, or take them out — up to 3 per style.', href: '/collections', icon: RectangleStackIcon },
       { title: 'Price Changes', subtitle: 'Recent moves, and what shifted', description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since.', href: '/analytics/price-changes', icon: ArrowsRightLeftIcon },
     ],
@@ -269,10 +271,10 @@ function Daily() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
         {/* PRICING — two lists, two counts, two links (no cross-channel total). */}
         <div className="flex flex-col rounded-xl bg-white p-4">
-          <TileHead icon={Squares2X2Icon} title="Pricing" sub="Prices due a review" />
+          <TileHead icon={Squares2X2Icon} title="Pricing" sub="Prices to look at" />
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
             <CountLink href="/pricing" label="Shopify" n={due.data?.shopify ?? null} unit="styles due" />
-            <CountLink href="/amz" label="Amazon" n={due.data?.amazon ?? null} unit="sizes due" />
+            <CountLink href="/amz" label="Amazon" n={due.data?.amazon ?? null} unit="to price" />
           </div>
         </div>
 

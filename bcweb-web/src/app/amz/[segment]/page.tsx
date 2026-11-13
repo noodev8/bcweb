@@ -17,9 +17,14 @@ are unchanged. Only styles whose LEAD CHANNEL is Amazon or both are listed (serv
 Shopify list. WINNERS can carry the Winners dial (?bar=2500), shown in the crumb. `by` (and bar) ride along in the drill round-trip. (It replaced the Top earners grouping, removed the same day.) There is no
 campaign grouping on Amazon (campaigns are Shopify only).
 
-ALL (?by=all, 2026-10-26): AMAZON PRICING'S HOME (/amz redirects to /amz/all?by=all; owner: "shouldn't go off segments — just be a list
-of all, with a due and not due toggle") — every in-stock FBA SKU PLUS every SKU on a Repricing status list (0-stock too, 2026-10-28), one unsplit list from GET /amz-all-list, handled like a status list.
-No back link (it IS the home); Find sits top right beside Upload.
+ALL (?by=all, 2026-10-26): every in-stock FBA SKU PLUS every SKU on a Repricing status list (0-stock too, 2026-10-28), one unsplit list
+from GET /amz-all-list, handled like a status list. It was Amazon Pricing's home until 2026-11-13; the home is now /amz (the old Buy Box
+screen, PLAN.md decision 23), so this list has a back link to it. Find sits top right beside Send to Amazon.
+  - ITS DUE = THE ONE AMAZON RULE (server utils/amzDue.js, decision 26): a size the Buy Box answers (selling at FBA, or New) is due when
+    it has a card in Chilled; every other size when its review date comes round. `parked` = not due by that rule. A Buy Box row's
+    Review cell says "Buy Box" (its review date doesn't decide it) — "card" when it has one. The status and Selling | Stuck lists
+    (part 2, the same day) use the same rule and the same cell.
+  - ?half=review (the home's "Not selling · due" tile, decision 23) = only the sizes the Buy Box doesn't answer; crumb "Not selling".
 
 NO STOCK & ORDER LINK (removed 2026-10-08, owner — "The winners screen should be about pricing only"). From 2026-09-27 a status list
 linked to /amazon-order?status=&bar=, scoping Amazon Order to the list; that arrival was taken out of Amazon Order the same day.
@@ -99,6 +104,9 @@ interface ListRow {
   bb_lead?: number | null;
   bb_rivals?: number | null;
   bb_read_at?: string | null;
+  // THE one Amazon due rule (every list since part 2): which half decides, and the Chilled Buy Box answer (header).
+  due_by?: 'buybox' | 'review';
+  bb_answer?: 'new' | 'raise' | 'cut' | 'leave' | null;
 }
 
 // useSearchParams must sit inside a Suspense boundary for Next's build.
@@ -123,6 +131,8 @@ function SegmentContent() {
   // ?by=all (Amazon Pricing's home list) is not a PricingGroup — it is read on its own and then rides as a status-like one-list view.
   // `by` stays 'segment' for it, but nothing below sends `group` for the all list.
   const isAll = searchParams.get('by') === 'all';
+  // The home's "Not selling · due" tile: the all list narrowed to the review half (header).
+  const half: 'review' | undefined = isAll && searchParams.get('half') === 'review' ? 'review' : undefined;
   const by = parseGroupBy(searchParams.get('by')) === 'status' ? 'status' : 'segment';
   const isStatus = by === 'status';
   const isOneList = isStatus || isAll;   // one unsplit list: no Selling / Stuck tabs, view pinned to 'all'
@@ -149,17 +159,18 @@ function SegmentContent() {
   // Both lists in ONE query, parked SKUs included, so every count comes from one fetch. Kept as a single Promise.all (rather than two
   // useApiQuery calls) to preserve PARTIAL TOLERANCE: one list failing must still render the other, under one shared error line.
   const { data, error: loadError, busy: loading, refresh: loadLists } = useApiQuery(
-    ['amz-lists', isAll ? 'all' : by, segment, bar],
+    ['amz-lists', isAll ? 'all' : by, segment, bar, half ?? ''],
     async () => {
       // ALL (Amazon Pricing's home) — the same handling as a status list just below.
       if (isAll) {
-        const s = await getAmzAllList();
+        const s = await getAmzAllList(half);
         if (s.return_code === 'UNAUTHORIZED') return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' };
         if (!(s.success && s.data)) return { success: false, return_code: s.return_code, error: s.error || 'Failed to load list' };
         const rows: ListRow[] = s.data.rows.map((r) => ({
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
           fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
           bb_share: r.bb_share, bb_lead: r.bb_lead, bb_rivals: r.bb_rivals, bb_read_at: r.bb_read_at,
+          due_by: r.due_by, bb_answer: r.bb_answer,
         }));
         return {
           success: true,
@@ -177,6 +188,7 @@ function SegmentContent() {
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
           fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
           bb_share: r.bb_share, bb_lead: r.bb_lead, bb_rivals: r.bb_rivals, bb_read_at: r.bb_read_at,
+          due_by: r.due_by, bb_answer: r.bb_answer,
         }));
         return {
           success: true,
@@ -197,10 +209,12 @@ function SegmentContent() {
       const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
         kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
         fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+        due_by: r.due_by, bb_answer: r.bb_answer,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
         kind: 'loser', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
         fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
+        due_by: r.due_by, bb_answer: r.bb_answer,
       })) : [];
       return {
         success: true,
@@ -251,7 +265,7 @@ function SegmentContent() {
   function listHref(): string {
     const rawFrom = searchParams.get('from');
     const ctx = rawFrom ? `&from=${encodeURIComponent(rawFrom)}&back=${encodeURIComponent(searchParams.get('back') || 'Back')}` : '';
-    return `/amz/${encodeURIComponent(segment)}?${isAll ? 'by=all&' : isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
+    return `/amz/${encodeURIComponent(segment)}?${isAll ? `by=all&${half ? `half=${half}&` : ''}` : isStatus ? 'by=status&' : ''}${bar ? `bar=${bar}&` : ''}mode=${mode}${showPending ? '&pending=1' : ''}${searchParams.get('sort') ? `&sort=${encodeURIComponent(searchParams.get('sort')!)}` : ''}${ctx}`;
   }
 
   function openSku(code: string) {
@@ -386,12 +400,13 @@ function SegmentContent() {
 
   return (
     <AppShell
-      // The ALL list IS Amazon Pricing's home, so no back link unless something sent you here with ?from=.
-      backHref={isAll && !searchParams.get('from') ? undefined : backHref}
+      // Back to Amazon Pricing (/amz) unless something sent you here with ?from= — the all list stopped being the home 2026-11-13.
+      backHref={backHref}
       backLabel={backLabel}
-      crumb={<PricingCrumb name={isAll ? 'All' : segment} channel="amazon" note={isAll ? 'in stock + status' : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />}
+      crumb={<PricingCrumb name={isAll ? (half ? 'Not selling' : 'All') : segment} channel="amazon"
+        note={isAll ? (half ? 'due by review date' : 'in stock + status') : isStatus ? (bar ? `status · ${barLabel(bar)}` : 'status') : undefined} />}
       headerRight={isAll ? (
-        // The old home's Find entry, now on the home list itself, beside Upload.
+        // Find beside Send to Amazon.
         <div className="flex items-center gap-2">
           <Link href="/amz/find" className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-brand-500">
             <MagnifyingGlassIcon className="h-4 w-4 text-slate-400" /> Find
@@ -487,7 +502,7 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
     price: (r: ListRow) => r.price,
     fba: (r: ListRow) => r.fba,
     bb: (r: ListRow) => (r.bb_share ?? -1),
-    review: (r: ListRow) => (r.parked ? r.next_review : '0000'),
+    review: (r: ListRow) => (r.parked ? (r.due_by === 'buybox' ? '9999' : r.next_review) : '0000'),
   });
   const th = { sort, onSort };
   const allChecked = rows.length > 0 && rows.every((r) => selected.has(r.code));
@@ -558,7 +573,13 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                 <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}{r.fba_inbound > 0 && <span className="ml-1 text-xs font-normal text-sky-600" title="On its way into FBA">+{r.fba_inbound}</span>}</td>
                 <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums"><BuyBoxCell r={r} /></td>
                 <td className="whitespace-nowrap px-4 py-2">
-                  {r.parked
+                  {r.due_by === 'buybox'
+                    // THE one Amazon rule (header): the Buy Box decides this size, not its review date.
+                    ? <span className="text-xs text-slate-500" title={r.parked
+                        ? 'Selling at FBA — the Buy Box decides when it needs pricing, not a review date. No card now.'
+                        : `Selling at FBA — it has a ${r.bb_answer ?? ''} card on Amazon Pricing (Chilled). Best priced there, with the Buy Box beside it.`}>
+                        Buy Box{!r.parked && <span className="ml-1 font-medium text-slate-700">· card</span>}</span>
+                    : r.parked
                     ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
                     : <span className="text-xs text-slate-400">Due</span>}
                 </td>

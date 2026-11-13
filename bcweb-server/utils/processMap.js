@@ -24,9 +24,12 @@ PRICE DUE (owner, 2026-11-05, option A — New Additions' own "Look again" revie
 "one review date, one habit"). The pricing screens' own Due, read here:
   - Shopify (per STYLE): live on Shopify (shopify = 1) with sellable local stock, next_shopify_price_review passed or none — the
     Shopify Pricing home's predicate (routes/pricing-all-list.js).
-  - Amazon (per SIZE): an amzfeed listing with stock live or on its way (amztotal > 0), skumap.next_amz_price_review passed or none —
-    routes/amz-all-list.js's predicate, less its 0-stock status rows (a size with nothing at Amazon can't
-    be sold there by a price).
+  - Amazon (per SIZE): an amzfeed listing with stock live or on its way (amztotal > 0), DUE BY THE ONE AMAZON RULE (utils/amzDue.js,
+    docs/amz-buybox/PLAN.md decision 26, 2026-11-13 — was "next_amz_price_review passed or none"): a size the Buy Box answers in
+    Chilled (selling at FBA, or New — most unsold new sizes) is due when it has a card; every other size when its review date has come
+    round. routes/amz-all-list.js's rule, less its 0-stock status rows (a size with nothing at Amazon can't be sold there by a price).
+    `amz_bb` says the Buy Box decides the size — the Review column then counts it "now" with a card and leaves it out without one (no
+    date decides it). NEW_SKUS_SQL takes $2 / $3 = utils/amzDue.js → sideParams (bb, cards).
   A style is due on New Additions when it still has an UNSOLD new size and (Shopify is due OR an unsold size is due on Amazon) — sold
   sizes are ticked off, so they never make a style due. Worked out on the screen from these flags (bcweb-web/src/lib/process.ts).
 
@@ -43,6 +46,7 @@ two disagreed (owner: the tile said 25%, the screen another number on a differen
 =======================================================================================================================================
 */
 
+const { dueSql } = require('./amzDue');
 const { NEW_DAYS } = require('./portfolioStatus');
 const { AMZ_NOW_CTES } = require('./amzNow');
 const { safeNumeric } = require('./sql');
@@ -110,7 +114,8 @@ const NEW_SKUS_SQL = `
          ${safeNumeric('a.fbafee')} AS amz_fbafee,                         -- with cost: the Amazon break-even the bulk preview flags
          sz.next_amz_price_review::text AS amz_review,
          (a.code IS NOT NULL AND COALESCE(a.amztotal, 0) > 0
-           AND (sz.next_amz_price_review IS NULL OR sz.next_amz_price_review <= (SELECT d FROM today))) AS amz_due,
+           AND ${dueSql('sz.code', 'sz.next_amz_price_review', '$2', '$3', '(SELECT d FROM today)')}) AS amz_due,   -- THE one Amazon rule
+         (sz.code = ANY($2::text[])) AS amz_bb,                                   -- the Buy Box decides this size (header)
          -- Shopify (per style — the same on each of its sizes)
          (COALESCE(ss.shopify, 0) = 1) AS shp_live,
          ${safeNumeric('ss.shopifyprice')} AS shp_price,

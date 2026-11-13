@@ -75,6 +75,7 @@ PROFIT ON THE CARD: amzProfit is a straight line in price, so each card carries 
 const { amzProfit } = require('./amzProfit');
 const { readScreen } = require('./amzBuyBox');
 const { placed } = require('./orderStatus');
+const { SELL_SPEED_CTES } = require('./sellSpeed');
 
 const MOODS = ['fierce', 'chilled', 'climb'];
 const DEFAULT_MOOD = 'chilled';
@@ -213,7 +214,11 @@ function answerFor(r, mood) {
   return { answer: 'leave', reason: r.group };
 }
 
-async function readDeck(db, { mood: moodIn } = {}) {
+/**
+ * The deck for `mood`. answersOnly = stop after the answers (step 3) — no cards built: what utils/amzDue.js needs to decide Amazon
+ * "due" (PLAN.md decision 26), without the card queries.
+ */
+async function readDeck(db, { mood: moodIn, answersOnly = false } = {}) {
   const mood = normMood(moodIn);
   const screen = await readScreen(db);
   const live = screen.rows.filter((r) => r.live > 0);          // IN STOCK ONLY (decision 13)
@@ -294,13 +299,14 @@ async function readDeck(db, { mood: moodIn } = {}) {
     a.reasons[x.reason] = (a.reasons[x.reason] || 0) + 1;
     answerOf[x.r.code] = [x.answer, x.reason];
   }
+  if (answersOnly) return { mood, answers, answer_of: answerOf, in_stock: live.length, last_all: screen.last_all };
 
   // 4) the cards — the ready ones, with what the card shows.
   const picked = all.filter((x) => x.reason === 'ready');
   const codes = picked.map((x) => x.r.code);
   const groupids = [...new Set(picked.map((x) => x.r.groupid).filter(Boolean))];
   const STRIP_DAYS = 30;
-  const [imgs, econRows, stockRows, stripSales, stripMoves, lastSales] = codes.length ? await inSequence([
+  const [imgs, econRows, stockRows, stripSales, stripMoves, lastSales, speedRows] = codes.length ? await inSequence([
     // The style's picture (the thumbnails' imagename).
     () => db.query(`SELECT groupid, imagename FROM skusummary WHERE groupid = ANY($1)`, [groupids]),
     // cost / fbafee / tax for the profit line — readScreen doesn't return them.
@@ -329,7 +335,16 @@ async function readDeck(db, { mood: moodIn } = {}) {
                ORDER BY COALESCE(changed_at, log_date::timestamptz), id`, [codes, STRIP_DAYS]),
     () => db.query(`SELECT code, (CURRENT_DATE - MAX(solddate))::int AS ago FROM sales
                WHERE channel = 'AMZ' AND qty > 0 AND code = ANY($1) GROUP BY 1`, [codes]),
-  ]) : Array(6).fill({ rows: [] });
+    // PRICED → SOLD (PLAN.md decision 22 — Fast sellers retired, its speed figure moved here): days from the price the last sale went
+    // at going live to that sale, THE rule in utils/sellSpeed.js. A size that sold within a day of its last raise is the one to Climb.
+    // Only the two CTEs it needs are read (PostgreSQL skips the unreferenced ones).
+    () => db.query(`WITH ${SELL_SPEED_CTES}
+               SELECT c.code, to_char(ss_sale.sold_on, 'YYYY-MM-DD') AS sold_on, ss_sale.sold_price::float8 AS sold_price,
+                      (ss_sale.sold_on - ss_priced.priced_on)::int AS priced_to_sold
+               FROM unnest($1::text[]) AS c(code)
+               LEFT JOIN ss_sale ON ss_sale.code = c.code
+               LEFT JOIN ss_priced ON ss_priced.code = c.code`, [codes]),
+  ]) : Array(7).fill({ rows: [] });
   const imageOf = Object.fromEntries(imgs.rows.map((x) => [x.groupid, x.imagename || null]));
   const econOf = Object.fromEntries(econRows.rows.map((x) => [x.code, { cost: x.cost, fbafee: x.fbafee, tax: x.tax }]));
   const stockOf = Object.fromEntries(stockRows.rows.map((x) => [x.code, x]));
@@ -340,6 +355,8 @@ async function readDeck(db, { mood: moodIn } = {}) {
     if (x.ago >= 0 && x.ago < STRIP_DAYS) stripOf[x.code].moves.push({ day: STRIP_DAYS - 1 - x.ago, by: x.changed_by, old_price: x.old_price, new_price: x.new_price });
   }
   for (const x of lastSales.rows) stripOf[x.code].last_sold_ago = x.ago;
+  const speedOf = Object.fromEntries(speedRows.rows.map((x) => [x.code, {
+    priced_to_sold: x.priced_to_sold ?? null, sold_on: x.sold_on || null, sold_price: x.sold_price ?? null }]));
 
   const cards = picked.map(({ r, s, answer, landed_ago }) => {
     const econ = econOf[r.code] || {};
@@ -363,6 +380,7 @@ async function readDeck(db, { mood: moodIn } = {}) {
       next_review: stockOf[r.code]?.next_review ?? null,
       last_change: lastOf[r.code] ?? null,
       strip: stripOf[r.code],
+      speed: speedOf[r.code] ?? { priced_to_sold: null, sold_on: null, sold_price: null },
       our_price: r.our_price, rrp: r.rrp, walk: r.walk, breakeven: r.breakeven,
       // THE FLOOR the card warns at: break-even on New (before its first sale), the £3 walk-away everywhere else.
       floor: answer === 'new' ? r.breakeven : r.walk,

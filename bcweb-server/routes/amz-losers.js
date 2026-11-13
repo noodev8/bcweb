@@ -34,6 +34,10 @@ skumap.next_amz_price_review (§10.4 added it later, and /amz-review writes it).
 Schema landmines respected: amzfeed FBA-only, READ ONLY; amzprice via safeNumeric; amzlive a real integer. Size = the code's suffix after the last '-'. Human
 name from title.shopifytitle. Requires auth.
 =======================================================================================================================================
+DUE = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in Chilled
+(selling at FBA, or New) is due when it has a card; every other size when its review date has come round. `parked` keeps its name on
+the wire but means NOT DUE by that rule; `due_by` / `bb_answer` say which half decides. Due rows sort first.
+
 Request Query Params:
   segment    (string)         - give exactly one of segment / status
   status     (string)         - a portfolio status instead of a segment. Accepted (utils/pricingGroup.js), but the Repricing screen
@@ -77,6 +81,8 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { parseGroup } = require('../utils/pricingGroup');
+const { readBuyBoxSide, sideParams, dueSql } = require('../utils/amzDue');
+const { pool } = require('../database');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -99,7 +105,13 @@ router.get('/', async (req, res) => {
     }
     const includeParked = req.query.parked === 'include';
 
-    // $1 group name, $2 days, $3 limit, $4 includeParked.
+    // THE one Amazon due rule (utils/amzDue.js, PLAN.md decision 26): the Buy Box half as two code lists for SQL. Here it mostly
+    // matters for NEW sizes (no sale yet — Stuck by this list's test, priced by the Buy Box's New card).
+    const side = await readBuyBoxSide(pool);
+    const sp = sideParams(side);
+    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$5', '$6');
+
+    // $1 group name, $2 days, $3 limit, $4 includeParked, $5 Buy Box codes, $6 those with a card.
     // Membership is the LEFT JOIN + "no sales row in the window" test: a SKU with no qualifying sale has u_win NULL -> COALESCE 0.
     const result = await query(`
       WITH win AS (     -- units in the window (default 30d) — the ONLY sales measure this route needs now
@@ -131,7 +143,7 @@ router.get('/', async (req, res) => {
              to_char(ls.last_sold,'YYYY-MM-DD') AS last_sold,
              (CURRENT_DATE - ls.last_sold)::int AS days_since_sale,
              m.next_amz_price_review::text AS next_review,                -- text, never a pg DATE (CLAUDE.md: BST day-shift)
-             COALESCE(m.next_amz_price_review > CURRENT_DATE, false) AS parked,
+             NOT ${DUE} AS parked,                                        -- NOT DUE by THE one Amazon rule (utils/amzDue.js)
              COUNT(*) OVER () AS total_rows                 -- full qualifying count: window functions run BEFORE the LIMIT, so this is
                                                             -- the pre-cap total (free — no second round-trip to count)
       FROM amzfeed a
@@ -143,12 +155,13 @@ router.get('/', async (req, res) => {
       LEFT JOIN title t  ON t.groupid = a.groupid
       WHERE ${group.column} = $1
         AND COALESCE(a.amzlive,0) > 0                                                    -- must have FBA stock (nothing to act on otherwise)
-        AND ($4::boolean OR (m.next_amz_price_review IS NULL OR m.next_amz_price_review <= CURRENT_DATE)) -- un-parked only unless ?parked=include (§10.4)
+        AND ($4::boolean OR ${DUE})                                                      -- due only unless ?parked=include (THE one Amazon rule)
         AND COALESCE(w.u_win,0) = 0                                                      -- sold NOTHING in the window — the whole test
-      ORDER BY fba DESC,       -- most stock at risk first
+      ORDER BY ${DUE} DESC,    -- due first, so the safety cap only ever trims not-due rows
+               fba DESC,       -- most stock at risk first
                a.code          -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
       LIMIT $3::int
-    `, [group.name, days, limit, includeParked]);
+    `, [group.name, days, limit, includeParked, sp.bb, sp.cards]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -167,7 +180,9 @@ router.get('/', async (req, res) => {
       last_sold: r.last_sold || null,
       days_since_sale: r.days_since_sale === null ? null : Number(r.days_since_sale),
       next_review: r.next_review || null,
-      parked: r.parked === true,   // only ever true with ?parked=include
+      parked: r.parked === true,   // only ever true with ?parked=include — NOT DUE by THE one Amazon rule
+      due_by: side.has(r.code) ? 'buybox' : 'review',
+      bb_answer: side.get(r.code)?.answer ?? null,
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.

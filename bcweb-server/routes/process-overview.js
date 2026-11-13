@@ -25,7 +25,7 @@ Success Response:
     { "code": "GLB123-TAN-04", "groupid": "GLB123-TAN", "title": "…", "brand": "Lunar", "size": "04",
       "firstIn": "2026-09-11", "ageDays": 55, "daysLeft": 35,     // first Goods In arrival; 90 − age = days before it leaves the list
       "localStock": 0, "fbaStock": 1, "bought": 2, "onAmz": true,
-      "amzPrice": 39.99, "amzReview": null, "amzDue": true,                       // Amazon, per size
+      "amzPrice": 39.99, "amzReview": null, "amzDue": true, "amzBb": false,                       // Amazon, per size
       "rrp": 49.95, "imagename": "glb123-tan.jpg",       // the style's RRP and picture (per style)
       "shpLive": true, "shpPrice": 44.95, "shpReview": "2026-11-08", "shpDue": false,   // Shopify, per style
       "net": 1,                                         // net units over every channel — sold = net > 0
@@ -45,7 +45,8 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
+const { query, pool } = require('../database');
+const { readBuyBoxSide, sideParams } = require('../utils/amzDue');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 const { NEW_DAYS, CHANNELS, NEW_SKUS_SQL, OTHER_SIZES_SQL } = require('../utils/processMap');
@@ -59,7 +60,8 @@ router.get('/', async (req, res) => {
   try {
     const [prospects, skus] = await Promise.all([
       query(`SELECT COUNT(*)::int AS n FROM prospect WHERE archived_at IS NULL`),
-      query(NEW_SKUS_SQL, [NEW_DAYS]),
+      // $2 / $3 = THE one Amazon due rule's Buy Box half (utils/amzDue.js) — amz_due / amz_bb.
+      readBuyBoxSide(pool).then((side) => { const sp = sideParams(side); return query(NEW_SKUS_SQL, [NEW_DAYS, sp.bb, sp.cards]); }),
     ]);
 
     const styles = new Set();
@@ -81,6 +83,7 @@ router.get('/', async (req, res) => {
         localStock: Number(r.local_stock), fbaStock: Number(r.fba_stock), bought: Number(r.bought),
         onAmz: r.on_amz === true, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
         amzDue: r.amz_due === true,
+        amzBb: r.amz_bb === true,     // the Buy Box decides this size, not its review date (utils/amzDue.js)
         rrp: money(r.rrp), cost: money(r.cost), amzFbaFee: money(r.amz_fbafee), imagename: r.imagename || null,
         shpLive: r.shp_live === true, shpPrice: money(r.shp_price), shpReview: r.shp_review || null,
         shpDue: r.shp_due === true,

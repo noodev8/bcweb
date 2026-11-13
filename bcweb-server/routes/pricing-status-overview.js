@@ -73,10 +73,11 @@ Return Codes:
 
 const express = require('express');
 const router = express.Router();
-const { query } = require('../database');
+const { query, pool } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const { WINNER_BAR_LADDER } = require('../utils/portfolio');
+const { readBuyBoxSide, sideParams, dueSql } = require('../utils/amzDue');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -85,6 +86,14 @@ const ZERO = { total: 0, due: 0, parked: 0, out_of_stock: 0, styles: 0, due_styl
 
 router.get('/', async (req, res) => {
   try {
+    // AMAZON "DUE" = THE ONE RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in
+    // Chilled (selling at FBA, or New) is due when it has a card; every other size when its review date has come round. So these due
+    // lines count what Daily's "Amazon to price" counts. `parked` = not due by that rule.
+    const side = await readBuyBoxSide(pool);
+    const sp = sideParams(side);
+    const dueA = dueSql('a.code', 'm.next_amz_price_review', '$1', '$2');   // the status query
+    const dueB = dueSql('a.code', 'm.next_amz_price_review', '$2', '$3');   // the dial query ($1 = the bar ladder)
+
     // Independent reads, run together: the four statuses per channel, then the WINNERS counts at each dial mark per channel.
     const [shp, amz, shpBars, amzBars, share] = await Promise.all([
       query(`
@@ -112,20 +121,18 @@ router.get('/', async (req, res) => {
       query(`
         SELECT sk.portfolio_status AS status,
                COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE (m.next_amz_price_review IS NULL
-                                   OR m.next_amz_price_review <= CURRENT_DATE))::int AS due,
-               COUNT(*) FILTER (WHERE m.next_amz_price_review > CURRENT_DATE)::int AS parked,
+               COUNT(*) FILTER (WHERE ${dueA})::int AS due,
+               COUNT(*) FILTER (WHERE NOT ${dueA})::int AS parked,
                COUNT(*) FILTER (WHERE COALESCE(a.amzlive,0) = 0)::int AS out_of_stock,
                COUNT(DISTINCT a.groupid)::int AS styles,               -- rows are sizes; this is how many styles they belong to
-               COUNT(DISTINCT a.groupid) FILTER (WHERE (m.next_amz_price_review IS NULL
-                                                    OR m.next_amz_price_review <= CURRENT_DATE))::int AS due_styles
+               COUNT(DISTINCT a.groupid) FILTER (WHERE ${dueA})::int AS due_styles
         FROM amzfeed a
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m      ON m.code    = a.code
         WHERE sk.portfolio_status IS NOT NULL
           AND ${channelFilterSql('sk', 'AMZ')}
         GROUP BY sk.portfolio_status
-      `),
+      `, [sp.bb, sp.cards]),
       // The dial: one row per mark a winner clears (a style over £5,000 counts at 1,500, 2,500 and 5,000). A mark nobody clears
       // returns no row and reads as zero below.
       query(`
@@ -145,11 +152,9 @@ router.get('/', async (req, res) => {
       query(`
         SELECT b.bar::int AS bar,
                COUNT(*)::int AS total,
-               COUNT(*) FILTER (WHERE (m.next_amz_price_review IS NULL
-                                   OR m.next_amz_price_review <= CURRENT_DATE))::int AS due,
+               COUNT(*) FILTER (WHERE ${dueB})::int AS due,
                COUNT(DISTINCT a.groupid)::int AS styles,
-               COUNT(DISTINCT a.groupid) FILTER (WHERE (m.next_amz_price_review IS NULL
-                                                    OR m.next_amz_price_review <= CURRENT_DATE))::int AS due_styles
+               COUNT(DISTINCT a.groupid) FILTER (WHERE ${dueB})::int AS due_styles
         FROM amzfeed a
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m      ON m.code    = a.code
@@ -157,7 +162,7 @@ router.get('/', async (req, res) => {
         WHERE sk.portfolio_status = 'WINNERS'
           AND ${channelFilterSql('sk', 'AMZ')}
         GROUP BY b.bar
-      `, [WINNER_BAR_LADDER]),
+      `, [WINNER_BAR_LADDER, sp.bb, sp.cards]),
       // Winners' share at each mark (see the header). Totals ride on every row (CROSS JOIN) so it is one read.
       query(`
         WITH local_free AS (

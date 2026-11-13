@@ -4,7 +4,7 @@
 Page: /amz/buybox/deck  (Buy Box — PRICING, the cards; was "Go through" until 2026-11-13 — owner: "I dont like the word 'Go through'. We
          are pricing here". On screen "Pricing"; the route, code and docs file names keep "deck" / "go through". 2026-11-12, a TRIAL)
 =======================================================================================================================================
-Purpose: Every Amazon size IN STOCK AT AMAZON gets ONE answer (New · Raise · Cut · Leave · Not for this screen — PLAN.md decisions
+Purpose: Every Amazon size IN STOCK AT AMAZON gets ONE answer (New · Raise · Cut · Leave · Not selling — PLAN.md decisions
          13–20, the staff guide "Buy Box Guide"); this screen works the three that make cards, ONE SIZE AT A TIME, each with one
          suggested move, so a price is changed LOOKING at the Buy Box. Laptop first, keys for everything (owner: "95% of our price
          changes will be on laptop"); big buttons so it also works on a phone — deliberately not a swipe app.
@@ -14,8 +14,9 @@ TABS: New (landed in the last 30 days, no Amazon sale yet — "get the first sal
          with the other cards, shown by style in size order; the mood doesn't touch it) · Raise · Cut. Opens on New when it has cards.
 
 MOOD: Fierce · Chilled · Climb, chosen A LEVEL ABOVE THE CARDS (owner, 2026-11-13: "We should drill down into the cards with a mood
-         already chosen"): picked on the Buy Box screen and carried in the link (?mood=), shown here as a badge (components/MoodSwitch →
-         MoodBadge) with "Change" back to the Buy Box screen — no switch beside the cards. No ?mood= (an old link) = Chilled. The tabs
+         already chosen"): picked on the AMAZON PRICING HOME (/amz — the old Buy Box screen became it, 2026-11-13, PLAN.md decision 23)
+         and carried in the link (?mood=), shown here as a badge (components/MoodSwitch → MoodBadge) with "Change" back to the home — no
+         switch beside the cards. No ?mood= (an old link) = Chilled. The tabs
          keep the mood.
 
 THE CARD: our price → the suggested price, why, our share of views, the lead offer / next dearer rival (on screen "Next dearer"), the
@@ -131,7 +132,7 @@ export default function AmzBuyBoxDeckPage() {
   // Old links (?g=room / can_match) land on the matching tab.
   const gWanted: AmzDeckKind | null = gParam === 'new' ? 'new' : gParam === 'raise' || gParam === 'room' ? 'raise'
     : gParam === 'cut' || gParam === 'can_match' ? 'cut' : null;
-  // MOOD (header): from the link — chosen on the Buy Box screen. useUrlParam reads null until hydrated, so the deck waits for the
+  // MOOD (header): from the link — chosen on the Amazon Pricing home. useUrlParam reads null until hydrated, so the deck waits for the
   // client (`hydrated`) before fetching — else it would fetch Chilled first, then the real mood.
   const moodParam = useUrlParam('mood');
   const mood: AmzMood = moodParam === 'fierce' || moodParam === 'climb' ? moodParam : 'chilled';
@@ -256,7 +257,7 @@ export default function AmzBuyBoxDeckPage() {
   const leftCount = cards.filter((c) => done.get(c.code)?.kind === 'left').length;
 
   return (
-    <AppShell backHref="/amz/buybox" backLabel="Buy Box" crumb={<span className="font-medium text-slate-800">Pricing</span>}>
+    <AppShell backHref="/amz" backLabel="Amazon Pricing" crumb={<span className="font-medium text-slate-800">Pricing</span>}>
       {/* ONE CENTRED COLUMN (LAYOUT, header): toolbar, progress, card and the result line all the same width. */}
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
         {/* 1 TOOLBAR — tabs · mood badge · how old the reading is. No result message here any more (it sits under the card). */}
@@ -272,7 +273,7 @@ export default function AmzBuyBoxDeckPage() {
           </div>
           <span className="inline-flex shrink-0 items-center gap-2 sm:ml-auto">
             <MoodBadge mood={mood} />
-            <Link href="/amz/buybox" title="The mood is chosen on the Buy Box screen" className="text-xs text-brand-700 hover:underline">Change</Link>
+            <Link href="/amz" title="The mood is chosen on Amazon Pricing" className="text-xs text-brand-700 hover:underline">Change</Link>
           </span>
           <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm text-slate-400 sm:ml-0" title="Read every hour by the cron">
             Read {ago(readMs, now)}{data?.running ? ' · a read is running' : ''}
@@ -354,7 +355,7 @@ export default function AmzBuyBoxDeckPage() {
             </div>
             <p className="truncate text-xs text-slate-400" title={waiting.map(([k, n]) => `${n} ${reasonLabel(k).toLowerCase()}`).join(' · ') || undefined}>
               {waiting.length > 0 && <>{meta.label}, not on a card: {waiting.map(([k, n]) => `${n} ${reasonLabel(k).toLowerCase()}`).join(' · ')}. </>}
-              Every size in stock is on the <Link href="/amz/buybox" className="text-brand-700 hover:underline">Buy Box screen</Link>.
+              Every size in stock is on <Link href={`/amz/buybox?mood=${mood}`} className="text-brand-700 hover:underline">Sizes at Amazon</Link>.
             </p>
           </>
         )}
@@ -609,6 +610,16 @@ function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, on
                   {card.strip.last_sold_ago === null ? 'never sold on Amazon' : `last sold ${card.strip.last_sold_ago === 0 ? 'today' : card.strip.last_sold_ago === 1 ? 'yesterday' : `${card.strip.last_sold_ago} days ago`}`}
                 </span>
               </div>
+              {/* PRICED → SOLD (PLAN.md decision 22 — moved from the retired Fast sellers): how soon the last pair sold after the
+                  price it went at went live. A raise that sold within a day is the one to take further (Climb). Raise cards only. */}
+              {room && (
+                <div className="text-[13px] text-slate-600" title={card.speed.sold_on
+                  ? `The last Amazon sale (${card.speed.sold_on}${card.speed.sold_price !== null ? `, ${money(card.speed.sold_price)}` : ''}) came this long after the price it sold at went live`
+                  : 'No Amazon sale to measure from'}>
+                  {card.speed.priced_to_sold === null ? 'Priced → sold: —'
+                    : <>Priced → sold: <span className="font-semibold tabular-nums text-slate-900">{card.speed.priced_to_sold === 0 ? 'same day' : `${card.speed.priced_to_sold} day${card.speed.priced_to_sold === 1 ? '' : 's'}`}</span></>}
+                </div>
+              )}
             </>
           )}
         </Fact>
