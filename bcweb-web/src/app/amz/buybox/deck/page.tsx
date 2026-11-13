@@ -1,7 +1,8 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /amz/buybox/deck  (Buy Box — Go through, 2026-11-12, a TRIAL)
+Page: /amz/buybox/deck  (Buy Box — PRICING, the cards; was "Go through" until 2026-11-13 — owner: "I dont like the word 'Go through'. We
+         are pricing here". On screen "Pricing"; the route, code and docs file names keep "deck" / "go through". 2026-11-12, a TRIAL)
 =======================================================================================================================================
 Purpose: Every Amazon size IN STOCK AT AMAZON gets ONE answer (New · Raise · Cut · Leave · Not for this screen — PLAN.md decisions
          13–20, the staff guide "Buy Box Guide"); this screen works the three that make cards, ONE SIZE AT A TIME, each with one
@@ -255,7 +256,7 @@ export default function AmzBuyBoxDeckPage() {
   const leftCount = cards.filter((c) => done.get(c.code)?.kind === 'left').length;
 
   return (
-    <AppShell backHref="/amz/buybox" backLabel="Buy Box" crumb={<span className="font-medium text-slate-800">Go through</span>}>
+    <AppShell backHref="/amz/buybox" backLabel="Buy Box" crumb={<span className="font-medium text-slate-800">Pricing</span>}>
       {/* ONE CENTRED COLUMN (LAYOUT, header): toolbar, progress, card and the result line all the same width. */}
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
         {/* 1 TOOLBAR — tabs · mood badge · how old the reading is. No result message here any more (it sits under the card). */}

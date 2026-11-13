@@ -1,5 +1,18 @@
 # Go through — calmer layout (agreed and BUILT 2026-11-13)
 
+> **Renamed 2026-11-13:** on screen "Go through" is now **Pricing** (owner: "I dont like the word 'Go through'. We are pricing
+> here"). The tiles say "n to price" and the buttons "Price n →". The route `/amz/buybox/deck` and this file's name are unchanged.
+>
+> **The Buy Box screen before it was redone the same day** (owner: "Looks clunky too"), in the order the job is done:
+> - The title row carries the headline % and the reading age.
+> - Team week (laptop only).
+> - **1 Today's mood**: three big mood cards with the guide's faces (`components/MoodSwitch → MoodCards`). The chosen card gets a
+>   ring in its own colour.
+> - **2 Price**: New / Raise / Cut tiles. Each shows the cards ready (big), "of n" under it, and a **Price n →** button into the
+>   cards in that mood. Leave and Not for this screen sit quietly beside them as "No price needed". One bar adds up to the sizes in
+>   stock.
+> - **3 Sizes**: the list with its own answer tabs, the reasons, search and the table (the table is unchanged).
+
 **Built** in `bcweb-web/src/app/amz/buybox/deck/page.tsx` and the new `bcweb-web/src/components/PriceLadder.tsx` (web only, no
 server change). Owner: "yes" to the price ladder, then "go ahead and build it". The other three points were built with these
 defaults, and any of them can be changed: the list drawer is closed on every load (nothing stored), the column is centred (~880px),

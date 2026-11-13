@@ -2,7 +2,7 @@
 =======================================================================================================================================
 Lib: buyboxAnswers — the words for the Buy Box answers, moods and reasons (2026-11-12, PLAN.md decisions 13–20)
 =======================================================================================================================================
-One copy of the on-screen wording, shared by the Buy Box screen's answer bar and Go through. The RULES are server-side
+One copy of the on-screen wording, shared by the Buy Box screen and Pricing (the cards, /amz/buybox/deck — was "Go through", renamed 2026-11-13, owner: "We are pricing here"). The RULES are server-side
 (utils/amzBuyBoxDeck.js); this file only names them. Words chosen with the owner: "Not for this screen" (not "Not a Buy Box job");
 moods Fierce / Chilled / Climb (names that clash with nothing BCWEB already uses — Hot, Push, Lean, Boost, Harvest, Clearance).
 =======================================================================================================================================
@@ -18,16 +18,17 @@ export const ANSWERS: { key: AmzAnswer; label: string; rule: string; dot: string
   { key: 'off', label: 'Not for this screen', rule: 'Sold nothing on Amazon in 30 days — another seller isn’t the reason. These stay on the Due list', dot: 'bg-slate-300', bar: 'bg-slate-300' },
 ];
 
-export const MOODS: { key: AmzMood; label: string; sub: string; raise: string; cut: string }[] = [
-  { key: 'fierce', label: 'Fierce', sub: 'Shift stock', raise: 'No raises', cut: 'More cuts — sizes that stopped selling too, and a penny under a seller copying our price' },
-  { key: 'chilled', label: 'Chilled', sub: 'A normal day', raise: 'Small steps up, at most 5%', cut: 'Just under the seller in the window, keeping £3 a pair. Sold in 30 days' },
-  { key: 'climb', label: 'Climb', sub: 'Reach for more', raise: 'Bigger steps up, at most 8%', cut: 'No cuts — let the other sellers sell out first' },
+// short = the one line on the Buy Box screen's mood card.
+export const MOODS: { key: AmzMood; label: string; sub: string; raise: string; cut: string; short: string }[] = [
+  { key: 'fierce', label: 'Fierce', sub: 'Shift stock', raise: 'No raises', cut: 'More cuts — sizes that stopped selling too, and a penny under a seller copying our price', short: 'No raises · more cuts, even sizes that stopped selling' },
+  { key: 'chilled', label: 'Chilled', sub: 'A normal day', raise: 'Small steps up, at most 5%', cut: 'Just under the seller in the window, keeping £3 a pair. Sold in 30 days', short: 'Raises up to 5% · cut just under the window' },
+  { key: 'climb', label: 'Climb', sub: 'Reach for more', raise: 'Bigger steps up, at most 8%', cut: 'No cuts — let the other sellers sell out first', short: 'Raises up to 8% · no cuts' },
 ];
 
 // Why a size has its answer: the waiting reasons for a card that isn't ready, else the Buy Box group (utils/amzBuyBox.js → classify).
 export const REASONS: Record<string, string> = {
-  ready: 'On Go through',
-  left: 'Left on Go through — back when its price would change, or after 7 days',
+  ready: 'To price',
+  left: 'Left on Pricing — back when its price would change, or after 7 days',
   changed: 'A price set since the reading — back after the next one',
   raised: 'Raised, waiting for a sale at the new price',
   top: 'Winning, at the top',
