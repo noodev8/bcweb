@@ -79,13 +79,17 @@ Your box shows no size in the header (the chip was removed, owner 2026-10-20); a
 (BIRK_BOX — weight left blank, it depends on the contents), and "Set" (one click, 2026-10-15) saves your box's typed size in this
 browser, or fills an empty size with the saved one — the same box size packed again and again isn't retyped.
 
-DO SHIPMENT (part 1, 2026-11-12 — docs/amz-inbound/PLAN.md, server utils/amzInbound.js). Step 1 of the Shipment panel: ONE press sends the
-stored packed boxes to Amazon through the SP-API instead of the two files below. On the server, in the background (polled every 2 s):
-Amazon's unconfirmed drafts are cancelled (Seller Central's too, so every press starts clean — owner), prep set per SKU as Amazon allows,
-the plan made, ONE pack group only, every box's contents and size sent. Nothing that costs money is confirmed. It stops there: the
-warehouse, own DPD, delivery date and box labels are finished in Seller Central ("Open in Seller Central") until part 2 adds the one
-confirm box and Zebra labels. Sends the boxes / units shown; a box changed on another bench → STALE, the boxes are re-read. Not with a
-refill open in your box (it would send the old contents). The two files below are KEPT as the backup, behind a "Backup: files" link (owner).
+DO SHIPMENT (part 1 2026-11-12, part 2 2026-11-13 — docs/amz-inbound/PLAN.md, server utils/amzInbound.js). Step 1 of the Shipment
+panel: ONE press sends the stored packed boxes to Amazon through the SP-API instead of the two files below. On the server, in the
+background (polled every 2 s): Amazon's unconfirmed drafts are cancelled (Seller Central's too, so every press starts clean — owner),
+prep set per SKU as Amazon allows, the plan made, ONE pack group only, every box's contents and size sent, the ONE warehouse worked out
+(never split). Then it STOPS at THE ONE CONFIRM BOX: the warehouse, Amazon's fee, our own DPD, boxes / units, and a ready-to-ship date
+picked here (no default, owner). Confirm books it (our DPD and the delivery window are worked out first, then the warehouse, window and
+DPD are confirmed) and the box labels print on the Zebra straight away (one 4 × 6 page per box, the Royal Mail label's QZ Tray path).
+Cancel drops the plan, free. Booked = the boxes are FROZEN (Pack / Delete refuse) until Mark shipped; the booked notice keeps Reprint
+labels. The DPD tracking still goes in Seller Central (parked, owner). Sends the boxes / units shown; a box changed on another bench →
+STALE, the boxes are re-read. Not with a refill open in your box (it would send the old contents). The two files below are KEPT as the
+backup, behind a "Backup: files" link (owner).
 
 SHIPPING PLAN — backup (owner, 2026-10-01: "a button that makes my amz shipping plan file ... essentially just a list of whats in all the boxes").
 Downloads Amazon-ShippingPlan.txt, the Seller Central shipping-plan upload, in the legacy app's exact layout: the template's header block,
@@ -112,11 +116,12 @@ import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, deleteAmzShipmentBox, markAmzShipmentBoxArrived,
-  startAmzInbound, getAmzInboundStatus,
+  startAmzInbound, getAmzInboundStatus, confirmAmzInbound, cancelAmzInbound, getAmzInboundLabels,
   type AmzBox, type AmzShipResult, type AmzScanHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { printFnskuLabel, printFnskuLabels, printFnskuTestStrip } from '@/lib/fnskuLabel';
+import { printPdfBase64 } from '@/lib/printPdf';
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 import SizeDialog, { dimsComplete } from '@/components/AmzBoxSizeDialog';
 import {
@@ -142,6 +147,9 @@ const unitRows = (lines: BoxLine[]) => lines.flatMap((l) => Array.from({ length:
 const expectOf = (b: Box) => b.lines.map((l) => ({ code: l.code, qty: l.qty }));
 // Size = the code's suffix after the last '-' (CLAUDE.md: not the last two characters — half sizes and UK sizes).
 const sizeOf = (code: string) => code.slice(code.lastIndexOf('-') + 1);
+// A YYYY-MM-DD day as "Fri 14 Nov" (noon UTC, so no time zone can move it a day).
+const dayLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Europe/London' });
+const money = (n: number) => `£${n.toFixed(2)}`;
 const fromDb = (b: AmzBox): Box => ({
   id: b.box,
   lines: b.lines.map((l) => ({ code: l.code, qty: l.qty, sku: l.sku, fnsku: l.fnsku, groupid: l.groupid, title: l.title })),
@@ -341,6 +349,11 @@ function Packing({ initial, autoBack, onShipped }: {
   const [inboundStarting, setInboundStarting] = useState(false);
   const [inboundError, setInboundError] = useState<string | null>(null);
   const [showFiles, setShowFiles] = useState(false);
+  // THE CONFIRM BOX: the ready-to-ship date (picked, never defaulted — owner), a Confirm / Cancel in flight; the box labels' print.
+  const [readyDate, setReadyDate] = useState('');
+  const [inboundBusy, setInboundBusy] = useState(false);
+  const [labelsBusy, setLabelsBusy] = useState(false);
+  const [labelsMsg, setLabelsMsg] = useState<{ ok?: string; error?: string } | null>(null);
 
   const refocus = () => scanRef.current?.focus();
   const shown: Box | null = view === 'mine' ? null : boxes.find((b) => b.id === view) ?? null;
@@ -567,6 +580,7 @@ function Packing({ initial, autoBack, onShipped }: {
     setShipping(false);
     setConfirmShip(false);
     if (!res.success || !res.data) { setShipError(res.error || 'Couldn’t mark the shipment shipped'); return; }
+    await inbound.refresh(); // the booked notice clears on the server with Mark shipped
     await onShipped(res.data);
   }
 
@@ -585,6 +599,56 @@ function Packing({ initial, autoBack, onShipped }: {
       }
     }
     await inbound.refresh();
+  }
+
+  // Follows the server's run from a press until it stops running (the panel's own poll shows the steps meanwhile).
+  async function waitForInbound() {
+    for (let i = 0; i < 150; i += 1) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const j = (await inbound.refresh())?.job ?? null;
+      if (!j || j.state !== 'running') return j;
+    }
+    return null;
+  }
+
+  // THE CONFIRM BOX's Confirm: books it, then prints the box labels on the Zebra as soon as it's booked.
+  async function confirmInbound() {
+    if (!inboundJob || !readyDate) return;
+    setInboundBusy(true);
+    setInboundError(null);
+    setLabelsMsg(null);
+    const res = await confirmAmzInbound(inboundJob.id, readyDate, boxes.length, totalUnits);
+    if (!res.success) {
+      setInboundBusy(false);
+      setInboundError(res.error || 'Couldn’t confirm');
+      await inbound.refresh();
+      return;
+    }
+    const j = await waitForInbound();
+    setInboundBusy(false);
+    setReadyDate('');
+    if (j?.state === 'done' && j.result?.fba) await printBoxLabels();
+  }
+
+  async function cancelInbound() {
+    if (!inboundJob) return;
+    setInboundBusy(true);
+    setInboundError(null);
+    const res = await cancelAmzInbound(inboundJob.id);
+    setInboundBusy(false);
+    if (!res.success) setInboundError(res.error || 'Couldn’t cancel');
+    await inbound.refresh();
+  }
+
+  // The booked shipment's box labels → the Zebra (QZ Tray, else the browser's print). Reprint any time until Mark shipped.
+  async function printBoxLabels() {
+    setLabelsBusy(true);
+    setLabelsMsg(null);
+    const res = await getAmzInboundLabels();
+    setLabelsBusy(false);
+    if (!res.success || !res.data) { setLabelsMsg({ error: res.error || 'Couldn’t get the box labels' }); return; }
+    printPdfBase64(res.data.pdf, refocus);
+    setLabelsMsg({ ok: `${res.data.boxes} box ${res.data.boxes === 1 ? 'label' : 'labels'} sent to the Zebra` });
   }
 
   // AMAZON UPLOAD (see the header). Fills from the stored boxes and downloads.
@@ -761,8 +825,10 @@ function Packing({ initial, autoBack, onShipped }: {
                 : `${notPacked.length} ${notPacked.length === 1 ? 'box' : 'boxes'} not packed`}
             </div>
             <div className="space-y-2 border-t border-slate-200 bg-slate-50 p-2">
-            {/* DO SHIPMENT (part 1) — one press: Amazon's unconfirmed drafts cleared, the plan made, one pack group, the boxes sent
-                (server, utils/amzInbound.js). Then the rest is done in Seller Central until part 2. */}
+            {/* DO SHIPMENT — one press: Amazon's unconfirmed drafts cleared, the plan made, one pack group, the boxes sent, the ONE
+                warehouse worked out (server, utils/amzInbound.js); then THE CONFIRM BOX below. Hidden while a shipment waits at the
+                confirm box or is booked (pressing again would only find the same thing). */}
+            {inboundJob?.state !== 'confirm' && inboundJob?.state !== 'done' && (
             <button
               type="button"
               disabled={totalUnits === 0 || inboundStarting || inboundJob?.state === 'running' || refillNo !== null}
@@ -776,37 +842,100 @@ function Packing({ initial, autoBack, onShipped }: {
               <ArrowUpTrayIcon className="h-4 w-4 text-white/80" />
               {inboundStarting || inboundJob?.state === 'running' ? 'Sending to Amazon…' : 'Do shipment'}
             </button>
-            {refillNo === null && mineUnits > 0 && (
+            )}
+            {refillNo === null && mineUnits > 0 && inboundJob?.state !== 'done' && (
               <div className="text-xs text-slate-500">Your box ({mineUnits} {mineUnits === 1 ? 'shoe' : 'shoes'}) isn’t packed, so it won’t go.</div>
             )}
             {inboundError && (
               <div className="rounded-md border border-red-300 bg-red-50 px-2.5 py-2 text-xs text-red-800">{inboundError}</div>
             )}
-            {inboundJob && (
-              <div className={'rounded-md border px-2.5 py-2 text-xs '
-                + (inboundJob.state === 'running' ? 'border-slate-200 bg-white text-slate-700'
-                  : inboundJob.state === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                  : 'border-red-300 bg-red-50 text-red-800')}>
-                {inboundJob.state === 'running' && <div className="font-medium">{inboundJob.step}…</div>}
-                {inboundJob.state === 'done' && inboundJob.result && (
-                  <div className="space-y-1">
-                    <div className="font-semibold">
-                      Sent to Amazon: {inboundJob.result.boxes} {inboundJob.result.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.result.units} units
-                      <span className="font-normal"> · {new Date(inboundJob.startedAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span>
-                    </div>
-                    <div>Finish it in Seller Central: the warehouse (one shipment), your own DPD, the delivery date and the box labels.</div>
-                    <a href={inboundJob.result.sellerCentral} target="_blank" rel="noreferrer" className="font-semibold underline">Open in Seller Central</a>
-                  </div>
+            {inboundJob?.state === 'running' && (
+              <div className="rounded-md border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-700">{inboundJob.step}…</div>
+            )}
+
+            {/* THE CONFIRM BOX — everything that costs or commits, ONE press (PLAN.md). The date is picked, never defaulted (owner). */}
+            {inboundJob?.state === 'confirm' && inboundJob.confirm && (
+              <div role="alertdialog" className="space-y-2 rounded-md border-2 border-brand-500 bg-white p-2.5 text-xs text-slate-700">
+                <div className="text-sm font-semibold text-slate-900">Book this shipment?</div>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+                  <dt className="text-slate-500">Warehouse</dt>
+                  <dd>
+                    <span className="font-semibold text-slate-900">{inboundJob.confirm.warehouse}</span>{inboundJob.confirm.town && ` · ${inboundJob.confirm.town}`}
+                    <span className="block text-slate-500">One shipment, not split</span>
+                  </dd>
+                  <dt className="text-slate-500">Amazon fee</dt>
+                  <dd className={inboundJob.confirm.fee > 0 ? 'font-semibold text-amber-800' : ''}>
+                    {money(inboundJob.confirm.fee)}
+                    {inboundJob.confirm.fee > 0 && inboundJob.confirm.fees.filter((f) => f.amount > 0).map((f) => (
+                      <span key={f.text} className="block font-normal">{f.text}: {money(f.amount)}</span>
+                    ))}
+                  </dd>
+                  <dt className="text-slate-500">Carrier</dt>
+                  <dd>Our own DPD</dd>
+                  <dt className="text-slate-500">Sending</dt>
+                  <dd>{inboundJob.totals.boxes} {inboundJob.totals.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.totals.units} units</dd>
+                </dl>
+                <label className="block">
+                  <span className="mb-0.5 block font-medium text-slate-900">Ready to ship</span>
+                  <input
+                    type="date"
+                    value={readyDate}
+                    min={inboundJob.confirm.today}
+                    onChange={(e) => setReadyDate(e.target.value)}
+                    className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                  />
+                </label>
+                <div className="text-slate-500">Once booked the boxes can’t change until Mark shipped. The box labels print on the Zebra.</div>
+                <div className="flex gap-2">
+                  <button type="button" disabled={!readyDate || inboundBusy} onClick={confirmInbound}
+                    title={readyDate ? `Book ${inboundJob.confirm.warehouse}, our own DPD, ready ${dayLabel(readyDate)}` : 'Pick the ready-to-ship date first'}
+                    className="rounded bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40">
+                    {inboundBusy ? 'Working…' : 'Confirm'}
+                  </button>
+                  <button type="button" disabled={inboundBusy} onClick={cancelInbound}
+                    className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* BOOKED — the FBA15 shipment, its labels (printed on Confirm; Reprint any time until Mark shipped). */}
+            {inboundJob?.state === 'done' && inboundJob.result && (
+              <div className="space-y-1.5 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-800">
+                <div className="font-semibold">
+                  Booked{inboundJob.result.fba ? `: ${inboundJob.result.fba}` : ''}
+                  {inboundJob.result.warehouse ? ` to ${inboundJob.result.warehouse}` : ''}{inboundJob.result.town ? ` · ${inboundJob.result.town}` : ''}
+                </div>
+                <div>
+                  {inboundJob.result.boxes} {inboundJob.result.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.result.units} units · our own DPD
+                  {inboundJob.result.readyDate && <> · ready {dayLabel(inboundJob.result.readyDate)}</>}
+                  {inboundJob.result.window && <> · delivery {dayLabel(inboundJob.result.window.start)} – {dayLabel(inboundJob.result.window.end)}</>}
+                </div>
+                {!inboundJob.result.carrierSet && (
+                  <div className="font-semibold text-amber-800">The carrier and date aren’t set on Amazon yet: finish them in Seller Central.</div>
                 )}
-                {(inboundJob.state === 'stopped' || inboundJob.state === 'failed') && (
-                  <div><span className="font-semibold">{inboundJob.state === 'stopped' ? 'Stopped' : 'Didn’t work'}:</span> {inboundJob.message}</div>
-                )}
-                {inboundJob.warnings.length > 0 && inboundJob.state !== 'running' && (
-                  <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-amber-800">
-                    {inboundJob.warnings.map((w) => <li key={w}>{w}</li>)}
-                  </ul>
+                <button type="button" disabled={labelsBusy || !inboundJob.result.fba} onClick={printBoxLabels}
+                  className="flex items-center gap-1.5 rounded border border-emerald-300 bg-white px-2.5 py-1 font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40">
+                  <PrinterIcon className="h-4 w-4" />{labelsBusy ? 'Getting labels…' : labelsMsg?.ok ? 'Reprint labels' : 'Print labels'}
+                </button>
+                {labelsMsg?.ok && <div>{labelsMsg.ok}.</div>}
+                {labelsMsg?.error && <div className="font-semibold text-red-700">{labelsMsg.error}</div>}
+                <div className="text-emerald-700">When DPD collects: Mark shipped here, and put the DPD tracking in Seller Central.</div>
+                <a href={inboundJob.result.sellerCentral} target="_blank" rel="noreferrer" className="font-semibold underline">Open in Seller Central</a>
+              </div>
+            )}
+
+            {(inboundJob?.state === 'stopped' || inboundJob?.state === 'failed') && (
+              <div className="rounded-md border border-red-300 bg-red-50 px-2.5 py-2 text-xs text-red-800">
+                <span className="font-semibold">{inboundJob.state === 'stopped' ? 'Stopped' : 'Didn’t work'}:</span> {inboundJob.message}
+                {inboundJob.sellerCentral && (
+                  <a href={inboundJob.sellerCentral} target="_blank" rel="noreferrer" className="mt-1 block font-semibold underline">Open in Seller Central</a>
                 )}
               </div>
+            )}
+            {inboundJob && inboundJob.warnings.length > 0 && inboundJob.state !== 'running' && (
+              <ul className="list-disc space-y-0.5 rounded-md border border-amber-200 bg-amber-50 py-1.5 pl-6 pr-2 text-xs text-amber-800">
+                {inboundJob.warnings.map((w) => <li key={w}>{w}</li>)}
+              </ul>
             )}
             {/* BACKUP: the old two files (shipping plan .txt, box contents .xlsx), kept for when the API can't be used. */}
             <button type="button" onClick={() => setShowFiles((v) => !v)} className="text-xs text-slate-400 hover:text-slate-600">

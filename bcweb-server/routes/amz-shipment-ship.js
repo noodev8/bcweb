@@ -152,6 +152,10 @@ router.post('/', async (req, res) => {
     logger.info(`[amz-shipment-ship] shipment ${outcome.shipmentId}: ${outcome.boxes} boxes, ${outcome.units} units, `
       + `${outcome.stockRemoved} off ${AMZ_LOCATION}, ${outcome.shortfall.length} short — by ${req.user.display_name}`);
 
+    // The boxes have gone: Do shipment's booked shipment stops freezing them (utils/amzInbound.js). Amazon isn't told (no such call);
+    // the DPD tracking still goes in Seller Central.
+    require('../utils/amzInbound').clearBooked();
+
     const { shipmentId, boxes, lines, units, stockRemoved, shortfall } = outcome;
     return res.json({ return_code: 'SUCCESS', shipmentId, boxes, lines, units, stockRemoved, shortfall });
   } catch (err) {

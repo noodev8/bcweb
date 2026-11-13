@@ -1,6 +1,6 @@
 # Amazon inbound shipments from BCWEB — PLAN
 
-Status: **plan only, nothing built** (2026-11-12). Goal (owner): do the whole Amazon shipment from BCWEB instead of going back and
+Status: **built 2026-11-13 (part 1 + part 2), not yet used on a real shipment.** Plan agreed 2026-11-12. Goal (owner): do the whole Amazon shipment from BCWEB instead of going back and
 forth to Seller Central's Send to Amazon with the shipping-plan .txt and the box-contents .xlsx.
 
 ## Owner decisions (2026-11-12)
@@ -183,8 +183,24 @@ After Confirm, Unpack / Delete / Pack on a stored box refuse until Mark shipped.
    confirming, then `cancelInboundPlan`. That proves transport can be listed before the placement confirm (the one confirm box depends
    on it) and that a cancel before confirming is free. Needs the owner's OK: it creates a real draft in Seller Central (it shows as VOIDED,
    like the ~35 drafts already there).
-2. **BUILT 2026-11-12, not yet used on a real shipment.** `utils/amzInbound.js` (THE copy, writes allow-listed), `POST /amz-inbound-start`, `GET /amz-inbound-status`, the Do shipment button on AMZ Shipment's Shipment panel (old files behind "Backup: files"). **Do shipment, part 1**: the button runs steps 1–2 and stops. The rest is finished in Seller Central for a while, where the plan shows up ready.
-3. **Do shipment, full**: works out 3–4, the one confirm box (warehouse, fee, DPD, date), confirm → Zebra labels.
+2. **BUILT 2026-11-12.** `utils/amzInbound.js` (THE copy, writes allow-listed), `POST /amz-inbound-start`, `GET /amz-inbound-status`, the Do shipment button on AMZ Shipment's Shipment panel (old files behind "Backup: files"). **Do shipment, part 1**: the button runs steps 1–2 and stops. The rest is finished in Seller Central for a while, where the plan shows up ready.
+3. **BUILT 2026-11-13, not yet used on a real shipment. Do shipment, full** (`utils/amzInbound.js`; routes `amz-inbound-confirm`,
+   `-cancel`, `-labels`): the press now also works out the ONE warehouse and waits at the confirm box (warehouse + town, Amazon's fee,
+   our own DPD, boxes / units, the ready-to-ship date picked there). Confirm: our own DPD and the delivery window are worked out FIRST
+   for that date (missing → stop, plan cancelled, free), then placement → delivery window → transport are confirmed, the FBA15 id is
+   read back and the box labels print on the Zebra. After the placement confirm nothing is cancelled automatically; a later failure
+   says so and links to Seller Central. Belt and braces: the two costly confirms are refused by the write guard unless the id was
+   vetted by the rule (ONE shipment / own DPD, no quote). Ready-to-ship start sent = 09:00 London that day (15 min from now if today
+   and 09:00 has passed); delivery window = earliest AVAILABLE starting on or after that day. Options generated before the placement
+   confirm are re-used if Amazon still lists them, else generated again under the same rules (not yet seen on a real one).
+   **Booked = frozen**: Pack / Delete refuse (`BOOKED`) until Mark shipped, which clears it. Held in memory; after a restart the first
+   status read asks Amazon once and a booked plan whose items equal our boxes brings the booked notice + freeze back. A press while
+   booked shows the booked shipment with Reprint labels instead of starting again; a booked plan that ISN'T our boxes stops the press
+   ("an earlier booked shipment isn't marked shipped in Seller Central yet").
+   **Labels, read on a real shipment 2026-11-13** (FBA15MVXM5VF, GET only): v0 `getLabels` with `PageType=PackageLabel_Thermal`,
+   `LabelType=UNIQUE`, `PackageLabelsToPrint` = the box ids from `listShipmentBoxes` (Amazon lists them OUT of order — sorted as text,
+   U000001 first) → `DownloadURL` → a plain PDF (`%PDF-1.4`), one 306 × 432 pt (4.25 × 6 in) page per box. `NumberOfPackages` alone is
+   refused (cartonIdList must not be null). Printed through the Royal Mail label's QZ Tray → Zebra path, no new set-up.
 4. ~~**Step 6**: the FBA15 id carried into Mark shipped's archive.~~ **Dropped** (owner, 2026-11-12: not needed). Mark shipped stays as it is.
 5. **Later**: DPD tracking per box (parked). Amazon's API has no "mark shipped" call: for our own courier, sending the tracking
    (`updateShipmentTrackingDetails`) is what tells Amazon the boxes are on their way. Proposal for then: BCWEB's Mark shipped asks

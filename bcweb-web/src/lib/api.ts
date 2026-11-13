@@ -3355,23 +3355,42 @@ export function markAmzShipmentBoxArrived(box: number, expect: AmzBoxExpect) {
   }));
 }
 
-// "Do shipment" (part 1): drafts cleared, plan made, boxes sent to Amazon — in the background on the server (utils/amzInbound.js,
-// docs/amz-inbound/PLAN.md). Start sends the boxes / units the screen showed; status is polled while it runs. Held in server memory.
+// "Do shipment": drafts cleared, plan made, boxes sent, ONE warehouse worked out — then the job WAITS (state 'confirm') for the one
+// confirm box: Confirm books it (warehouse, delivery window, our own DPD) with the ready-to-ship date picked; Cancel drops the plan.
+// All in the background on the server (utils/amzInbound.js, docs/amz-inbound/PLAN.md), polled while it runs. Held in server memory.
+export interface AmzInboundBooked {
+  planId: string; shipmentId: string | null; fba: string | null; warehouse: string | null; town: string;
+  carrierSet: boolean; window: { start: string; end: string } | null; readyDate?: string;
+  boxes: number; units: number; already: boolean; sellerCentral: string;
+}
 export interface AmzInboundJob {
   id: number; by: string; startedAt: string; finishedAt: string | null;
-  state: 'running' | 'done' | 'stopped' | 'failed'; step: string;
-  log: { at: string; text: string }[]; warnings: string[]; message: string | null;
+  state: 'running' | 'confirm' | 'done' | 'stopped' | 'failed'; step: string;
+  log: { at: string; text: string }[]; warnings: string[]; message: string | null; sellerCentral?: string;
   totals: { boxes: number; units: number };
-  result: { planId: string; boxes: number; units: number; skus: number; sellerPrep: number; sellerCentral: string } | null;
+  confirm: {
+    warehouse: string; town: string; fee: number; fees: { text: string; amount: number; currency: string }[];
+    expires: string | null; skus: number; sellerPrep: number; today: string;
+  } | null;
+  result: AmzInboundBooked | null;
 }
+const inboundJob = (b: Record<string, unknown>) => ({ job: (b.job as AmzInboundJob) || null });
 export function startAmzInbound(boxes: number, units: number) {
-  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-start', method: 'POST', data: { boxes, units } }, (b) => ({
-    job: (b.job as AmzInboundJob) || null,
-  }));
+  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-start', method: 'POST', data: { boxes, units } }, inboundJob);
 }
 export function getAmzInboundStatus() {
-  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-status', method: 'GET' }, (b) => ({
-    job: (b.job as AmzInboundJob) || null,
+  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-status', method: 'GET' }, inboundJob);
+}
+export function confirmAmzInbound(id: number, readyDate: string, boxes: number, units: number) {
+  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-confirm', method: 'POST', data: { id, readyDate, boxes, units } }, inboundJob);
+}
+export function cancelAmzInbound(id: number) {
+  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-cancel', method: 'POST', data: { id } }, inboundJob);
+}
+// The booked shipment's box labels: one PDF, a 4 × 6 page per box, for the Zebra (src/lib/printPdf.ts).
+export function getAmzInboundLabels() {
+  return request<{ pdf: string; fba: string; boxes: number }>({ url: '/amz-inbound-labels', method: 'GET' }, (b) => ({
+    pdf: String(b.pdf || ''), fba: String(b.fba || ''), boxes: Number(b.boxes || 0),
   }));
 }
 

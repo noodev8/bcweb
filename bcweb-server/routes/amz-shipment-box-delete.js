@@ -23,7 +23,8 @@ Success Response:
 { "return_code": "SUCCESS", "box": 3, "removed": 4 }   // rows deleted
 =======================================================================================================================================
 Return Codes:
-"SUCCESS" · "MISSING_FIELDS" · "STALE" (no such box, or it isn't what the screen showed) · "UNAUTHORIZED" · "SERVER_ERROR"
+"SUCCESS" · "MISSING_FIELDS" · "STALE" (no such box, or it isn’t what the screen showed) · "BOOKED" (booked with Amazon, frozen) ·
+"UNAUTHORIZED" · "SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -42,6 +43,11 @@ router.post('/', async (req, res) => {
     const expect = req.body?.expect;
     if (!Number.isInteger(box) || box < 1 || !Array.isArray(expect)) {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'box and expect are required' });
+    }
+    // BOOKED = FROZEN (Do shipment part 2, utils/amzInbound.js): once Amazon has booked these boxes, nothing changes until Mark shipped.
+    const booked = require('../utils/amzInbound').frozen();
+    if (booked) {
+      return res.json({ return_code: 'BOOKED', message: `The shipment is booked with Amazon${booked.fba ? ` (${booked.fba})` : ''}, so the boxes can't change until it's marked shipped` });
     }
     const removed = await withTransaction(async (client) => {
       // Serialised with Pack (same advisory lock), so numbers can't move under either mid-way.

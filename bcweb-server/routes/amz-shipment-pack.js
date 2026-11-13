@@ -35,7 +35,8 @@ Success Response:
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "MISSING_FIELDS" · "NOT_MEASURED" (any of the four measurements missing) · "NO_SKU" (a code with no Amazon SKU/FNSKU) ·
-"STALE" (a refill whose box has changed) · "UNAUTHORIZED" · "SERVER_ERROR"
+"STALE" (a refill whose box has changed) · "BOOKED" (the shipment is booked with Amazon — boxes frozen until Mark shipped) ·
+"UNAUTHORIZED" · "SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -73,6 +74,11 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'MISSING_FIELDS', message: 'refill needs box and expect' });
     }
 
+    // BOOKED = FROZEN (Do shipment part 2, utils/amzInbound.js): once Amazon has booked these boxes, nothing changes until Mark shipped.
+    const booked = require('../utils/amzInbound').frozen();
+    if (booked) {
+      return res.json({ return_code: 'BOOKED', message: `The shipment is booked with Amazon${booked.fba ? ` (${booked.fba})` : ''}, so the boxes can't change until it's marked shipped` });
+    }
     const out = await withTransaction(async (client) => {
       const products = [];
       for (const [code, qty] of qtyByCode) {

@@ -12,7 +12,8 @@ Two kinds of label, each to its own printer, FOUND BY NAME — no picking (owner
 and fnskus go to the dymo"):
   fnsku      → the Dymo (name has DYMO or LabelWriter). The FNSKU label from fnskuLabel.ts as a one-page 25 × 54 mm PDF — the same
              page the browser path prints — no scaling and NO density, so the Dymo prints at its own "Barcodes and Graphics" setting (2026-11-02).
-  royalMail  → the Zebra (name has ZDesigner or Zebra). The Click & Drop PDF from Customer Orders. No size given: the PDF's own page
+  royalMail  → the Zebra (name has ZDesigner or Zebra). The Click & Drop PDF from Customer Orders, and (2026-11-13) Amazon's box
+             labels from AMZ Shipment's Do shipment (4 × 6 thermal PDF, same job). No size given: the PDF's own page
              size is the label's, exactly as the browser path did. If it ever prints grey, add `ignoreTransparency: true` to the job.
 Windows often keeps a duplicate install of a USB printer ("DYMO LabelWriter 450 Turbo (Copy 1)"), so a name WITHOUT "Copy" wins when
 there are two; if labels ever go to the wrong one, delete the dead duplicate in Windows' Printers & scanners.

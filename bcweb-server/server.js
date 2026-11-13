@@ -214,8 +214,11 @@ app.use('/amz-shipment-ship',require('./routes/amz-shipment-ship'));   // Mark s
 app.use('/amz-shipment-pack', require('./routes/amz-shipment-pack'));   // AMZ Shipment: Pack — store the user's box, give it its number
 app.use('/amz-shipment-box-delete', require('./routes/amz-shipment-box-delete')); // AMZ Shipment: delete a stored box, later boxes move down
 app.use('/amz-shipment-box-arrived', require('./routes/amz-shipment-box-arrived')); // AMZ Shipment: mark a stored box's shoes arrived in Order Status (orderstatus only)
-app.use('/amz-inbound-start', require('./routes/amz-inbound-start')); // AMZ Shipment: Do shipment — plan + boxes to Amazon in the background (nothing that costs)
+app.use('/amz-inbound-start', require('./routes/amz-inbound-start')); // AMZ Shipment: Do shipment — plan, boxes, ONE warehouse worked out, waits at the confirm box (nothing that costs)
 app.use('/amz-inbound-status', require('./routes/amz-inbound-status')); // AMZ Shipment: Do shipment progress — READ ONLY
+app.use('/amz-inbound-confirm', require('./routes/amz-inbound-confirm')); // AMZ Shipment: the confirm box — books warehouse, delivery window, our own DPD
+app.use('/amz-inbound-cancel', require('./routes/amz-inbound-cancel')); // AMZ Shipment: the confirm box's Cancel — cancels the unconfirmed plan (free)
+app.use('/amz-inbound-labels', require('./routes/amz-inbound-labels')); // AMZ Shipment: box labels of the booked shipment (PDF for the Zebra) — READ ONLY
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.

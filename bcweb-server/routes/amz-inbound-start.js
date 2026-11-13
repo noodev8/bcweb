@@ -3,9 +3,11 @@
 API Route: amz_inbound_start
 =======================================================================================================================================
 Method: POST
-Purpose: AMZ Shipment's "Do shipment" (part 1, 2026-11-12): clear Amazon's unconfirmed drafts, make the inbound plan from the stored
-         packed boxes, one pack group, prep per SKU, send the boxes. Nothing that costs money (rules + safety in utils/amzInbound.js,
-         the record in docs/amz-inbound/PLAN.md). Warehouse, own DPD, delivery window and labels are finished in Seller Central until part 2.
+Purpose: AMZ Shipment's "Do shipment" (part 1 2026-11-12, part 2 2026-11-13): clear Amazon's unconfirmed drafts, make the inbound plan
+         from the stored packed boxes, one pack group, prep per SKU, send the boxes, work out the ONE warehouse (never split) — then
+         WAIT at the one confirm box (job.state 'confirm'; POST /amz-inbound-confirm books it, /amz-inbound-cancel drops it). Nothing that
+         costs money is confirmed here (rules + safety in utils/amzInbound.js, the record in docs/amz-inbound/PLAN.md).
+         If these boxes are ALREADY booked on Amazon, the run ends at once in state 'done' (result.already) with Reprint labels.
 
          Runs IN THE BACKGROUND (~1–3 minutes): this answers at once and the screen follows GET /amz-inbound-status. One at a time.
          The boxes are read and checked HERE first, so an unmeasured box or a screen that's out of date answers straight away.
