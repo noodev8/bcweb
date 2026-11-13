@@ -1,5 +1,6 @@
 -- =====================================================================================================================================
 -- "CAN'T GET IT" — ONE SYSTEM, PER SIZE (owner, 2026-11-13: "single system"). Rules in utils/noSupply.js (THE copy).
+-- APPLIED 2026-11-13 (37 style marks -> 194 size rows). Do not re-run: 20261113d dropped the skusummary columns it reads.
 -- =====================================================================================================================================
 -- Every style mark on skusummary.no_supply_* becomes one no_supply_size row per LIVE size of the style, with the same since / until /
 -- by, live or lapsed alike (a lapsed one keeps its "Couldn't get it" note). A size that already has its own row keeps whichever mark

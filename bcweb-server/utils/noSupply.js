@@ -14,8 +14,8 @@ ONE SYSTEM, PER SIZE (owner, 2026-11-13). Stored ONLY in no_supply_size — one 
          (migrations/20261113b_no_supply_size.sql). Until 2026-11-13 the mark was a STYLE flag on skusummary.no_supply_*; the owner
          pressed Can't get on a size on Amazon Order and "really meant we can't get that size". A short-lived two-mark version (style
          flag + size rows side by side, with a priority rule) was replaced the same day by this one: "single system". The 37 style marks
-         then live were copied to one row per size (migrations/20261113c_no_supply_to_sizes.sql) and the skusummary columns emptied —
-         nothing reads them; drop them once nothing outside BCWEB is found to.
+         then live were copied to one row per size (migrations/20261113c_no_supply_to_sizes.sql) and the skusummary columns dropped
+         (20261113d).
 
          "WHOLE STYLE" IS A SHORTCUT, NOT A SECOND MARK: Shopify Order's style view and Back Office → Seasons mark a style by writing a
          row for EVERY live size of it (markStyles), and Release a style by deleting every row of it (clearStyles). A style READS as
