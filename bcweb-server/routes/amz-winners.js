@@ -32,7 +32,7 @@ Schema landmines respected: amzfeed is FBA-only, READ ONLY. amzprice is a junk-p
 integer. Size = the code's suffix after the last '-'. Human name from title.shopifytitle (not the overloaded colour tag). Requires auth.
 =======================================================================================================================================
 DUE = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in Chilled
-(selling at FBA, or New) is due when it has a card; every other size when its review date has come round. `parked` keeps its name on
+(selling at FBA, or New) is NEVER due (decision 27 — its cards are Daily's Buy Box moves, `bb_card`); every other size when its review date has come round. `parked` keeps its name on
 the wire but means NOT DUE by that rule; `due_by` / `bb_answer` say which half decides. Due rows sort first.
 
 Request Query Params:
@@ -106,9 +106,9 @@ router.get('/', async (req, res) => {
     // THE one Amazon due rule (utils/amzDue.js, PLAN.md decision 26): the Buy Box half as two code lists for SQL.
     const side = await readBuyBoxSide(pool);
     const sp = sideParams(side);
-    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$7', '$8');
+    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$7');
 
-    // $1 group name, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked, $7 Buy Box codes, $8 those with a card.
+    // $1 group name, $2 days, $3 limit, $4 MIN_UNITS, $5 MIN_PROFIT, $6 includeParked, $7 Buy Box codes (never due).
     // win: units in the window + last-sold per SKU. s7: 7-day units (secondary signal + tiebreak). The INNER JOIN to `win` drops SKUs
     // with no sales in the window; the amzlive>0 filter drops out-of-stock SKUs; LIMIT tops the shortlist back up to N.
     const result = await query(`
@@ -152,7 +152,7 @@ router.get('/', async (req, res) => {
         AND ($6::boolean OR ${DUE})                       -- due only unless ?parked=include (THE one Amazon rule)
       ORDER BY ${DUE} DESC, w.units DESC, COALESCE(s7.u7,0) DESC, w.last_sold DESC
       LIMIT $3::int
-    `, [group.name, days, limit, MIN_UNITS, MIN_PROFIT, includeParked, sp.bb, sp.cards]);
+    `, [group.name, days, limit, MIN_UNITS, MIN_PROFIT, includeParked, sp.bb]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -173,6 +173,7 @@ router.get('/', async (req, res) => {
       parked: r.parked === true,   // only ever true with ?parked=include — NOT DUE by THE one Amazon rule
       due_by: side.has(r.code) ? 'buybox' : 'review',
       bb_answer: side.get(r.code)?.answer ?? null,
+      bb_card: side.get(r.code)?.card === true,   // a Buy Box move (a card in Chilled)
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.

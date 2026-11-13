@@ -22,7 +22,7 @@ Purpose: Repricing — the AMAZON list behind one PORTFOLIO STATUS (WINNERS | ST
          unless ?parked=include — the Due switch.
 
          DUE = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in
-         Chilled (selling at FBA, or New) is due when it has a card; every other size when its review date has come round. `parked`
+         Chilled (selling at FBA, or New) is NEVER due (decision 27 — its cards are Daily's Buy Box moves, `bb_card`); every other size when its review date has come round. `parked`
          keeps its name on the wire but means NOT DUE by that rule; `due_by` / `bb_answer` say which half decides.
 
 Requires auth.
@@ -92,9 +92,9 @@ router.get('/', async (req, res) => {
     // THE one Amazon due rule (header): the Buy Box half as two code lists for SQL.
     const side = await readBuyBoxSide(pool);
     const sp = sideParams(side);
-    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$5', '$6');
+    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$5');
 
-    // $1 status, $2 limit, $3 includeParked, $4 bar, $5 Buy Box codes, $6 those with a card. total / oos_rows are window functions,
+    // $1 status, $2 limit, $3 includeParked, $4 bar, $5 Buy Box codes (never due). total / oos_rows are window functions,
     // so pre-cap.
     const result = await query(`
       WITH u AS (       -- Amazon units: 30 days and 7 days, one pass (the two columns the shared table shows)
@@ -143,7 +143,7 @@ router.get('/', async (req, res) => {
       -- Due first, so the safety cap can only trim not-due rows.
       ORDER BY ${DUE} DESC, COALESCE(u.u30,0) DESC, COALESCE(a.amzlive,0) DESC, a.code
       LIMIT $2::int
-    `, [group.name, limit, includeParked, bar, sp.bb, sp.cards]);
+    `, [group.name, limit, includeParked, bar, sp.bb]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -164,6 +164,7 @@ router.get('/', async (req, res) => {
       parked: r.parked === true,
       due_by: side.has(r.code) ? 'buybox' : 'review',
       bb_answer: side.get(r.code)?.answer ?? null,
+      bb_card: side.get(r.code)?.card === true,   // a Buy Box move (a card in Chilled)
       bb_share: num(r.bb_share),
       bb_lead: num(r.bb_lead),
       bb_rivals: r.bb_rivals === null || r.bb_rivals === undefined ? null : Number(r.bb_rivals),

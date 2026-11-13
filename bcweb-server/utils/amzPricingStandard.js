@@ -46,8 +46,8 @@ THE RULES (owner, 2026-11-04 — change them here and nowhere else; every number
       again. But WHICH sizes get checked follows the team's Amazon Due list (owner, 2026-11-04: "same system as our manual due
       dates" — `--top` ranked by 12-month sales and showed the same Ives colours every time): `dueStyles` = the sizes the Amazon
       screens call Due (FBA stock, due by THE ONE AMAZON RULE — utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13:
-      a size the Buy Box answers in Chilled (selling at FBA, or New) is due when it has a card, every other size when its review
-      date has passed or is unset — the rule routes/amz-all-list.js uses), and a
+      a size the Buy Box answers in Chilled (selling at FBA, or New) is never due — its cards are worked on Amazon Pricing (decision
+      27) — every other size when its review date has passed or is unset — the rule routes/amz-all-list.js uses), and a
       size the skill decides on is parked like a manual review: REVIEW_AFTER_PRICE_DAYS after a price, REVIEW_AFTER_LEAVE_DAYS
       after a "leave" (owner: "use smaller windows ... amazon sales are way before 14 days"). A later review date already set is
       kept. CAN'T TELL sizes are not parked by the skill — they stay Due for the team.
@@ -174,7 +174,7 @@ async function dueStyles(db, { on = null, all = false } = {}) {
   // otherwise load this file half-built (a require cycle).
   const { readBuyBoxSide, sideParams, dueSql } = require('./amzDue');
   const sp = sideParams(await readBuyBoxSide(db));
-  const due = dueSql('a.code', 'm.next_amz_price_review', '$3', '$4', 'COALESCE($1::date, CURRENT_DATE)');
+  const due = dueSql('a.code', 'm.next_amz_price_review', '$3', 'COALESCE($1::date, CURRENT_DATE)');
   const r = await db.query(
     `SELECT m.groupid, array_agg(a.code ORDER BY a.code) AS codes,
             COALESCE(jsonb_object_agg(a.code, CASE WHEN a.code = ANY($3::text[]) THEN 'Buy Box' ELSE m.next_amz_price_review::text END)
@@ -183,7 +183,7 @@ async function dueStyles(db, { on = null, all = false } = {}) {
      WHERE (COALESCE(a.amzlive, 0) > 0 OR COALESCE(a.amztotal, 0) > 0)
        AND ($2::boolean OR ${due})
      GROUP BY m.groupid ORDER BY m.groupid`,
-    [on, all, sp.bb, sp.cards]
+    [on, all, sp.bb]
   );
   return r.rows;
 }

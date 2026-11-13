@@ -87,12 +87,12 @@ const ZERO = { total: 0, due: 0, parked: 0, out_of_stock: 0, styles: 0, due_styl
 router.get('/', async (req, res) => {
   try {
     // AMAZON "DUE" = THE ONE RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in
-    // Chilled (selling at FBA, or New) is due when it has a card; every other size when its review date has come round. So these due
-    // lines count what Daily's "Amazon to price" counts. `parked` = not due by that rule.
+    // Chilled (selling at FBA, or New) is never due (its cards are Daily's "Buy Box moves", decision 27); every other size is due
+    // when its review date has come round. So these due lines count what Daily's "Amazon due" counts. `parked` = not due by that rule.
     const side = await readBuyBoxSide(pool);
     const sp = sideParams(side);
-    const dueA = dueSql('a.code', 'm.next_amz_price_review', '$1', '$2');   // the status query
-    const dueB = dueSql('a.code', 'm.next_amz_price_review', '$2', '$3');   // the dial query ($1 = the bar ladder)
+    const dueA = dueSql('a.code', 'm.next_amz_price_review', '$1');   // the status query
+    const dueB = dueSql('a.code', 'm.next_amz_price_review', '$2');   // the dial query ($1 = the bar ladder)
 
     // Independent reads, run together: the four statuses per channel, then the WINNERS counts at each dial mark per channel.
     const [shp, amz, shpBars, amzBars, share] = await Promise.all([
@@ -132,7 +132,7 @@ router.get('/', async (req, res) => {
         WHERE sk.portfolio_status IS NOT NULL
           AND ${channelFilterSql('sk', 'AMZ')}
         GROUP BY sk.portfolio_status
-      `, [sp.bb, sp.cards]),
+      `, [sp.bb]),
       // The dial: one row per mark a winner clears (a style over £5,000 counts at 1,500, 2,500 and 5,000). A mark nobody clears
       // returns no row and reads as zero below.
       query(`
@@ -162,7 +162,7 @@ router.get('/', async (req, res) => {
         WHERE sk.portfolio_status = 'WINNERS'
           AND ${channelFilterSql('sk', 'AMZ')}
         GROUP BY b.bar
-      `, [WINNER_BAR_LADDER, sp.bb, sp.cards]),
+      `, [WINNER_BAR_LADDER, sp.bb]),
       // Winners' share at each mark (see the header). Totals ride on every row (CROSS JOIN) so it is one read.
       query(`
         WITH local_free AS (

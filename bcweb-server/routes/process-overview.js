@@ -60,8 +60,8 @@ router.get('/', async (req, res) => {
   try {
     const [prospects, skus] = await Promise.all([
       query(`SELECT COUNT(*)::int AS n FROM prospect WHERE archived_at IS NULL`),
-      // $2 / $3 = THE one Amazon due rule's Buy Box half (utils/amzDue.js) — amz_due / amz_bb.
-      readBuyBoxSide(pool).then((side) => { const sp = sideParams(side); return query(NEW_SKUS_SQL, [NEW_DAYS, sp.bb, sp.cards]); }),
+      // $2 = THE one Amazon due rule's Buy Box half (utils/amzDue.js) — amz_due / amz_bb.
+      readBuyBoxSide(pool).then((side) => { const sp = sideParams(side); return query(NEW_SKUS_SQL, [NEW_DAYS, sp.bb]); }),
     ]);
 
     const styles = new Set();

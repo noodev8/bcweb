@@ -14,9 +14,12 @@ duplicates"). The page reads top to bottom in order of importance:
                   Moved here from the menu (owner, 2026-10-26: "add sales to daily").
        Pricing    Shopify due · AMAZON TO PRICE — the counts of the home lists' Due view (GET /pricing-all-list, /amz-all-list — in
                   stock OR on a Repricing status list, 0-stock included, so nothing Repricing calls Due is missed; owner 2026-10-28),
-                  each a link to its home (/pricing, /amz). No cross-channel total, as on Repricing. Amazon's is "to price" since
-                  2026-11-13 (docs/amz-buybox/PLAN.md decisions 23 + 25 — one number, one Amazon pricing task): the Buy Box cards in
-                  Chilled + the not-selling sizes due by review date (THE one rule, server utils/amzDue.js). The Buy Box and Fast
+                  each a link to its list. No cross-channel total, as on Repricing. AMAZON (docs/amz-buybox/PLAN.md decision 27,
+                  2026-11-13 — owner: "remove the 1 number rule now ... leave with due and a secondary number of BUY BOX MOVES so they
+                  can address them when have time. But they will focus on due down to zero"): the big number is the sizes DUE by review
+                  date (Buy Box sizes are never due — THE one rule, server utils/amzDue.js), opening the due list; under it a quieter
+                  line, "Buy Box moves n", the Chilled cards, opening the Amazon Pricing home. (For a few hours on 2026-11-13 it was one
+                  number, "Amazon to price" = cards + due; a queue that refills hourly made it feel like going round in circles.) The Buy Box and Fast
                   sellers tiles left the Pricing group the same day (the Buy Box screen became the Amazon Pricing home; Fast sellers
                   was retired).
        Ordering   Amazon Order (no count — its Hot / Warm / Simmer presets are the work list).
@@ -272,9 +275,12 @@ function Daily() {
         {/* PRICING — two lists, two counts, two links (no cross-channel total). */}
         <div className="flex flex-col rounded-xl bg-white p-4">
           <TileHead icon={Squares2X2Icon} title="Pricing" sub="Prices to look at" />
-          <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
-            <CountLink href="/pricing" label="Shopify" n={due.data?.shopify ?? null} unit="styles due" />
-            <CountLink href="/amz" label="Amazon" n={due.data?.amazon ?? null} unit="to price" />
+          <div className="mt-auto grid grid-cols-3 gap-2 pt-4">
+            <CountLink href="/pricing" label="Shopify" n={due.data?.shopify ?? null} unit="due" />
+            {/* AMAZON (decision 27, owner 2026-11-13): DUE (by review date, worked to zero) and BUY BOX MOVES (the Chilled cards, into
+                the Amazon Pricing home) side by side; each says under it how many it worked today. */}
+            <CountLink href="/amz/all?by=all&half=review" label="Amazon" n={due.data?.amazon ?? null} unit="due" done={due.data?.amazonDoneDue ?? null} />
+            <CountLink href="/amz" label="Buy Box" n={due.data?.amazonMoves ?? null} unit="moves" done={due.data?.amazonDoneMoves ?? null} />
           </div>
         </div>
 
@@ -418,7 +424,9 @@ function gbp(v: number) {
 
 // One channel's count inside the Pricing tile — its own link.
 // Every inner box on Daily is centred — label, figure, unit (owner, 2026-11-06: "center those inner values and text inside their box").
-function CountLink({ href, label, n, unit }: { href: string; label: string; n: number | string | null; unit: string }) {
+// done (Amazon only, owner 2026-11-13 — "so she knows she's done some Buy Box today too"): sizes worked today, a line under the unit —
+// green "✓ n" once something is done today (hover: "n done today"), a grey "✓ 0" before — no word, the boxes are narrow; so the two Amazon boxes stay the same height.
+function CountLink({ href, label, n, unit, done }: { href: string; label: string; n: number | string | null; unit: string; done?: number | null }) {
   return (
     <Link
       href={href}
@@ -427,6 +435,9 @@ function CountLink({ href, label, n, unit }: { href: string; label: string; n: n
       <span className="block text-xs font-medium text-slate-500">{label}</span>
       <span className="block text-3xl font-semibold tabular-nums leading-tight text-slate-900">{n === null ? '–' : n}</span>
       <span className="block text-xs text-slate-500">{unit}</span>
+      {done !== undefined && (done
+        ? <span className="block text-xs font-medium text-emerald-700" title={`${done} done today`}>✓ {done}</span>
+        : <span className="block text-xs text-slate-400" title="None done today yet">✓ 0</span>)}
     </Link>
   );
 }

@@ -25,7 +25,8 @@ and a loser NO — it sat in the heatmap denominator but appeared in neither job
 showed 50/51 with nothing to action).
 
 DUE (2026-11-13) = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26): a size the Buy Box answers in Chilled
-(selling at FBA, or New) is outstanding when it has a card; every other size when its review date has come round. next_wake looks only
+(selling at FBA, or New) is never outstanding (decision 27 — its cards are Daily's Buy Box moves); every other size when its review
+date has come round. next_wake looks only
 at review-date sizes (a Buy Box size has no wake date — the hourly reading decides).
 
 LANDMINE: these two rules must stay in step with the route files. If the WINNERS bar or the LOSERS window moves there, move it here
@@ -60,7 +61,7 @@ async function amazonActionableByGroup(groupExpr) {
     cand AS (
       SELECT ${groupExpr} AS name,
              m.next_amz_price_review AS review,
-             ${dueSql('a.code', 'm.next_amz_price_review', '$3', '$4')} AS due,   -- THE one Amazon rule (header)
+             ${dueSql('a.code', 'm.next_amz_price_review', '$3')} AS due,   -- THE one Amazon rule (header)
              a.code = ANY($3::text[]) AS bb,                                       -- the Buy Box decides (no wake date)
              ( COALESCE(w30.u30, 0) >= $1::int
                AND w30.avg_profit >= $2::numeric ) AS winner,   -- NULL avg_profit fails, as in amz-winners
@@ -84,7 +85,7 @@ async function amazonActionableByGroup(groupExpr) {
            MIN(review) FILTER (WHERE actionable AND NOT bb AND review > CURRENT_DATE) AS next_wake
     FROM act
     GROUP BY name
-  `, [AMZ_MIN_UNITS, AMZ_MIN_PROFIT, sp.bb, sp.cards]);
+  `, [AMZ_MIN_UNITS, AMZ_MIN_PROFIT, sp.bb]);
 
   const byName = new Map();
   for (const row of r.rows) {

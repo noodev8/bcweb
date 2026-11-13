@@ -121,6 +121,7 @@ export interface AmzWinnerRow {
   due_by?: 'buybox' | 'review';
   bb_answer?: 'new' | 'raise' | 'cut' | 'leave' | null;
   bb_reason?: string | null;
+  bb_card?: boolean;            // a Buy Box size with a card in Chilled — a Buy Box move (never due, decision 27)
 }
 // Stage 1 LOSERS: FBA stock that sold NOTHING in the window (default 30d), most stock first. Same simplification as the Shopify
 // LoserRow above — u90/u14/cover_weeks/is_dead dropped. u7/u30 are always 0, kept for the shared table layout; last_sold /
@@ -134,6 +135,7 @@ export interface AmzLoserRow {
   parked: boolean;              // NOT DUE by THE one Amazon rule (server utils/amzDue.js) — only ever true when fetched with includeParked
   due_by?: 'buybox' | 'review'; // which half decides (as AmzWinnerRow)
   bb_answer?: 'new' | 'raise' | 'cut' | 'leave' | null;
+  bb_card?: boolean;            // a Buy Box move (as AmzWinnerRow)
 }
 // --- Amazon Order module (landing list only, so far) — flat "every product" view of Amazon profit, read from columns already
 // maintained by the Update Amazon import rather than recomputed: unit_profit = skumap.amzprofit (per-unit profit of the SKU's LAST
@@ -519,20 +521,26 @@ export function markAmzLoadedReview(groupids: string[], reviewDays: number) {
 }
 
 // How many styles / SKUs are DUE on the Shopify / Amazon Pricing home lists — the dashboard's Daily pricing tile. Asks for one row
-// without parked ones: `total` is the server's pre-cap count, i.e. the due list's length (the Due switch's default view). Amazon's
-// is "Amazon to price" since 2026-11-13: Chilled cards + the not-selling sizes due by date (THE one rule, server utils/amzDue.js).
+// without parked ones: `total` is the server's pre-cap count, i.e. the due list's length (the Due switch's default view).
+// AMAZON (decision 27, 2026-11-13 — owner: "remove the 1 number rule ... leave with due and a secondary number of BUY BOX MOVES"):
+// `amazon` = the sizes DUE by review date (Buy Box sizes are never due — server utils/amzDue.js), worked down to zero; `amazonMoves` =
+// the Chilled cards (`buybox_moves`, same response), Daily's secondary line into the Amazon Pricing home.
 export function getPricingDueCounts() {
+  type Counts = { shopify: number; amazon: number; amazonMoves: number; amazonDoneDue: number; amazonDoneMoves: number };
   return Promise.all([
     request<number>({ url: '/pricing-all-list', method: 'GET', params: { limit: 1 } }, (b) => Number(b.total) || 0),
-    request<number>({ url: '/amz-all-list', method: 'GET', params: { limit: 1 } }, (b) => Number(b.total) || 0),
+    request<{ due: number; moves: number; doneDue: number; doneMoves: number }>({ url: '/amz-all-list', method: 'GET', params: { limit: 1 } },
+      (b) => ({ due: Number(b.total) || 0, moves: Number(b.buybox_moves) || 0,
+        doneDue: Number(b.done_today?.due) || 0, doneMoves: Number(b.done_today?.buybox) || 0 })),
   ]).then(([shp, amz]) => {
     if (shp.return_code === 'UNAUTHORIZED' || amz.return_code === 'UNAUTHORIZED') {
-      return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' } as ApiResult<{ shopify: number; amazon: number }>;
+      return { success: false, return_code: 'UNAUTHORIZED', error: 'Session expired' } as ApiResult<Counts>;
     }
     if (!(shp.success && amz.success)) {
-      return { success: false, return_code: shp.return_code || amz.return_code, error: shp.error || amz.error || 'Failed to load counts' } as ApiResult<{ shopify: number; amazon: number }>;
+      return { success: false, return_code: shp.return_code || amz.return_code, error: shp.error || amz.error || 'Failed to load counts' } as ApiResult<Counts>;
     }
-    return { success: true, return_code: 'SUCCESS', data: { shopify: shp.data ?? 0, amazon: amz.data ?? 0 } } as ApiResult<{ shopify: number; amazon: number }>;
+    return { success: true, return_code: 'SUCCESS', data: { shopify: shp.data ?? 0, amazon: amz.data?.due ?? 0, amazonMoves: amz.data?.moves ?? 0,
+      amazonDoneDue: amz.data?.doneDue ?? 0, amazonDoneMoves: amz.data?.doneMoves ?? 0 } } as ApiResult<Counts>;
   });
 }
 
@@ -5155,7 +5163,7 @@ export interface ProcessSizeRow {
   amzPrice: number | null;       // the CURRENT Amazon price — a pending / uploaded change since the last import beats the feed
   amzReview: string | null; amzDue: boolean;
   // THE one Amazon due rule (server utils/amzDue.js, PLAN.md decision 26): true = the Buy Box decides this size (selling at FBA, or
-  // New) — due when it has a card (amzDue), and its review date doesn't count.
+  // New) — never due (decision 27: its cards are Daily's Buy Box moves), and its review date doesn't count.
   amzBb: boolean;
   rrp: number | null;            // the style's RRP (per style) — read against the two prices
   cost: number | null;           // the style's cost — New Additions' bulk preview flags a Shopify price below it

@@ -147,17 +147,17 @@ router.get('/', async (req, res) => {
       // in-stock SKU with no "actionable" filter — on Amazon that's already == WINNERS ∪ LOSERS (14d dead window nests inside the 30d
       // winner window → no healthy-middle gap). See the fuller note on block 2c in routes/segments.js. Keep in lockstep with it.
       // DUE = THE ONE AMAZON RULE since 2026-11-13 (utils/amzDue.js, PLAN.md decision 26): a Buy Box size (selling at FBA, or New)
-      // is outstanding when it has a card in Chilled, others by review date; only review-date sizes give a wake date.
+      // is never outstanding (decision 27 — its cards are Buy Box moves), others by review date; only review-date sizes give a wake date.
       query(`
         SELECT COUNT(*)::int AS instock,
-               COUNT(*) FILTER (WHERE ${dueSql('a.code', 'm.next_amz_price_review', '$2', '$3')})::int AS outstanding,
+               COUNT(*) FILTER (WHERE ${dueSql('a.code', 'm.next_amz_price_review', '$2')})::int AS outstanding,
                MIN(m.next_amz_price_review)
                  FILTER (WHERE m.next_amz_price_review > CURRENT_DATE AND NOT a.code = ANY($2::text[])) AS next_wake
         FROM amzfeed a
         JOIN skusummary sk ON sk.groupid = a.groupid
         JOIN skumap m ON m.code = a.code
         WHERE sk.segment = $1 AND COALESCE(a.amzlive, 0) > 0
-      `, [name, sp.bb, sp.cards]),
+      `, [name, sp.bb]),
     ]);
 
     // The derived Shopify counts (single grouped row; all-zero when the segment has no in-stock live styles).

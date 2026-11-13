@@ -9,7 +9,9 @@ a redirect to the full list (/amz/all?by=all), and before 2026-10-26 a segment p
 
 ONE RULE FOR "DUE" (server utils/amzDue.js, decisions 21 + 26): a size the Buy Box answers — selling at FBA (an Amazon sale in 30 days)
 or New — needs pricing when it has a CARD; every other size when its review date comes round. So every size is in exactly one tile,
-and Daily's "Amazon to price" = Chilled cards (New + Raise + Cut) + Not selling · due.
+and Daily shows TWO figures (decision 27, owner 2026-11-13: "remove the 1 number rule"): "Amazon due" = the Not selling · due tile
+(worked down to zero), and a quieter "Buy Box moves" = the Chilled cards (New + Raise + Cut), which opens this page. A Buy Box size is
+never due.
 
 THE LAYOUT — the order the job is done in:
   Title row     "Amazon Pricing"; the headline Buy Box % and the reading's age (components/AmzBuyBoxReading); Find; Send to Amazon

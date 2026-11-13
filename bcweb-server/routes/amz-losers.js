@@ -35,7 +35,7 @@ Schema landmines respected: amzfeed FBA-only, READ ONLY; amzprice via safeNumeri
 name from title.shopifytitle. Requires auth.
 =======================================================================================================================================
 DUE = THE ONE AMAZON RULE (utils/amzDue.js, docs/amz-buybox/PLAN.md decision 26, 2026-11-13): a size the Buy Box answers in Chilled
-(selling at FBA, or New) is due when it has a card; every other size when its review date has come round. `parked` keeps its name on
+(selling at FBA, or New) is NEVER due (decision 27 — its cards are Daily's Buy Box moves, `bb_card`); every other size when its review date has come round. `parked` keeps its name on
 the wire but means NOT DUE by that rule; `due_by` / `bb_answer` say which half decides. Due rows sort first.
 
 Request Query Params:
@@ -109,9 +109,9 @@ router.get('/', async (req, res) => {
     // matters for NEW sizes (no sale yet — Stuck by this list's test, priced by the Buy Box's New card).
     const side = await readBuyBoxSide(pool);
     const sp = sideParams(side);
-    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$5', '$6');
+    const DUE = dueSql('a.code', 'm.next_amz_price_review', '$5');
 
-    // $1 group name, $2 days, $3 limit, $4 includeParked, $5 Buy Box codes, $6 those with a card.
+    // $1 group name, $2 days, $3 limit, $4 includeParked, $5 Buy Box codes (never due).
     // Membership is the LEFT JOIN + "no sales row in the window" test: a SKU with no qualifying sale has u_win NULL -> COALESCE 0.
     const result = await query(`
       WITH win AS (     -- units in the window (default 30d) — the ONLY sales measure this route needs now
@@ -161,7 +161,7 @@ router.get('/', async (req, res) => {
                fba DESC,       -- most stock at risk first
                a.code          -- tie-break: stable ordering so equal-stock rows don't shuffle between requests
       LIMIT $3::int
-    `, [group.name, days, limit, includeParked, sp.bb, sp.cards]);
+    `, [group.name, days, limit, includeParked, sp.bb]);
 
     const rows = result.rows.map((r, i) => ({
       rank: i + 1,
@@ -183,6 +183,7 @@ router.get('/', async (req, res) => {
       parked: r.parked === true,   // only ever true with ?parked=include — NOT DUE by THE one Amazon rule
       due_by: side.has(r.code) ? 'buybox' : 'review',
       bb_answer: side.get(r.code)?.answer ?? null,
+      bb_card: side.get(r.code)?.card === true,   // a Buy Box move (a card in Chilled)
     }));
 
     // total = the qualifying set before the cap (0 when there are no rows at all); truncated tells the UI the cap bit.

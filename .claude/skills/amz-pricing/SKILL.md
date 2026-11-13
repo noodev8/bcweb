@@ -125,8 +125,8 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
 1. **Ask nothing first** — run it Lean for the style asked (Push only if the owner said "push"). Asked for "what needs doing" / "the
    list" / "top candidates": run `--due`. The skill follows the team's **Due list** (owner, 2026-11-04: "same system as our
    manual due dates") — since 2026-11-13 THE ONE AMAZON RULE (`utils/amzDue.js`, `docs/amz-buybox/PLAN.md` decision 26): a size
-   the Buy Box answers (selling at FBA, or New) is Due when it has a card on Amazon Pricing, every other size by its review date; a
-   Buy Box size without a card shows as "PARKED to Buy Box" under `--all`. A size decided on is parked, so the next run moves on. If `--due` is empty (the team has priced everything by
+   the Buy Box answers (selling at FBA, or New) is NEVER Due — its cards are worked on Amazon Pricing (decision 27); every other
+   size by its review date. A Buy Box size shows as "PARKED to Buy Box" under `--all`. A size decided on is parked, so the next run moves on. If `--due` is empty (the team has priced everything by
    hand), say so and offer `--due --all` (the override — parked sizes too, shown "PARKED to <date>").
 2. **Ask for reports freely** (owner, 2026-11-04: "dont be afraid to ask for reports") — the Buy Box changed two of the first three
    suggestions. A standard pair of windows may be settled later (e.g. this year's window + the same window last year).

@@ -20,9 +20,10 @@ campaign grouping on Amazon (campaigns are Shopify only).
 ALL (?by=all, 2026-10-26): every in-stock FBA SKU PLUS every SKU on a Repricing status list (0-stock too, 2026-10-28), one unsplit list
 from GET /amz-all-list, handled like a status list. It was Amazon Pricing's home until 2026-11-13; the home is now /amz (the old Buy Box
 screen, PLAN.md decision 23), so this list has a back link to it. Find sits top right beside Send to Amazon.
-  - ITS DUE = THE ONE AMAZON RULE (server utils/amzDue.js, decision 26): a size the Buy Box answers (selling at FBA, or New) is due when
-    it has a card in Chilled; every other size when its review date comes round. `parked` = not due by that rule. A Buy Box row's
-    Review cell says "Buy Box" (its review date doesn't decide it) — "card" when it has one. The status and Selling | Stuck lists
+  - ITS DUE = THE ONE AMAZON RULE (server utils/amzDue.js, decisions 26 + 27): a size the Buy Box answers (selling at FBA, or New) is
+    NEVER due — one with a card is a Buy Box move, priced on the Amazon Pricing home; every other size is due when its review date comes
+    round. `parked` = not due by that rule. A Buy Box row's Review cell says "Buy Box" (its review date doesn't decide it) — "· card"
+    when it has one. The status and Selling | Stuck lists
     (part 2, the same day) use the same rule and the same cell.
   - ?half=review (the home's "Not selling · due" tile, decision 23) = only the sizes the Buy Box doesn't answer; crumb "Not selling".
 
@@ -107,6 +108,7 @@ interface ListRow {
   // THE one Amazon due rule (every list since part 2): which half decides, and the Chilled Buy Box answer (header).
   due_by?: 'buybox' | 'review';
   bb_answer?: 'new' | 'raise' | 'cut' | 'leave' | null;
+  bb_card?: boolean;     // a Buy Box move — a card in Chilled (never due, decision 27)
 }
 
 // useSearchParams must sit inside a Suspense boundary for Next's build.
@@ -170,7 +172,7 @@ function SegmentContent() {
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
           fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
           bb_share: r.bb_share, bb_lead: r.bb_lead, bb_rivals: r.bb_rivals, bb_read_at: r.bb_read_at,
-          due_by: r.due_by, bb_answer: r.bb_answer,
+          due_by: r.due_by, bb_answer: r.bb_answer, bb_card: r.bb_card,
         }));
         return {
           success: true,
@@ -188,7 +190,7 @@ function SegmentContent() {
           kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
           fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
           bb_share: r.bb_share, bb_lead: r.bb_lead, bb_rivals: r.bb_rivals, bb_read_at: r.bb_read_at,
-          due_by: r.due_by, bb_answer: r.bb_answer,
+          due_by: r.due_by, bb_answer: r.bb_answer, bb_card: r.bb_card,
         }));
         return {
           success: true,
@@ -209,12 +211,12 @@ function SegmentContent() {
       const winners: ListRow[] = w.success && w.data ? w.data.rows.map((r) => ({
         kind: 'winner', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: r.units, u7: r.u7,
         fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
-        due_by: r.due_by, bb_answer: r.bb_answer,
+        due_by: r.due_by, bb_answer: r.bb_answer, bb_card: r.bb_card,
       })) : [];
       const losers: ListRow[] = l.success && l.data ? l.data.rows.map((r) => ({
         kind: 'loser', code: r.code, groupid: r.groupid, amz_sku: r.amz_sku, size: r.size, title: r.title, brand: r.brand, units: 0, u7: 0,   // sold nothing in 30d — the Stuck rule
         fba: r.fba, fba_inbound: r.fba_inbound, price: r.price, rrp: r.rrp, next_review: r.next_review, parked: r.parked,
-        due_by: r.due_by, bb_answer: r.bb_answer,
+        due_by: r.due_by, bb_answer: r.bb_answer, bb_card: r.bb_card,
       })) : [];
       return {
         success: true,
@@ -574,11 +576,11 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                 <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums"><BuyBoxCell r={r} /></td>
                 <td className="whitespace-nowrap px-4 py-2">
                   {r.due_by === 'buybox'
-                    // THE one Amazon rule (header): the Buy Box decides this size, not its review date.
-                    ? <span className="text-xs text-slate-500" title={r.parked
-                        ? 'Selling at FBA — the Buy Box decides when it needs pricing, not a review date. No card now.'
-                        : `Selling at FBA — it has a ${r.bb_answer ?? ''} card on Amazon Pricing (Chilled). Best priced there, with the Buy Box beside it.`}>
-                        Buy Box{!r.parked && <span className="ml-1 font-medium text-slate-700">· card</span>}</span>
+                    // THE one Amazon rule (header): the Buy Box decides this size, not its review date — never due.
+                    ? <span className="text-xs text-slate-500" title={r.bb_card
+                        ? `Selling at FBA — a Buy Box move: it has a ${r.bb_answer ?? ''} card on Amazon Pricing (Chilled). Best priced there, with the Buy Box beside it.`
+                        : 'Selling at FBA — the Buy Box decides when it needs pricing, not a review date. No card now.'}>
+                        Buy Box{r.bb_card && <span className="ml-1 font-medium text-slate-700">· card</span>}</span>
                     : r.parked
                     ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-700">{fmtReviewDate(r.next_review)}</span>
                     : <span className="text-xs text-slate-400">Due</span>}

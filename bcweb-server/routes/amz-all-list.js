@@ -20,12 +20,15 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
          Order: due first, then most FBA stock, then code. Not-due SKUs are dropped unless ?parked=include — the Due switch.
 
          DUE = THE ONE AMAZON RULE (utils/amzDue.js, PLAN.md decisions 21 + 26, 2026-11-13): a size the Buy Box answers in Chilled
-         (selling at FBA, or New) is due when it has a card; every other size when its review date has come round. `parked` keeps
+         (selling at FBA, or New) is NEVER due — one with a card is a BUY BOX MOVE (decision 27, `bb_card`); every other size is
+         due when its review date has come round. `parked` keeps
          its name on the wire (the page dims / hides on it) but now means NOT DUE by that rule. Each row says which half decides it
          (`due_by`), and a Buy Box row carries its answer.
 
          ?half=review (the Amazon Pricing home's "Not selling · due" tile, decision 23) = only the review half — the sizes the Buy
-         Box doesn't answer. Daily's "Amazon to price" is this route's due total WITHOUT half (cards + the review half's due).
+         Box doesn't answer — since decision 27 the same rows as the due list without it (Buy Box sizes are never due).
+         DAILY reads this route twice in one: "Amazon due" = `total` of the due list, "Buy Box moves" = `buybox_moves` (the Chilled
+         cards, utils/amzDue.js → buyBoxMoves) — sent on every response.
 
 Requires auth.
 =======================================================================================================================================
@@ -37,6 +40,8 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "total": 233, "truncated": false, "out_of_stock": 20,     // rows listed for their status with no FBA stock
+  "buybox_moves": 34,                                        // the Chilled cards — Daily's "Buy Box moves" box
+  "done_today": { "due": 58, "buybox": 0 },                  // sizes worked today — Daily's ticks
   "rows": [ { "rank": 1, "code": "…-38", "amz_sku": "…", "groupid": "…", "size": "38", "title": "…", "brand": "…", "price": 42.5,
               "rrp": 60, "fba": 4, "fba_inbound": 0, "units": 3, "u7": 1, "last_sold": "2026-10-20", "next_review": null, "parked": false,
               "due_by": "review", "bb_answer": null, "bb_reason": null }, ... ]
@@ -56,7 +61,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
-const { readBuyBoxSide, dueBy } = require('../utils/amzDue');
+const { readBuyBoxSide, dueBy, buyBoxMoves } = require('../utils/amzDue');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -147,6 +152,7 @@ router.get('/', async (req, res) => {
       due_by: d.by,                         // 'buybox' | 'review' — which half decides
       bb_answer: d.answer,                  // the Buy Box answer in Chilled (new / raise / cut / leave), Buy Box half only
       bb_reason: d.reason,
+      bb_card: d.card,                      // a Buy Box move: a card in Chilled (never due, decision 27)
       bb_share: num(r.bb_share),
       bb_lead: num(r.bb_lead),
       bb_rivals: r.bb_rivals === null || r.bb_rivals === undefined ? null : Number(r.bb_rivals),
@@ -154,7 +160,20 @@ router.get('/', async (req, res) => {
       bb_read_at: r.bb_read_at || null,
     }));
 
-    return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: outOfStock, rows });
+    // DONE TODAY (owner, 2026-11-13: "an indicator or tick to say done today") — Daily's ticks, sizes worked since UK midnight:
+    //   buybox = sizes Set or Left on a card (amz_buybox_press; an Undo isn't work);
+    //   due    = sizes priced or given a review date anywhere else (amz_price_log — a review-only set logs a hold row there too),
+    //            the cards' own rows ("Buy Box …" notes) left out.
+    const done = (await query(`
+      SELECT (SELECT COUNT(DISTINCT code) FROM amz_buybox_press
+                WHERE action IN ('set', 'leave')
+                  AND (pressed_at AT TIME ZONE 'Europe/London')::date = (now() AT TIME ZONE 'Europe/London')::date)::int AS buybox,
+             (SELECT COUNT(DISTINCT code) FROM amz_price_log
+                WHERE (changed_at AT TIME ZONE 'Europe/London')::date = (now() AT TIME ZONE 'Europe/London')::date
+                  AND COALESCE(notes, '') NOT LIKE 'Buy Box%')::int AS due`)).rows[0];
+
+    return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: outOfStock,
+      buybox_moves: buyBoxMoves(side), done_today: { due: done.due, buybox: done.buybox }, rows });
   } catch (err) {
     logger.error('[amz-all-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load the Amazon list' });

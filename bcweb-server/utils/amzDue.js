@@ -1,26 +1,31 @@
 /*
 =======================================================================================================================================
-Util: amzDue  (THE one meaning of Amazon "due" — docs/amz-buybox/PLAN.md decisions 21 and 26, owner 2026-11-13)
+Util: amzDue  (THE one meaning of Amazon "due" — docs/amz-buybox/PLAN.md decisions 21, 26 and 27, owner 2026-11-13)
 =======================================================================================================================================
-Purpose: Decide, for every Amazon size, whether it needs pricing now. One rule on every screen (owner: "Option 1, one rule everywhere"),
-         so Daily's "Amazon to price", the Amazon Pricing home's tiles and the lists' Due switches can never disagree.
+Purpose: Decide, for every Amazon size, whether it is DUE, and count the BUY BOX MOVES. One rule on every screen (owner: "Option 1, one
+         rule everywhere"), so Daily, the Amazon Pricing home's tiles and the lists' Due switches can never disagree.
 
 THE RULE — two halves, every size in exactly one:
   BUY BOX HALF   a size the Buy Box answers in CHILLED (utils/amzBuyBoxDeck.js → readDeck): live at FBA and selling (an Amazon sale in
-                 30 days), or NEW (landed in 30 days, no Amazon sale yet). It is due when it has a CARD (New / Raise / Cut, reason
-                 `ready`) — its review date no longer decides (decision 21: "Buy Box decides for selling FBA sizes"). A Leave answer, or a
-                 card waiting (left / changed / raised), is not due.
+                 30 days), or NEW (landed in 30 days, no Amazon sale yet). NEVER DUE — its review date doesn't decide it (decision 21:
+                 "Buy Box decides for selling FBA sizes"; decision 16: Raise / Cut sizes aren't on the Due list). One with a CARD (New /
+                 Raise / Cut, reason `ready`) is a BUY BOX MOVE instead — Daily's secondary line, worked "when they have time" on the
+                 Amazon Pricing home.
   REVIEW HALF    everything else — sold nothing in 30 days ("Not selling"), inbound only, out of stock, priced ahead of arrival, live but
-                 not read yet: due when its review date (skumap.next_amz_price_review) is empty or has come round, as before.
+                 not read yet: DUE when its review date (skumap.next_amz_price_review) is empty or has come round, as before.
+  DECISION 27 (owner, 2026-11-13: "Lets remove the 1 number rule now ... leave with due and a secondary number of BUY BOX MOVES ...
+  they will focus on due down to zero"): until then the cards counted as due too ("Amazon to price" = cards + due), and a live queue
+  that refills hourly made the morning number feel like going round in circles. Now Due is a list that reaches zero and stays there;
+  the cards are counted beside it.
   Why Chilled: a dashboard figure mustn't depend on a mood picked later (decision 23). The home's tiles show the chosen mood's cards.
   Set / Leave on a card still push the review date 4 weeks, so a size that stops selling joins the review half on a sensible date.
   No fallback when the hourly Buy Box reading stops (owner: "rare and we will notice and price manually until fixed").
 
-Usage, in JS: const side = await readBuyBoxSide(db); then dueBy(side, code, reviewDue) per row. `db` is anything with .query (the
-       pool, a client).
-Usage, in SQL (the routes that count / limit in SQL — Repricing, the status / segment / Selling | Stuck lists, the skill):
-       const p = sideParams(side); pass p.bb and p.cards as two text[] parameters and put dueSql('a.code', 'm.next_amz_price_review',
-       '$7', '$8') where the old "review IS NULL OR review <= CURRENT_DATE" test was. Same rule, so every screen counts the same.
+Usage, in JS: const side = await readBuyBoxSide(db); then dueBy(side, code, reviewDue) per row; buyBoxMoves(side) = the cards.
+       `db` is anything with .query (the pool, a client).
+Usage, in SQL (the routes that count / limit in SQL — Repricing, the status / segment / Selling | Stuck lists, New Additions, the skill):
+       pass sideParams(side).bb as a text[] parameter and put dueSql('a.code', 'm.next_amz_price_review', '$7') where the old "review
+       IS NULL OR review <= CURRENT_DATE" test was. Same rule, so every screen counts the same.
 =======================================================================================================================================
 */
 
@@ -43,15 +48,23 @@ async function readBuyBoxSide(db) {
 }
 
 /**
- * Is this size due? { due, by: 'buybox' | 'review', answer, reason }. reviewDue = its review date is empty or today / passed.
+ * Is this size due? { due, by: 'buybox' | 'review', answer, reason, card }. reviewDue = its review date is empty or today / passed.
+ * A Buy Box size is never due (header); `card` says it is a Buy Box move.
  */
 function dueBy(side, code, reviewDue) {
   const b = side.get(code);
-  if (b) return { due: b.card, by: 'buybox', answer: b.answer, reason: b.reason };
-  return { due: !!reviewDue, by: 'review', answer: null, reason: null };
+  if (b) return { due: false, by: 'buybox', answer: b.answer, reason: b.reason, card: b.card };
+  return { due: !!reviewDue, by: 'review', answer: null, reason: null, card: false };
 }
 
-/** The Buy Box half as two arrays for SQL: bb = every code it answers, cards = the ones with a card (due). */
+/** Daily's BUY BOX MOVES: the sizes with a card in Chilled. */
+function buyBoxMoves(side) {
+  let n = 0;
+  for (const b of side.values()) if (b.card) n += 1;
+  return n;
+}
+
+/** The Buy Box half as an array for SQL: every code it answers (never due). cards = those with a card (Buy Box moves). */
 function sideParams(side) {
   const bb = []; const cards = [];
   for (const [code, b] of side) { bb.push(code); if (b.card) cards.push(code); }
@@ -59,12 +72,12 @@ function sideParams(side) {
 }
 
 /**
- * THE rule as a SQL boolean (header). codeCol / reviewCol are trusted column expressions (never request input); bbParam / cardsParam
- * the placeholders holding sideParams' arrays; onExpr the day "due" is judged on (the skill's --on; default today).
+ * THE rule as a SQL boolean (header): not a Buy Box size, and its review date empty or come round. codeCol / reviewCol are trusted
+ * column expressions (never request input); bbParam the placeholder holding sideParams(side).bb; onExpr the day "due" is judged on
+ * (the skill's --on; default today).
  */
-function dueSql(codeCol, reviewCol, bbParam, cardsParam, onExpr = 'CURRENT_DATE') {
-  return `(CASE WHEN ${codeCol} = ANY(${bbParam}::text[]) THEN ${codeCol} = ANY(${cardsParam}::text[])
-                ELSE (${reviewCol} IS NULL OR ${reviewCol} <= ${onExpr}) END)`;
+function dueSql(codeCol, reviewCol, bbParam, onExpr = 'CURRENT_DATE') {
+  return `(NOT ${codeCol} = ANY(${bbParam}::text[]) AND (${reviewCol} IS NULL OR ${reviewCol} <= ${onExpr}))`;
 }
 
-module.exports = { DUE_MOOD, readBuyBoxSide, dueBy, sideParams, dueSql };
+module.exports = { DUE_MOOD, readBuyBoxSide, dueBy, buyBoxMoves, sideParams, dueSql };
