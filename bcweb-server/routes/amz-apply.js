@@ -33,6 +33,8 @@ convention. `old_price` is NOT NULL, so when the live amzprice reads back NULL (
 Request Payload:
 { "code": "FLE030-IVES-WHITE-05", "newPrice": 39.79, "note": "creep 0.50 — 14u/7d", "reviewDays": 14 }   // note + reviewDays optional
   // reviewDays omitted/blank/null = "None" (leave the review date untouched — SKU stays in the list); if supplied, integer >= 1.
+  // Buy Box Go through only: "buybox": { "mood": "chilled", "tab": "raise", "action": "set" | "undo", "our_price": 39.49,
+  //   "suggested": 41.46 } — Set = Due date 4 weeks out (a later one kept) + an amz_buybox_press row; Undo = the row only.
 
 Success Response:
 { "return_code": "SUCCESS", "code": "...", "amz_sku": "AD-0XF8D-48L", "new_price": 39.79, "old_price": 39.29, "rrp": 45.00,
@@ -50,6 +52,7 @@ const { withTransaction } = require('../utils/transaction');
 const { verifyToken } = require('../middleware/verifyToken');
 const { writeAmzPrice } = require('../utils/priceWrite');
 const { pushAmzPrices } = require('../utils/amzPricePush');
+const { REVIEW_DAYS: DECK_REVIEW_DAYS, recordPress, pressFields } = require('../utils/amzBuyBoxDeck');   // Go through's Set (below)
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -83,6 +86,21 @@ router.post('/', async (req, res) => {
 
     const note = (body.note === undefined || body.note === null ? '' : String(body.note)).trim().slice(0, 500);
 
+    // BUY BOX GO THROUGH (2026-11-12, PLAN.md decisions 16–17): a Set or Undo from /amz/buybox/deck carries `buybox` = { mood, tab,
+    // action: 'set' | 'undo', our_price, suggested }. Then (a) a SET moves the Due date 4 weeks out KEEPING a later one (REVIEW_DAYS,
+    // keepLater — the client's reviewDays is ignored; an Undo leaves the date where the Set put it), and (b) the press is recorded in
+    // amz_buybox_press in the SAME transaction (recordPress, behind a SAVEPOINT — the record never blocks the price). Every other
+    // screen sends no `buybox`, so nothing changes for them.
+    let press = null;
+    let keepLater = false;
+    if (body.buybox !== undefined && body.buybox !== null) {
+      const f = pressFields(body.buybox);
+      const action = body.buybox.action === 'undo' ? 'undo' : 'set';
+      if (f.error) return res.json({ return_code: 'MISSING_FIELDS', message: f.error });
+      press = { ...f, action };
+      if (action === 'set') { reviewDays = DECK_REVIEW_DAYS; keepLater = true; } else reviewDays = null;
+    }
+
     // changed_by = the logged-in operator, resolved server-side by verifyToken from the token's id — never sent by the client (CLAUDE.md).
     const changedBy = req.user.display_name;
 
@@ -90,8 +108,11 @@ router.post('/', async (req, res) => {
     // its log row, nor vice-versa. The write and its rules (BELOW_FLOOR / ABOVE_RRP flagged, never blocked; the NOT NULL old_price guard;
     // never amzfeed) live in utils/priceWrite.js → writeAmzPrice since 2026-10-17 (shared with scripts/amz-price-set.js). Its result carries
     // amz_sku + RRP so the response gives the client's upload basket everything the Seller Central file needs without a second round-trip.
-    const written = await withTransaction((client) =>
-      writeAmzPrice(client, { code, price: rounded, reviewDays, note, changedBy }));
+    const written = await withTransaction(async (client) => {
+      const w = await writeAmzPrice(client, { code, price: rounded, reviewDays, note, changedBy, keepLater });
+      if (!w.error && press) w.recorded = await recordPress(client, { code, by: changedBy, ...press, price: rounded });
+      return w;
+    });
     if (written.error) {
       return res.json({ return_code: written.error, message: written.message });
     }

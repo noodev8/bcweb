@@ -3,21 +3,25 @@
 API Route: amz_buybox_deck
 =======================================================================================================================================
 Method: GET
-Purpose: The Buy Box "Go through" screen (/amz/buybox/deck, 2026-11-12) — the sizes in the two Buy Box groups with a job (Room to go
-         up, Can match), one suggested move each, money at stake first. THE rules: utils/amzBuyBoxDeck.js (read its header). READ ONLY,
-         never asks Amazon — the stored reading, like the Buy Box screen. The price itself is set with the normal W-A1, POST /amz-apply.
+Purpose: The Buy Box "Go through" screen (/amz/buybox/deck) and the Buy Box screen's answer bar (2026-11-12, PLAN.md decisions 13–20).
+         Every size IN STOCK AT AMAZON gets ONE answer for the chosen MOOD — New · Raise · Cut · Leave · Not for this screen — and the
+         New / Raise / Cut sizes that are ready make cards, one suggested move each. THE rules: utils/amzBuyBoxDeck.js (read its header).
+         READ ONLY, never asks Amazon — the stored reading, like the Buy Box screen. A Set is the normal W-A1 (POST /amz-apply with its
+         `buybox` fields); a Leave is POST /amz-buybox-leave.
+
+Query: ?mood=fierce|chilled|climb  (anything else = chilled — every screen load starts on Chilled, nothing stored)
 
 Success Response:
 {
-  "return_code": "SUCCESS",
-  "counts": { "room": 39, "can_match": 8 },                                    // cards in each deck
-  "left_out": { "room": { "not_selling": 89, "waiting": 0, "not_eligible": 0 }, "can_match": { ... } },
+  "return_code": "SUCCESS", "mood": "chilled", "in_stock": 293,
+  "counts": { "new": 6, "raise": 22, "cut": 7 },                               // cards on each tab
+  "answers": { "raise": { "total": 29, "ready": 22, "reasons": { "ready": 22, "raised": 5, "changed": 2 } }, "cut": {...},
+               "new": {...}, "leave": { "total": 47, "ready": 0, "reasons": { "top": 20, "tie": 8, ... } },
+               "off": { "total": 208, "ready": 0, "reasons": { "recent": 74, "older": 134 } } },
+  "answer_of": { "FLE030-IVES-WHITE-05": ["raise", "ready"], ... },         // every in-stock size: [answer, reason]
   "last_all": { ...the last whole-list read, as /amz-buybox }, "running": null,
-  "cards": [ { "deck": "room", "code": "FLE030-IVES-WHITE-05", "title": "...", "imagename": "...", "our_price": 39.49,
-               "suggest": 41.46, "suggest_note": "Capped at +5% — ...", "profit_now": 6.10, "profit_suggest": 7.42,
-               "profit_line": { "per_pound": 0.5806, "at_zero": -16.83 }, "gain_week": 1.23, "stake": 1.23,
-               "holder": "US", "bb_price": null, "our_share": 100, "next_up": 42.99, "walk": 35.62, "rrp": 45.00,
-               "live": 20, "total": 31, "sold30": 4, "weeks_left": 33.2, "offers": [...], "featured": [...], ... } ]
+  "cards": [ { "deck": "raise", "group": "room", "code": "FLE030-IVES-WHITE-05", "our_price": 39.49, "suggest": 41.46,
+               "suggest_note": "Capped at +5% — ...", "floor": 35.62, "walk": 35.62, "breakeven": 32.10, "landed_ago": null, ... } ]
 }
 =======================================================================================================================================
 Return Codes:
@@ -39,7 +43,7 @@ router.use(verifyToken);
 router.get('/', async (req, res) => {
   const client = await pool.connect();
   try {
-    const d = await readDeck(client);
+    const d = await readDeck(client, { mood: typeof req.query.mood === 'string' ? req.query.mood : undefined });
     return res.json({ return_code: 'SUCCESS', ...d });
   } catch (err) {
     logger.error('[amz-buybox-deck] error:', err.message);

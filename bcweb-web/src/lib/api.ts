@@ -659,6 +659,7 @@ export interface AmzBuyBoxRow {
   competitive_price: number | null;
   offers: AmzBuyBoxOffer[]; error: string | null;
   group: AmzBuyBoxGroup; target: number | null; kept: number | null; walk: number | null;
+  breakeven: number | null;   // profit £0 — New's floor before its first sale
 }
 export interface AmzBuyBoxRun {
   id: number; scope?: string; status?: string; started_at: string; finished_at?: string | null; by_name: string;
@@ -685,44 +686,64 @@ export function getAmzBuyBox() {
     })
   );
 }
-// Buy Box "Go through" (/amz/buybox/deck, 2026-11-12; server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js). READ ONLY —
-// the price is set with applyAmzPrice (W-A1). One card per size in the two groups with a job, one suggested move, money at stake first.
-export type AmzDeckKind = 'room' | 'can_match';
+// Buy Box "Go through" (/amz/buybox/deck; server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js — answers, moods and New,
+// PLAN.md decisions 13–20). READ ONLY. Every size IN STOCK AT AMAZON gets ONE answer for the mood; New / Raise / Cut sizes that are ready
+// make cards. A Set is applyAmzPrice with `buybox`; a Leave is leaveAmzBuyBox.
+export type AmzMood = 'fierce' | 'chilled' | 'climb';
+export type AmzDeckKind = 'new' | 'raise' | 'cut';
+export type AmzAnswer = AmzDeckKind | 'leave' | 'off';
 export interface AmzDeckCard {
-  deck: AmzDeckKind; code: string; groupid: string | null; title: string | null; brand: string | null; asin: string | null;
+  deck: AmzDeckKind; group: AmzBuyBoxGroup; code: string; groupid: string | null; title: string | null; brand: string | null; asin: string | null;
   imagename: string | null; read_at: string;
   live: number; total: number; sold30: number; weeks_left: number | null;
+  landed_ago: number | null;           // New only: days since the size first landed at Amazon
   on_order: number; at_home: number;   // placed with the supplier, not arrived · sellable local stock — shown, never in the suggestion
-  next_review: string | null;           // the Amazon review date, YYYY-MM-DD — a later one than the Set's 7 days is kept
+  next_review: string | null;           // the Amazon review date, YYYY-MM-DD — a later one than a Set / Leave's 4 weeks is kept
   // The last real price move (holds skipped) and net Amazon pairs sold since that day; null = never changed.
   last_change: { at: string; by: string | null; old_price: number; new_price: number; sold_since: number } | null;
   // The 30-day strip: sold[i] = net Amazon pairs that UK day (oldest first, today last); moves = real price changes by day index;
   // last_sold_ago = days since the last pair sold (any time), null = never sold on Amazon.
   strip: { sold: number[]; moves: { day: number; by: string | null; old_price: number; new_price: number }[]; last_sold_ago: number | null };
-  our_price: number; rrp: number | null; walk: number | null;
+  our_price: number; rrp: number | null; walk: number | null; breakeven: number | null;
+  floor: number | null;   // the card's floor: break-even on New, the £3 walk-away everywhere else
   holder: AmzBuyBoxHolder; bb_price: number | null; lead_share: number | null; our_share: number | null; next_up: number | null; rivals: number;
   rival_at_our_price: boolean; amazon_retail: boolean; offers: AmzBuyBoxOffer[]; featured: AmzBuyBoxFeatured[];
   suggest: number; suggest_note: string;
-  over_lead: boolean;   // can_match: the suggestion is 2% OVER a self-posting lead (a trial), not a penny under it
+  over_lead: boolean;   // cut: the suggestion is 2% OVER a self-posting lead (a trial), not a penny under it
   profit_now: number | null; profit_suggest: number | null;
   profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound × price + at_zero (amzProfit is linear)
-  gain_week: number | null;   // room only: pairs a week × the extra profit a pair at the suggestion
+  gain_week: number | null;   // raise only: pairs a week × the extra profit a pair at the suggestion
   stake: number;
 }
-// cheaper_rival / raised_waiting: room only — already 2%+ over a cheaper rival · raised, nothing sold since (back once a pair sells)
-// not_selling = sold nothing in 30 days, of which not_selling_recent last sold on Amazon within 90 days (wait); the rest: Range.
-export interface AmzDeckLeftOut { not_selling: number; not_selling_recent?: number; waiting: number; not_eligible: number; cheaper_rival?: number; raised_waiting?: number }
+// One answer's sizes: total, how many are ready (cards), and the count per reason (ready / left / changed / raised, or the old group).
+export interface AmzAnswerSum { total: number; ready: number; reasons: Record<string, number> }
 export interface AmzDeckData {
-  cards: AmzDeckCard[]; counts: Record<AmzDeckKind, number>; left_out: Record<AmzDeckKind, AmzDeckLeftOut>;
+  mood: AmzMood; cards: AmzDeckCard[]; counts: Record<AmzDeckKind, number>; in_stock: number;
+  answers: Record<AmzAnswer, AmzAnswerSum>;
+  answer_of: Record<string, [AmzAnswer, string]>;   // every in-stock size: [answer, reason]
   last_all: AmzBuyBoxRun | null; running: AmzBuyBoxRun | null;
 }
-export function getAmzBuyBoxDeck() {
+const EMPTY_SUM: AmzAnswerSum = { total: 0, ready: 0, reasons: {} };
+export function getAmzBuyBoxDeck(mood: AmzMood = 'chilled') {
   return request<AmzDeckData>(
-    { url: '/amz-buybox-deck', method: 'GET' },
+    { url: '/amz-buybox-deck', method: 'GET', params: { mood } },
     (b) => ({
-      cards: (b.cards || []) as AmzDeckCard[], counts: (b.counts || { room: 0, can_match: 0 }) as Record<AmzDeckKind, number>,
-      left_out: (b.left_out || {}) as Record<AmzDeckKind, AmzDeckLeftOut>, last_all: b.last_all ?? null, running: b.running ?? null,
+      mood: (b.mood || mood) as AmzMood,
+      cards: (b.cards || []) as AmzDeckCard[], counts: (b.counts || { new: 0, raise: 0, cut: 0 }) as Record<AmzDeckKind, number>,
+      in_stock: b.in_stock ?? 0,
+      answers: { new: EMPTY_SUM, raise: EMPTY_SUM, cut: EMPTY_SUM, leave: EMPTY_SUM, off: EMPTY_SUM, ...(b.answers || {}) } as Record<AmzAnswer, AmzAnswerSum>,
+      answer_of: (b.answer_of || {}) as Record<string, [AmzAnswer, string]>,
+      last_all: b.last_all ?? null, running: b.running ?? null,
     })
+  );
+}
+// Go through's press details, recorded with a Set / Undo (applyAmzPrice `buybox`) or a Leave — the agree rate, read later.
+export interface AmzBuyBoxPress { mood: AmzMood; tab: AmzDeckKind; our_price: number; suggested: number }
+// LEAVE on Go through: nothing to Amazon; the Due date moves 4 weeks out (a later one kept) and the press is recorded.
+export function leaveAmzBuyBox(code: string, press: AmzBuyBoxPress) {
+  return request<{ next_review: string | null; recorded: boolean }>(
+    { url: '/amz-buybox-leave', method: 'POST', data: { code, ...press } },
+    (b) => ({ next_review: b.next_review ?? null, recorded: !!b.recorded })
   );
 }
 
@@ -937,10 +958,12 @@ export function findAmzSkus(steps: AmzFindStep[]) {
 // the result is in `amazon`. Optionally parks the SKU (skumap.next_amz_price_review) so it drops off the winners/losers queue — reviewDays mirrors
 // Shopify W1: null/omitted = "None" (leave the review date untouched, SKU stays in the list); an integer >= 1 parks until today+N.
 // Returns amz_sku + rrp (so the session basket can build the upload file straight from the response) + next_review (null when None).
-export function applyAmzPrice(code: string, newPrice: number, note?: string, reviewDays?: number | null) {
+// buybox (Go through only): the press to record — a Set also moves the Due date 4 weeks out (a later one kept), server-side.
+export function applyAmzPrice(code: string, newPrice: number, note?: string, reviewDays?: number | null,
+  buybox?: AmzBuyBoxPress & { action: 'set' | 'undo' }) {
   return request<AmzApplyResult>(
     // Only send reviewDays when it's a real period, so a "None" never reaches the server as a stray value (matches updateProductPrice).
-    { url: '/amz-apply', method: 'POST', data: { code, newPrice, note, ...(reviewDays != null ? { reviewDays } : {}) } },
+    { url: '/amz-apply', method: 'POST', data: { code, newPrice, note, ...(reviewDays != null ? { reviewDays } : {}), ...(buybox ? { buybox } : {}) } },
     (b) => ({ log_id: b.log_id, code: b.code, amz_sku: b.amz_sku, new_price: b.new_price, old_price: b.old_price, rrp: b.rrp ?? null, next_review: b.next_review ?? null, warnings: b.warnings || [], amazon: (b.amazon ?? null) as AmzSendOutcome | null })
   );
 }

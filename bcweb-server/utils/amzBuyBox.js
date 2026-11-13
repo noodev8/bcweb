@@ -67,7 +67,7 @@ HEADLINE (owner, 2026-11-12 — "those headline percentages ... would be good to
 const { query } = require('../database');
 const { withTransaction } = require('./transaction');
 const sp = require('./amzSpApi');
-const { amzProfit, priceForProfit } = require('./amzProfit');
+const { amzProfit, priceForProfit, breakevenPrice } = require('./amzProfit');
 const { SETTINGS } = require('./amzPricingStandard');
 const { safeNumeric } = require('./sql');
 const logger = require('./logger');
@@ -390,6 +390,8 @@ async function readScreen(db) {
       our_share: num(r.our_share), lead_share: num(r.lead_share), featured: r.featured || [],
       competitive_price: num(r.competitive_price), offers: r.offers || [], error: r.error,
       group: c.group, target: c.target, kept: c.kept, walk: c.walk,
+      // Break-even (profit £0) — the floor for a NEW size before its first sale (Go through's New tab, utils/amzBuyBoxDeck.js).
+      breakeven: breakevenPrice({ cost: r.cost, fbafee: r.fbafee, tax: r.tax }),
     };
   });
   const counts = Object.fromEntries(GROUPS.map((g) => [g, 0]));

@@ -84,7 +84,7 @@ Row: our price · Buy Box price + holder (us / other FBA / other self-posted) ·
 
 1. **Read-only look** — a probe script (e.g. `scripts/amz-buybox-probe.js`, on `utils/amzSpApi.js`) printing the above for ~30 known sizes (IVES-WHITE + some Rieker / Lunar). Changes nothing.
 2. Hourly background read + stored Buy Box history + the screen, read only.
-3. Match / Raise presses (W-A1, note e.g. "Buy Box match", 3-day review keeping a later date). **Built 2026-11-12 as "Go through"** (`/amz/buybox/deck`, rules `utils/amzBuyBoxDeck.js`) — owner changed the review: none; a size set leaves the deck until a reading has seen its new price. *(Later the same day: a Set parks 7 days — and decision 16 below replaces that with 4 weeks on Set AND Leave. Not built yet.)* Raise = next rival − 1p, max +5%, max RRP, max 2% over a rival already cheaper than us (no card when already 2%+ over); Match = a penny under the lead; sold in 30 days only; money at stake first.
+3. Match / Raise presses (W-A1, note e.g. "Buy Box match", 3-day review keeping a later date). **Built 2026-11-12 as "Go through"** (`/amz/buybox/deck`, rules `utils/amzBuyBoxDeck.js`) — owner changed the review: none; a size set leaves the deck until a reading has seen its new price. *(Later the same day: a Set parks 7 days — and decision 16 below replaces that with 4 weeks on Set AND Leave. Built 2026-11-13.)* Raise = next rival − 1p, max +5%, max RRP, max 2% over a rival already cheaper than us (no card when already 2%+ over); Match = a penny under the lead; sold in 30 days only; money at stake first.
 4. Profit a week on the size drill; stored Buy Box % feeds the pricing standard instead of the Business Report.
 5. Auto per size, only if steps 2–4 earn it. It would have a daily move cap and one emergency-stop switch.
 
@@ -172,7 +172,24 @@ The owner pointed at it: probably our best-selling, most profitable size, priced
     - **The five rules for "moves to look at together"** (owner, 2026-11-12: "yes, those five rules, build it"): a cut when we were already shown to 100% · a cut to more than 1% under the lead · a cut on a tie · a cut on a size not live at FBA · any price under the £3 walk-away. Alone sizes are left off.
     - **Built 2026-11-12:** `utils/amzBuyBoxTeam.js` (THE rules, header), `GET /amz-buybox-team`, `components/AmzTeamWeek.tsx`. On screen it is one collapsed line under the headline, which opens to a per-person table (This week | Last week) and the list. **First result (Mon 9 – Thu 12 Nov):** Summer 10 won back · 4 raises kept · 32 to look at (most of her 242 changes predate the readings, so they aren't judged). Andreas 1 to look at: his own copier-test step on IVES-WHITE-06, a "tie", as it should be.
 
-### Go through, redesigned: answers, moods and New (owner decisions, 2026-11-12 — agreed, NOT BUILT)
+### Go through, redesigned: answers, moods and New (owner decisions, 2026-11-12 — BUILT 2026-11-13)
+
+**Built 2026-11-13:** rules in `utils/amzBuyBoxDeck.js` (header = the rules, `readDeck(db, { mood })`, `recordPress`); `GET /amz-buybox-deck?mood=`
+returns every in-stock size's answer + reason (`answer_of`), each answer's reasons (`answers`) and the New / Raise / Cut cards; Set =
+`POST /amz-apply` with `buybox` fields (Due date 4 weeks, later kept, + a press row in the same transaction); Leave = `POST /amz-buybox-leave`
+(W-A2 `writeAmzReview({ keepLater: true })`, note "Buy Box Leave", + a press row); table `amz_buybox_press` (migration
+`20261113_amz_buybox_press.sql`, applied 2026-11-13). Web: `components/MoodSwitch.tsx` (the three faces), `lib/buyboxAnswers.ts` (the words),
+the Buy Box screen's one answer bar with reasons, Go through's New · Raise · Cut tabs. First run (reading of 2026-11-12, 292 in stock):
+Chilled New 17 (7 cards) · Raise 25 (14) · Cut 5 · Leave 55 · Not for this screen 190; Fierce Raise 0 · Cut 41 · Leave 74 · Not 160;
+Climb Raise 25 (bigger steps) · Cut 0 · Leave 60. Writes tested in rolled-back transactions; nothing pressed live.
+**Built the safe way while still open with the owner** (one question at a time): Fierce's Cut keeps the 2% self-poster premium; New with a
+DEARER lead = no card; New where a penny under is a loss = level with the lead if still a cut and not a loss, else no card; a "hold" can't
+be Set on Go through (Set is greyed at the same price), so the record never sees one; the bar's look (a thin proportional bar, five answers
+under it, the chosen one's reasons as chips).
+**Changed 2026-11-13 (owner: "fierce, chilled climb should be a level above the cards. We should drill down into the cards with a mood
+already chosen"):** the mood is picked on the Buy Box screen (still Chilled on every load, nothing stored) and Go through opens IN it —
+the link carries `?mood=`; Go through shows the mood as a badge with Change (back to the Buy Box screen), no switch beside the cards. This
+replaces the guide's "Go through always opens on Chilled".
 
 Talked through with the owner one decision at a time; drawn as a staff guide (claude.ai artifact "Buy Box Guide", https://claude.ai/artifact/JXifAr4myQmmPUi8TvBBTz — private until shared). Numbers below are from the 2026-11-12 reading.
 

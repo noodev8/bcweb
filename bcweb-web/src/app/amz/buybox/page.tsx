@@ -11,7 +11,15 @@ WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12: "is the screen just a result of
          (owner, 2026-11-12: "It runs every hour. Not sure I need to manually run it?" — Read all now and the "by cron" wording were
          taken off); the one button is Read this style, on an open row (seconds — after a price change). New / sold-out sizes need nothing: each read takes the sizes in FBA stock at the time.
 
-THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost):
+THE ANSWER BAR (PLAN.md decisions 13–15, 2026-11-12 — replaced the "To do" tiles and the "Where we stand" row; owner: "remove all the
+         other boxes ... that aren't a decision factor"): every size IN STOCK AT AMAZON has ONE answer for the chosen MOOD — New · Raise
+         · Cut · Leave · Not for this screen (utils/amzBuyBoxDeck.js, via GET /amz-buybox-deck). One bar that adds up to the in-stock
+         total; click an answer for its sizes and its REASONS (the old groups, or why a card waits) — a reason narrows the list. New /
+         Raise / Cut link to Go through. The mood (components/MoodSwitch) is chosen HERE, a level above the cards (owner, 2026-11-13: "We
+         should drill down into the cards with a mood already chosen"): it starts on Chilled on every load, nothing stored, and the Go
+         through link carries it (?mood=). Sizes not live at FBA have no answer — search finds them.
+
+THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost) are now REASONS:
          Winning, room to go up · Losing, can match · Losing, can't match · No Buy Box · Winning, at the top · Alone.
          The Buy Box price includes postage. "Kept" = our profit a pair at the Buy Box price (at our own price where we hold it); "Walk-away" = the £3-a-pair price.
          SHARE OF VIEWS (owner, 2026-11-12): Amazon splits the Buy Box by customer group, each with a share of page views. "Buy Box"
@@ -25,9 +33,9 @@ CLEAR (owner, 2026-11-12): no size ever drops off by itself — "it takes away t
          them back). And NO review dates on this screen: with an hourly reading, waiting 3–30 days to act on a lost Buy Box makes no
          sense (owner: "if we are updating EVERY hour, what is the point of not acting for a possible 3, 7 or 30 days?").
 
-THIS SCREEN WRITES NOTHING. The Match / Raise presses (PLAN.md step 3) are on GO THROUGH (/amz/buybox/deck, 2026-11-12, a trial),
-         linked from each To do tile: one size at a time, one suggested move (utils/amzBuyBoxDeck.js). The row links to the size's
-         Amazon price screen, where a price can be set as usual.
+THIS SCREEN WRITES NOTHING. The presses are on GO THROUGH (/amz/buybox/deck), linked from New / Raise / Cut on the bar: one size at a
+         time, one suggested move (utils/amzBuyBoxDeck.js). The row links to the size's Amazon price screen, where a price can be set as
+         usual.
 
 TAGS (colour restraint — small solid tags, no row tints): "following us" = a rival at our exact price to the penny (a repricer?) ·
          "Amazon" = Amazon Retail sells the size · "set £x" = a price was set AFTER the reading (amz_price_log), so the row is out of
@@ -42,9 +50,11 @@ import Link from 'next/link';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzTeamWeek from '@/components/AmzTeamWeek';
-import { getAmzBuyBox, startAmzBuyBoxRead, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzBuyBoxRun } from '@/lib/api';
+import MoodSwitch from '@/components/MoodSwitch';
+import { getAmzBuyBox, startAmzBuyBoxRead, type AmzAnswer, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzBuyBoxRun, type AmzMood } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getAmzBuyBoxDeck } from '@/lib/api';
+import { ANSWERS, reasonLabel } from '@/lib/buyboxAnswers';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Screen order = the order to work them: money left on the table first (owner, 2026-11-12), then what can be won back, then what to leave.
@@ -62,9 +72,8 @@ const GROUPS: { key: AmzBuyBoxGroup; label: string; rule: string; dot: string }[
   { key: 'error', label: 'Not read', rule: 'Amazon refused the read for this size — hover the row for its reason', dot: 'bg-slate-300' },
 ];
 
-// The groups with a job, shown as the big To do tiles; the rest are the quiet "Where we stand" row. Tie stays a position for now
-// (owner, 2026-11-12: "Can just leave for now as a tie").
-const ACTION_GROUPS: AmzBuyBoxGroup[] = ['room', 'can_match'];
+// The answers with cards on Go through (the bar links them there).
+const DECK_ANSWERS: AmzAnswer[] = ['new', 'raise', 'cut'];
 
 const HOLDER: Record<AmzBuyBoxHolder, string> = {
   US: 'Us', US_SHARED: 'Us + shared', OTHER_FBA: 'Rival (FBA)', OTHER_MFN: 'Rival (self-post)', AMAZON: 'Amazon', NONE: 'Nobody',
@@ -119,15 +128,16 @@ export default function AmzBuyBoxPage() {
     refreshInterval: (d) => (d?.running ? 3000 : 0),
   });
   const running: AmzBuyBoxRun | null = data?.running ?? null;
-  // THE TO DO TILES' NUMBER = what Go through will show, for BOTH To do groups (owner, 2026-11-12: "seeing 118 in the room to go
-  // up box, then pressing go through to only see 18"; "Losing can match should be the same principle"). The deck's own count, from
-  // the same server rules (utils/amzBuyBoxDeck.js); the group's full size count sits under it. Its OWN cache key, never the deck
-  // page's (that one is the snapshot the deck works from), keyed on the reading so a finished read recounts.
-  const { data: deck } = useApiQuery(['amz-buybox-deck-counts', data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(), {
+  // THE ANSWERS (header) for the mood: every in-stock size's answer + reason, from the same server rules as Go through (so a Raise
+  // count here is Go through's Raise tab). Its OWN cache key, never the deck page's (that one is the snapshot the deck works from),
+  // keyed on the mood and the reading so a finished read recounts. Mood = plain state: every load starts on Chilled.
+  const [mood, setMood] = useState<AmzMood>('chilled');
+  const { data: deck } = useApiQuery(['amz-buybox-answers', mood, data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(mood), {
     revalidateIfStale: false, revalidateOnReconnect: false,
   });
 
-  const [group, setGroup] = useState<AmzBuyBoxGroup | null>(null);
+  const [answer, setAnswer] = useState<AmzAnswer | null>(null);
+  const [reason, setReason] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -136,24 +146,29 @@ export default function AmzBuyBoxPage() {
   // reopening the page) brings every row back. The same soft cut as Fast sellers / New Additions.
   const [cleared, setCleared] = useState<Set<string>>(() => new Set());
 
-  const counts = data?.counts;
-  // Default group = the first in screen order that has sizes.
-  const shown: AmzBuyBoxGroup = group ?? (GROUPS.find((g) => (counts?.[g.key] ?? 0) > 0)?.key ?? 'can_match');
+  const answers = deck?.answers;
+  // Default answer = the first with cards in Go through's order (New, Raise, Cut), else Leave.
+  const shown: AmzAnswer = answer ?? (DECK_ANSWERS.find((a) => (answers?.[a]?.ready ?? 0) > 0) ?? 'leave');
+  const shownReasons = Object.entries(answers?.[shown]?.reasons ?? {}).filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]);
+  function pick(a: AmzAnswer, r: string | null = null) { setAnswer(a); setReason(r); setSearch(''); setOpen(null); }
 
   const rows = useMemo(() => {
     const terms = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const all = data?.rows ?? [];
+    const of = deck?.answer_of ?? {};
     const list = all.filter((r) => {
       if (cleared.has(r.code)) return false;
       if (terms.length) {
         const hay = `${r.code} ${r.title || ''} ${r.brand || ''}`.toLowerCase();
         return terms.every((t) => hay.includes(t));
       }
-      return r.group === shown;
+      const a = of[r.code];
+      return !!a && a[0] === shown && (reason === null || a[1] === reason);
     });
     // Most pairs sold first — where the Buy Box matters most.
     return [...list].sort((a, b) => b.sold30 - a.sold30 || b.total - a.total || a.code.localeCompare(b.code));
-  }, [data, shown, search, cleared]);
+  }, [data, deck, shown, reason, search, cleared]);
+  const notLive = (data?.rows ?? []).filter((r) => !(r.live > 0)).length;
 
   async function read(groupid?: string) {
     setMsg(null);
@@ -217,50 +232,62 @@ export default function AmzBuyBoxPage() {
           {/* TEAM WEEK (owner, 2026-11-12): each person's Buy Box results, one collapsed line — components/AmzTeamWeek. */}
           <AmzTeamWeek />
 
-          {/* THE GROUPS, in two rows (owner, 2026-11-12: "will make the screen more actionable and less noise"). TO DO = the groups
-              with a job — big tiles, the count is the job. WHERE WE STAND = every other group as a quiet count: the position, still
-              clickable, nothing to do. A new group goes in the row that fits it, so To do stays short as groups are added. */}
-          <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">To do</div>
-          <div className="mb-3 flex flex-wrap gap-2">
-            {GROUPS.filter((g) => ACTION_GROUPS.includes(g.key)).map((g) => {
-              const n = counts?.[g.key] ?? 0;
-              const toGo = deck?.counts?.[g.key as 'room' | 'can_match'];
-              const on = !search && shown === g.key;
-              // GO THROUGH (2026-11-12, a trial): the group one size at a time with one suggested move — /amz/buybox/deck,
-              // rules utils/amzBuyBoxDeck.js. A link beside the tile's button, not inside it (no link inside a button).
-              return (
-                <div key={g.key} className={'min-w-[12rem] rounded-lg border shadow-sm ' + (on ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white')}>
-                  <button type="button" onClick={() => { setGroup(g.key); setSearch(''); setOpen(null); }} title={g.rule}
-                    className={'block w-full rounded-t-lg px-4 pb-1 pt-3 text-left ' + (on ? '' : 'hover:bg-slate-50')}>
-                    <div className="flex items-center gap-1.5 text-sm text-slate-600">
-                      <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} /> {g.label}
+          {/* THE ANSWER BAR (header): ONE bar for the mood that adds up to the in-stock total, the five answers under it; the chosen
+              answer opens to its reasons (a reason narrows the list). New / Raise / Cut go to Go through. */}
+          <div className="mb-4 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+              <MoodSwitch mood={mood} onChange={(m) => { setMood(m); setReason(null); }} />
+              <span className="text-sm text-slate-500">
+                <span className="font-semibold tabular-nums text-slate-900">{deck?.in_stock ?? '…'}</span> sizes in stock at Amazon
+                {notLive > 0 && <span className="text-slate-400" title="Inbound only — no answer until the stock lands; search finds them"> · {notLive} on their way in</span>}
+              </span>
+            </div>
+            {/* The bar: one segment per answer, its width its share of the in-stock sizes. */}
+            <div className="mb-2 flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+              {deck && deck.in_stock > 0 && ANSWERS.map((a) => {
+                const n = answers?.[a.key]?.total ?? 0;
+                return n > 0 ? <span key={a.key} className={`${a.bar} ${shown === a.key && !search ? '' : 'opacity-60'}`} style={{ width: `${(n / deck.in_stock) * 100}%` }} /> : null;
+              })}
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {ANSWERS.map((a) => {
+                const s = answers?.[a.key];
+                const on = !search && shown === a.key;
+                return (
+                  <button key={a.key} type="button" onClick={() => pick(a.key)} title={a.rule}
+                    className={'min-w-[7.5rem] rounded-md px-3 py-1.5 text-left ' + (on ? 'bg-brand-50 ring-1 ring-brand-500' : 'hover:bg-slate-50')}>
+                    <div className="flex items-center gap-1.5 text-xs text-slate-600">
+                      <span className={`inline-block h-2 w-2 rounded-full ${a.dot}`} /> {a.label}
                     </div>
-                    <div className="text-3xl font-semibold tabular-nums text-slate-900" title="To go through: sold in 30 days, with a move to make">
-                      {toGo ?? '…'}
-                    </div>
-                    <div className="text-xs tabular-nums text-slate-500" title="Every size in this position — click the tile for the full list">of {n} in this position</div>
+                    <div className="text-2xl font-semibold tabular-nums text-slate-900">{s ? s.total : '…'}</div>
+                    {DECK_ANSWERS.includes(a.key) && s && (
+                      <div className="text-xs tabular-nums text-slate-500" title="Cards on Go through now — the rest are waiting (see the reasons)">{s.ready} to go through</div>
+                    )}
                   </button>
-                  <Link href={`/amz/buybox/deck?g=${g.key}`} title="One size at a time, with one suggested move — the sizes that sold in 30 days"
-                    className="block px-4 pb-2 text-xs font-medium text-brand-700 hover:underline">
+                );
+              })}
+            </div>
+            {/* The chosen answer's reasons — click one to narrow the list; Go through for the answers with cards. */}
+            {!search && shownReasons.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-x-1 gap-y-1 border-t border-slate-100 pt-2 text-sm">
+                <button type="button" onClick={() => setReason(null)}
+                  className={'rounded-full px-2.5 py-0.5 ' + (reason === null ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-500' : 'text-slate-600 hover:bg-slate-100')}>
+                  All {answers?.[shown]?.total ?? 0}
+                </button>
+                {shownReasons.map(([k, n]) => (
+                  <button key={k} type="button" onClick={() => setReason(reason === k ? null : k)}
+                    className={'rounded-full px-2.5 py-0.5 ' + (reason === k ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-500' : 'text-slate-600 hover:bg-slate-100')}>
+                    {reasonLabel(k)} <span className="font-semibold tabular-nums text-slate-900">{n}</span>
+                  </button>
+                ))}
+                {DECK_ANSWERS.includes(shown) && (
+                  <Link href={`/amz/buybox/deck?g=${shown}&mood=${mood}`} title="One size at a time, one suggested move — in the mood chosen here"
+                    className="ml-auto text-sm font-medium text-brand-700 hover:underline">
                     Go through →
                   </Link>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mb-4 flex flex-wrap items-center gap-x-1 gap-y-1 text-sm">
-            <span className="mr-2 text-xs font-medium uppercase tracking-wide text-slate-500">Where we stand</span>
-            {GROUPS.filter((g) => !ACTION_GROUPS.includes(g.key) && (!['unknown', 'error'].includes(g.key) || (counts?.[g.key] ?? 0) > 0)).map((g) => {
-              const n = counts?.[g.key] ?? 0;
-              const on = !search && shown === g.key;
-              return (
-                <button key={g.key} type="button" onClick={() => { setGroup(g.key); setSearch(''); setOpen(null); }} title={g.rule}
-                  className={'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ' + (on ? 'bg-brand-50 text-brand-800 ring-1 ring-brand-500' : 'text-slate-600 hover:bg-slate-100')}>
-                  <span className={`inline-block h-2 w-2 rounded-full ${g.dot}`} /> {g.label}
-                  <span className="font-semibold tabular-nums text-slate-900">{n}</span>
-                </button>
-              );
-            })}
+                )}
+              </div>
+            )}
           </div>
 
           <div className="mb-3 flex flex-wrap items-center gap-3">
@@ -270,7 +297,7 @@ export default function AmzBuyBoxPage() {
                 className="w-full rounded-md border border-slate-300 py-2 pl-10 pr-3 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
             </div>
             <p className="text-sm text-slate-500">
-              {search ? `${rows.length} sizes match, across all groups.` : GROUPS.find((g) => g.key === shown)?.rule}
+              {search ? `${rows.length} sizes match, across every size read.` : reason ? reasonLabel(reason) : ANSWERS.find((a) => a.key === shown)?.rule}
             </p>
             {cleared.size > 0 && (
               <span className="text-sm text-slate-500">
@@ -308,10 +335,10 @@ export default function AmzBuyBoxPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {rows.length === 0 && (
-                  <tr><td colSpan={13} className="px-3 py-6 text-center text-slate-400">{search ? 'Nothing matches.' : cleared.size ? 'Nothing left here — Show all brings the cleared rows back.' : 'No sizes in this group.'}</td></tr>
+                  <tr><td colSpan={13} className="px-3 py-6 text-center text-slate-400">{search ? 'Nothing matches.' : cleared.size ? 'Nothing left here — Show all brings the cleared rows back.' : deck ? 'No sizes here.' : 'Loading…'}</td></tr>
                 )}
                 {rows.map((r) => (
-                  <BuyBoxRow key={r.code} r={r} isOpen={open === r.code} showGroup={!!search}
+                  <BuyBoxRow key={r.code} r={r} isOpen={open === r.code} showGroup
                     onToggle={() => setOpen(open === r.code ? null : r.code)} onReadStyle={() => r.groupid && read(r.groupid)} busy={!!running}
                     onClear={() => { setCleared((prev) => new Set(prev).add(r.code)); if (open === r.code) setOpen(null); }} />
                 ))}
