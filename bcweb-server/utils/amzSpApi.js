@@ -118,6 +118,9 @@ const spPut = (path, body, query) => call('PUT', path, { body, query });
 // PATCH = Listings Items patchListingsItem (2026-11-11, the live Amazon price push): changes only the attributes it names — the price —
 // and leaves the rest of the listing alone. mode=VALIDATION_PREVIEW checks it without changing anything.
 const spPatch = (path, body, query) => call('PATCH', path, { body, query });
+// DELETE = Listings Items deleteListingsItem (2026-11-13, the nightly dead-listing clean-up, utils/amzDeadListings.js): removes OUR offer
+// for one SKU. Only that util calls it, under its own rules.
+const spDelete = (path, query) => call('DELETE', path, { query });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // AMZ_SP_SELLER_ID = our Merchant Token (Seller Central → Settings → Account Info → Your Merchant Token). The Listings Items API puts it
@@ -128,4 +131,4 @@ function sellerId() {
   return v;
 }
 
-module.exports = { accessToken, spGet, spPost, spPut, spPatch, sleep, marketplaceId: () => config().marketplaceId, sellerId };
+module.exports = { accessToken, spGet, spPost, spPut, spPatch, spDelete, sleep, marketplaceId: () => config().marketplaceId, sellerId };

@@ -11,6 +11,10 @@ FOUR STEPS, one after another, EACH ITS OWN TRANSACTION AND STATUS (amz_api_sync
                prices changed in Seller Central -> amz_price_log 'Manual' (seen next morning — owner OK'd), amzfeed price + stock,
                new FBA SKUs, zeros, the size history — the FULL stock check (Update Orders' quick read only sees changes).
                Keeps the reconciliation (unknown SKUs + Delete file) for the status page.                  job 'inventory_report'
+  1a LISTINGS  DEAD AMAZON LISTINGS DELETED (2026-11-13, utils/amzDeadListings.js — THE rules): of the report's unknown SKUs, only
+               those with NO FBA stock AND not in our DB (no skumap / amzfeed SKU, no skusummary style by SKU prefix or ASIN) —
+               deleteListingsItem, a bclog row each ('Amazon Listing'). More than 10 in one night deletes none and fails the step.
+               Runs only after a good inventory step in the same run (it uses that report).                job 'dead_listings'
   2 SHOPIFY    every live size against Shopify (utils/shopifyStockSync.js --full), right after the FBA read so it uses tonight's
                Amazon figures. Catches hand edits in Shopify admin.                                       job 'shopify_stock_full'
   3 RETURNS    GET_FBA_FULFILLMENT_CUSTOMER_RETURNS_DATA, the last 30 days EVERY night -> planReturns + insertSales: negative sales
@@ -30,7 +34,7 @@ Usage (from bcweb-server/):
     node scripts/amz-inventory-nightly.js                   dry run — fetch + plan every due step, print what it would do
     node scripts/amz-inventory-nightly.js --commit          the cron line
     node scripts/amz-inventory-nightly.js --commit --fees   force the fee read (e.g. after Amazon changes its fee rates)
-    --only=inventory|shopify|returns|fees                   run one step
+    --only=inventory|shopify|returns|fees                   run one step (listings runs only with inventory, in a full run)
 =======================================================================================================================================
 */
 
@@ -44,6 +48,7 @@ const { applyInventoryReport, insertSales, applyFees } = require('../utils/amzIm
 const { STOCK_LOCK, recordError } = require('../utils/amzStockSync');
 const { shapePlan } = require('../utils/amzImportShape');
 const { syncShopifyStock } = require('../utils/shopifyStockSync');
+const { cleanDeadListings, MAX_PER_NIGHT } = require('../utils/amzDeadListings');
 const logger = require('../utils/logger');
 
 const commit = process.argv.includes('--commit');
@@ -73,10 +78,14 @@ async function getReport(type, label, type2, opts) {
 }
 
 // ---- 1. INVENTORY ---------------------------------------------------------------------------------------------------------------
+// The inventory report's full unknown-SKU list, for the listings step (null = the inventory step didn't run / failed this run).
+let unknownSku = null;
+
 async function stepInventory() {
   const parsed = await getReport('GET_FBA_MYI_UNSUPPRESSED_INVENTORY_DATA', 'FBA Inventory', 'INVENTORY');
   if (!commit) {
     const s = (await buildPlan({ query }, { INVENTORY: parsed }, [])).stock;
+    unknownSku = s.unknownSku;
     return `inventory (dry): matched ${s.matched}, unknown ${s.unknownSku.length}, gone ${s.goneFromAmazon.length}, ${s.manualPrices.length} Seller Central prices`;
   }
   return withTransaction(async (client) => {
@@ -84,11 +93,35 @@ async function stepInventory() {
     const plan = await buildPlan(client, { INVENTORY: parsed }, []);
     const r = await applyInventoryReport(client, parsed, plan, 'cron', logger);
     const reconciliation = shapePlan({ INVENTORY: parsed }, plan, { committed: true }).reconciliation;
+    unknownSku = plan.stock.unknownSku;
     const note = `${r.stockResult.upserted} rows, ${r.stockResult.zeroed} zeroed, ${r.manualPrices} Seller Central prices` +
       (r.history ? (r.history.failed ? ', size history FAILED' : `, ${r.history.changed} sizes changed`) : '');
     await saveOk(client, 'inventory_report', note, { reconciliation });
     return `inventory: ${note}`;
   });
+}
+
+// ---- 1a. DEAD AMAZON LISTINGS (added 2026-11-13) -----------------------------------------------------------------------------
+// Rules in utils/amzDeadListings.js. Writes its status (job dead_listings) with the night's detail for the Amazon status page.
+async function stepListings() {
+  if (!unknownSku) return null; // the inventory step didn't give us tonight's report
+  const r = await cleanDeadListings({ query }, unknownSku, { commit });
+  const keptNote = r.kept.length ? `, ${r.kept.length} kept (ours)` : '';
+  if (r.capped) {
+    throw new Error(`${r.candidates.length} listings qualify — more than ${MAX_PER_NIGHT} in one night, so none were deleted. Check the listings check by hand.`);
+  }
+  if (!commit) return `listings (dry): would delete ${r.candidates.length}${r.candidates.length ? ` (${r.candidates.map((c) => c.sku).join(', ')})` : ''}${keptNote}`;
+  const note = `${r.deleted.length} dead listing${r.deleted.length === 1 ? '' : 's'} deleted${r.refused.length ? `, ${r.refused.length} refused` : ''}${keptNote}`;
+  const detail = { deleted: r.deleted, refused: r.refused, kept: r.kept };
+  if (r.refused.length) {
+    await withTransaction((client) => client.query(
+      `INSERT INTO amz_api_sync (job, detail) VALUES ('dead_listings', $1) ON CONFLICT (job) DO UPDATE SET detail = EXCLUDED.detail`,
+      [JSON.stringify(detail)]
+    ));
+    throw new Error(`${note} — ${r.refused.map((x) => `${x.sku}: ${x.message}`).join('; ')}`);
+  }
+  await withTransaction((client) => saveOk(client, 'dead_listings', note, detail));
+  return `listings: ${note}`;
 }
 
 // ---- 1b. SHOPIFY STOCK, FULL CHECK (added 2026-11-10) -------------------------------------------------------------------------
@@ -149,7 +182,7 @@ async function stepFees() {
 (async () => {
   const t = Date.now();
   console.log(`Amazon nightly — ${commit ? 'WRITING' : 'dry run (nothing written)'}`);
-  const steps = [['inventory', 'inventory_report', stepInventory], ['shopify', 'shopify_stock_full', stepShopify], ['returns', 'returns_report', stepReturns], ['fees', 'fees_report', stepFees]];
+  const steps = [['inventory', 'inventory_report', stepInventory], ['listings', 'dead_listings', stepListings], ['shopify', 'shopify_stock_full', stepShopify], ['returns', 'returns_report', stepReturns], ['fees', 'fees_report', stepFees]];
   const lines = [];
   let failed = 0;
   for (const [name, job, run] of steps) {

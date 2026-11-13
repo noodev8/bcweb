@@ -54,7 +54,7 @@ async function readApiStatus() {
     // The dashboard's red warning (owner, 2026-11-09): any Amazon read whose LAST attempt failed, or the nightly job not run for 36h
     // (cron stopped — a failed run would show as an error instead). Fees run every 28 days, so their age never warns, only an error.
     const problems = [];
-    const label = { stock: 'stock read', orders: 'order read', inventory_report: 'nightly inventory report', returns_report: 'nightly returns report', fees_report: 'fee report' };
+    const label = { stock: 'stock read', orders: 'order read', inventory_report: 'nightly inventory report', returns_report: 'nightly returns report', fees_report: 'fee report', dead_listings: 'dead listing clean-up' };
     for (const x of r.rows) if (x.last_error) problems.push(`${label[x.job] || x.job} failed ${x.last_error_at}`);
     if (rep && rep.hours_since_ok !== null && Number(rep.hours_since_ok) > 36 && !rep.last_error) problems.push(`nightly reports not run since ${rep.last_ok}`);
     return {
@@ -63,6 +63,9 @@ async function readApiStatus() {
       report: pick('inventory_report'),
       returns: pick('returns_report'),
       fees: pick('fees_report'),
+      // Dead Amazon listings deleted by the nightly job (2026-11-13, utils/amzDeadListings.js): last night's deleted / refused / kept.
+      listings: pick('dead_listings'),
+      deadListings: (() => { const x = r.rows.find((y) => y.job === 'dead_listings'); return (x && x.detail) || null; })(),
       reconciliation: (rep && rep.detail && rep.detail.reconciliation) || null,
       problems,
     };

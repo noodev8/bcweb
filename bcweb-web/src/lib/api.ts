@@ -3272,7 +3272,13 @@ export interface AmzApiJobStatus { lastOk: string | null; note: string | null; e
 // problems = the dashboard's red warning lines (any read whose last attempt failed, or the nightly job not run for 36h).
 export interface AmzApiStatus {
   stock: AmzApiJobStatus | null; orders: AmzApiJobStatus | null; report: AmzApiJobStatus | null;
-  returns: AmzApiJobStatus | null; fees: AmzApiJobStatus | null;
+  returns: AmzApiJobStatus | null; fees: AmzApiJobStatus | null; listings: AmzApiJobStatus | null;
+  // The nightly dead-listing clean-up's last result (bcweb-server/utils/amzDeadListings.js).
+  deadListings: {
+    deleted: { sku: string; asin: string | null; name: string | null; gone?: boolean }[];
+    refused: { sku: string; message: string }[];
+    kept: { sku: string; why: string }[];
+  } | null;
   reconciliation: AmzImportSummary['reconciliation'] | null; problems: string[];
 }
 export interface AmzImportLast { lastRun: string | null; by: string | null; history: AmzSizeHistoryStatus | null; amazonApi: AmzApiStatus | null }
