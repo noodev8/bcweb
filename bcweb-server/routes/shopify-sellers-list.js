@@ -70,7 +70,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
-const { noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
+const { noSupplySelectSql, noSupplyJoinSql, noSupplyFields } = require('../utils/noSupply');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -135,7 +135,7 @@ router.get('/', async (req, res) => {
              (d.code IS NOT NULL AND sold.last_sold_d <= (d.marked_at AT TIME ZONE 'Europe/London')::date) AS dont_order,
              to_char(d.marked_at AT TIME ZONE 'Europe/London', 'YYYY-MM-DD') AS dont_order_at,
              d.marked_by AS dont_order_by,
-             ${noSupplySelectSql('s')}
+             ${noSupplySelectSql('nss')}
       FROM sold
       JOIN skumap m ON m.code = sold.code AND COALESCE(m.deleted,0) = 0
       JOIN skusummary s ON s.groupid = m.groupid
@@ -145,6 +145,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN amzbound ON amzbound.code = m.code
       LEFT JOIN ord ON ord.code = m.code
       LEFT JOIN shopify_dont_order d ON d.code = m.code
+      ${noSupplyJoinSql('m.code')}
       WHERE s.shopify = 1 AND COALESCE(s.brand,'') NOT ILIKE 'birk%'
       ORDER BY sold.u30 DESC, sold.unit_profit DESC NULLS LAST, m.code
     `);

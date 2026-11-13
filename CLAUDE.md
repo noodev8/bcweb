@@ -60,7 +60,7 @@ A dead size of a selling style gets its own price on the SAME Shopify product. S
 
 ## Ordering
 
-- **Can't get it** (`utils/noSupply.js`): a STYLE flag, off both order screens for 3 months, then lapses. On Amazon Order a marked size stays visible while it has local stock (it can still be picked to FBA).
+- **Can't get it** (`utils/noSupply.js`, THE copy): **one store, per SIZE** — `no_supply_size` (owner 2026-11-13, "single system"). Off both order screens for 3 months, then lapses. Amazon Order marks sizes; Shopify Order's style view and Seasons mark a whole style = a row on every size (a shortcut, not a second mark). A style reads as can't-get only when every live size is marked; partly marked stays on Shopify Order with those sizes locked. `skusummary.no_supply_*` is emptied and unread — never write it again. On Amazon Order a marked size stays visible while it has local stock (it can still be picked to FBA).
 - **Shopify Order:** default **Sellers** view (`routes/shopify-sellers-list.js`) — one row per non-Birkenstock size sold on Shopify in 30d; **Sold out** = no local stock, nothing on order, none at/heading to FBA (FBA counts as cover). A size can be marked **Don't order** (`shopify_dont_order`) until it sells again on Shopify. `?view=sizes` = the style view. Birkenstock left out of both.
 - **Amazon Order** presets **Hot | Warm | Simmer** (bars in `utils/portfolio.js`): Hot = top 20% of sizes sold in 30d by profit; Warm = > £3/unit, sold in 6 months; Simmer = ≤ £3/unit, sold in 30d net, FBA total 0 — price up toward £3 and try 1 unit. Losses are never ordered.
 - Both order screens always open on everything (no Repricing arrival).

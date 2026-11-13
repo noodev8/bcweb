@@ -214,17 +214,19 @@ NO REPRICING ARRIVAL (removed 2026-10-08, owner — "The winners screen should b
       Repricing status list linked here with ?status=&bar= and the screen showed only that list's SKUs behind a "Repricing: Winners"
       chip. Both the link and this end of it are gone; the screen always opens on every SKU (a ?q= arrival still seeds a search).
 
-CAN'T GET (owner, 2026-09-27) — the same STYLE mark Shopify Order sets ("if we can't get a style, we can't get it, regardless of where
-      we're trying to sell it"): skusummary.no_supply_*, three months, via /no-supply-set and /no-supply-clear (utils/noSupply.js). Set
-      here with the "Can't get" button beside Cut (on the selected rows' styles; "Release" when they're all marked already) or from a
-      row's detail line, it marks the whole style — every size, on both order screens. It only stops the SUPPLIER side,
+CAN'T GET (owner, 2026-09-27; PER SIZE since 2026-11-13) — "I pressed Can't get … I was on a size at the time. I really meant we can't
+      get that size." This screen lists by size, so it marks SIZES only (no "whole style" choice here): no_supply_size, three months,
+      off both order screens (one supplier), via /no-supply-set and /no-supply-clear with `codes` (utils/noSupply.js). Set with the
+      "Can't get" button beside Cut (on the selected sizes; "Release" when they're all marked already) or from a row's detail line.
+      ONE store: a style marked whole on Shopify Order or Seasons is simply a mark on every size, so here it is sizes like any other
+      and Release frees just the size released. It only stops the SUPPLIER side,
       because a Can't get style can still be picked: "we can get them because we have them". So:
         - a marked size with NO local stock is hidden (nothing to order, nothing to pick); a chip counts them, its X shows them dimmed;
         - a marked size WITH local stock stays, tagged "Can't get", and works as normal;
         - the rate fill leaves a marked row's Order half empty and still fills its Pick — see fillCoverage.
       Nothing else guards it: a number typed into a marked row's Order box by hand is sent like any other (owner, 2026-09-27 — "leave
-      that to the operator"). Marking empties that style's ORDER boxes (never Pick), and an order that lands for a marked style clears
-      the mark — the same two rules as Shopify Order. The words are Can't get / Release, never park/unpark ("parked" is the pricing
+      that to the operator"). Marking empties those sizes' ORDER boxes (never Pick), and an order that lands for a marked size clears
+      its mark (its style's, when the mark is the style's) — the same two rules as Shopify Order. The words are Can't get / Release, never park/unpark ("parked" is the pricing
       review date on Repricing).
 =======================================================================================================================================
 */
@@ -243,7 +245,7 @@ import AmazonExport from '@/components/AmazonExport';
 import AmazonListFba from '@/components/AmazonListFba';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupply, clearNoSupply, applyAmzPrice,
+  getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupplySizes, clearNoSupply, applyAmzPrice,
   AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -447,7 +449,7 @@ function isLoss(r: AmazonOrderRow): boolean {
   return r.unit_profit !== null && r.unit_profit <= 0;
 }
 
-// CAN'T GET, HIDDEN — the style is marked (live) AND this size has nothing on the local shelf to pick, so there is nothing to do with it
+// CAN'T GET, HIDDEN — the size is marked (live) AND this size has nothing on the local shelf to pick, so there is nothing to do with it
 // here. A marked size WITH local stock stays on screen: it can still be picked (see CAN'T GET in the header).
 function supplyHidden(r: AmazonOrderRow): boolean {
   return r.no_supply && r.local_stock === 0;
@@ -869,24 +871,23 @@ function renderColumnHeader(
 }
 
 /*
- * CAN'T GET CONTROL — the detail row's line for the row's STYLE (see CAN'T GET in the header). Same four states and the same words as
+ * CAN'T GET CONTROL — the detail row's line for the row's SIZE (see CAN'T GET in the header). Same four states and the same words as
  * Shopify Order's style block: marked (until when, by whom, Release) / lapsed ("Couldn't get it", Still can't, X) / confirming / the
  * quiet "Can't get it" link. Its own component so each open detail row keeps its own confirm, busy and error state. Both writes
  * resolve to an error message, or null when it worked (the list then reloads).
  */
 interface SupplyControlProps {
   row: AmazonOrderRow;
-  sizes: number;              // how many of this style's sizes are on the list — the confirm says the mark takes them all
   parkUntil: string | null;   // the day a mark set now would lapse
-  onPark: (groupids: string[]) => Promise<string | null>;
-  onClearSupply: (groupids: string[]) => Promise<string | null>;
+  onPark: (codes: string[]) => Promise<string | null>;
+  onClearSupply: (codes: string[]) => Promise<string | null>;
 }
 // THE DETAIL ROW'S ACTION BUTTONS — Can't get it, Find in Inventory and the Amazon upload file share one quiet outline look
 // (owner, 2026-10-26: the Find in Inventory text link "looks out of place" beside the upload button). Same classes as
 // components/AmazonExport's quiet button.
 const actionBtnCls = 'inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 shadow-sm transition hover:border-brand-500 hover:text-brand-700 disabled:cursor-not-allowed disabled:opacity-40';
 
-function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyControlProps) {
+function SupplyControl({ row, parkUntil, onPark, onClearSupply }: SupplyControlProps) {
   const [choosing, setChoosing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [supplyError, setSupplyError] = useState<string | null>(null);
@@ -901,24 +902,24 @@ function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyC
     <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
       {row.no_supply ? (
         <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
-          Can&rsquo;t get {row.groupid} until {shortDate(row.no_supply_until)}
+          Can&rsquo;t get size {row.size} until {shortDate(row.no_supply_until)}
           {row.no_supply_by && <span className="text-amber-600">· {row.no_supply_by}</span>}
           {/* Release — Can't get's own opposite, the word Shopify Order and Seasons use. Not "Clear", not "Unpark". */}
-          <button type="button" disabled={busy} onClick={() => run(() => onClearSupply([row.groupid]))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={() => run(() => onClearSupply([row.code]))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
             Release
           </button>
         </span>
       ) : lapsed && !choosing ? (
         <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
-          Couldn&rsquo;t get it — {shortDate(row.no_supply_since)}
+          Couldn&rsquo;t get size {row.size} — {shortDate(row.no_supply_since)}
           {/* "Still can't" is its own confirmation — the operator has just read the note and answered it — so it marks straight away. */}
-          <button type="button" disabled={busy} onClick={() => run(() => onPark([row.groupid]))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={() => run(() => onPark([row.code]))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
             Still can&rsquo;t
           </button>
           <button
             type="button"
             disabled={busy}
-            onClick={() => run(() => onClearSupply([row.groupid]))}
+            onClick={() => run(() => onClearSupply([row.code]))}
             aria-label="I can get it — dismiss the note"
             className="rounded p-0.5 text-amber-600 hover:bg-amber-100 disabled:opacity-50"
           >
@@ -927,8 +928,8 @@ function SupplyControl({ row, sizes, parkUntil, onPark, onClearSupply }: SupplyC
         </span>
       ) : choosing ? (
         <span className="inline-flex flex-wrap items-center gap-1.5 text-slate-700">
-          Can&rsquo;t get {row.groupid} ({sizes === 1 ? 'its one size' : `all ${sizes} sizes`}, Shopify too) — stop ordering until {parkUntil ? shortDate(parkUntil) : 'three months from today'}?
-          <button type="button" disabled={busy} onClick={() => run(() => onPark([row.groupid]))} className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
+          Can&rsquo;t get size {row.size} (Shopify too) — stop ordering it until {parkUntil ? shortDate(parkUntil) : 'three months from today'}?
+          <button type="button" disabled={busy} onClick={() => run(() => onPark([row.code]))} className="rounded border border-slate-300 bg-white px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
             Yes
           </button>
           <button type="button" disabled={busy} onClick={() => { setChoosing(false); setSupplyError(null); }} className="px-1 text-slate-400 hover:text-slate-600">
@@ -1016,12 +1017,6 @@ function AmazonOrderContent() {
   const allRows = useMemo(() => [...rows, ...offRows], [rows, offRows]);
   // Reset has something to do if the Can't get cut was switched off — it's how you get back to it.
   const leftSupply = !supplyOn;
-  // How many sizes of each style are on the list — the Can't get confirm says the mark takes them all.
-  const sizesByStyle = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of rows) m.set(r.groupid, (m.get(r.groupid) || 0) + 1);
-    return m;
-  }, [rows]);
   // Amazon lines already queued to Order Status and still sitting un-placed — see the UNPLACED BACKLOG note in the header block.
   const toPlace: AmazonOrderToPlace | null = data?.to_place ?? null;
   // 3 days is the line between "sent it this morning" and "this has been sitting". Under it the indicator is quiet slate and says
@@ -1485,7 +1480,7 @@ function AmazonOrderContent() {
     const shortfalls: string[] = [];
     // Styles carrying a "Can't get it" mark (live or lapsed) that just had an ORDER line land — cleared after the loop, as on Shopify
     // Order: a style you've just ordered is plainly one you can get. A pick says nothing about the supplier, so it never clears one.
-    const orderedFlagged = new Set<string>();
+    const orderedFlagged = new Set<string>(); // sizes carrying a mark (live or lapsed) that just had an order land — released after the send
     for (let i = 0; i < sendTargets.length; i++) {
       const { half, code, qty, supplier } = sendTargets[i];
       const label = bothHalves ? `${code} (${half})` : code;
@@ -1509,7 +1504,7 @@ function AmazonOrderContent() {
         if (res.success) {
           landed = true;
           const row = rowByCode.get(code);
-          if (row && row.no_supply_since) orderedFlagged.add(row.groupid);
+          if (row && row.no_supply_since) orderedFlagged.add(row.code);
         } else unauthorized = res.return_code === 'UNAUTHORIZED';
       }
 
@@ -1531,7 +1526,7 @@ function AmazonOrderContent() {
     }
     setOrderProgress(null); setOrdering(false);
     // Best effort — the orders are what matter; a note that fails to clear just stays until the next time.
-    if (orderedFlagged.size > 0) await clearNoSupply([...orderedFlagged]);
+    if (orderedFlagged.size > 0) await clearNoSupply([], [...orderedFlagged]);
     if (failed.length > 0) setOrderError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
     if (shortfalls.length > 0) {
       setSendNote(`Shelf came up short on ${shortfalls.length} SKU${shortfalls.length === 1 ? '' : 's'}: ${shortfalls.slice(0, 5).join(', ')}${shortfalls.length > 5 ? '…' : ''}`);
@@ -1693,16 +1688,14 @@ function AmazonOrderContent() {
     return { error: null, aboveRrp: res.data.warnings.includes('ABOVE_RRP'), notSent: amazon && !amazon.sent ? (amazon.message || 'unknown error') : null };
   }
 
-  // CAN'T GET — the two writes, for the row-1 button (the selected rows' styles) and the detail row (SupplyControl, one style). Each
-  // reloads the list and hands back an error message, or null. Marking EMPTIES those styles' ORDER boxes (every size, on screen or not)
-  // — a buy against a style you've just said you can't get is an order Confirm Basket would otherwise still send. Pick is left alone:
-  // that stock is on our shelf.
-  async function onPark(groupids: string[]): Promise<string | null> {
-    const res = await setNoSupply(groupids);
+  // CAN'T GET — the two writes, for the row-1 button (the selected sizes) and the detail row (SupplyControl, one size). Each reloads
+  // the list and hands back an error message, or null. Marking EMPTIES those sizes' ORDER boxes — a buy against a size you've just said
+  // you can't get is an order Confirm Basket would otherwise still send. Pick is left alone: that stock is on our shelf.
+  async function onPark(markCodes: string[]): Promise<string | null> {
+    const res = await setNoSupplySizes(markCodes);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
     if (!res.success) return res.error || 'Couldn’t mark it';
-    const marked = new Set(groupids);
-    const codes = new Set(rows.filter((r) => marked.has(r.groupid)).map((r) => r.code));
+    const codes = new Set(markCodes);
     setQtyByHalf((prev) => {
       if (!Object.keys(prev.order).some((c) => codes.has(c))) return prev;
       const order = { ...prev.order };
@@ -1712,8 +1705,8 @@ function AmazonOrderContent() {
     await refresh();
     return null;
   }
-  async function onClearSupply(groupids: string[]): Promise<string | null> {
-    const res = await clearNoSupply(groupids);
+  async function onClearSupply(codes: string[]): Promise<string | null> {
+    const res = await clearNoSupply([], codes);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
     if (!res.success) return res.error || 'Couldn’t clear it';
     await refresh();
@@ -1994,26 +1987,25 @@ function AmazonOrderContent() {
   }
 
   // CAN'T GET FROM THE SELECTION (owner, 2026-09-27 — "am I not able to set Can't get from this screen?": the detail row alone was
-  // too hidden). The button beside Cut acts on the STYLES of the selected rows — select the way you select for Cut — because the mark
-  // is per style: three sizes of one style selected is one style marked. If every one of them is already marked it offers Release
-  // instead, so the same button undoes itself. Inline confirm, since marking hides sizes with no local stock from the screen.
-  const markedStyles = useMemo(() => new Set(rows.filter((r) => r.no_supply).map((r) => r.groupid)), [rows]);
-  const selectedStyles = useMemo(() => {
-    const out = new Set<string>();
+  // too hidden). The button beside Cut acts on the selected SIZES — select the way you select for Cut (per size since 2026-11-13: "I
+  // really meant we can't get that size"). If every one of them is already marked it offers Release instead, so the same button undoes
+  // itself. Inline confirm, since marking hides sizes with no local stock from the screen.
+  const selectedRows = useMemo(() => {
+    const out: AmazonOrderRow[] = [];
     for (const code of selected) {
       const r = rowByCode.get(code);
-      if (r) out.add(r.groupid);
+      if (r) out.push(r);
     }
-    return [...out];
+    return out;
   }, [selected, rowByCode]);
-  const releasing = selectedStyles.length > 0 && selectedStyles.every((g) => markedStyles.has(g));
-  const selectedStyleSizes = selectedStyles.reduce((n, g) => n + (sizesByStyle.get(g) ?? 0), 0);
+  const releasing = selectedRows.length > 0 && selectedRows.every((r) => r.no_supply);
   const [confirmingPark, setConfirmingPark] = useState(false);
   const [parkBusy, setParkBusy] = useState(false);
   const [parkError, setParkError] = useState<string | null>(null);
   async function submitPark() {
     setParkBusy(true); setParkError(null);
-    const err = releasing ? await onClearSupply(selectedStyles) : await onPark(selectedStyles);
+    const codes = selectedRows.map((r) => r.code);
+    const err = releasing ? await onClearSupply(codes) : await onPark(codes);
     setParkBusy(false);
     if (err) { setParkError(err); return; }
     setConfirmingPark(false);
@@ -2347,15 +2339,15 @@ function AmazonOrderContent() {
           {/* SELECTION ACTIONS — Can't get and Cut act on the selected rows (see CLICK, SELECT, EXPAND in the header). Both are a
               FIXED width with no count: a width that moved with the selection re-wrapped this row and made the sticky panel jump. Left, straight after the fill controls, so the row reads: set up the fill, deal with the rows, then send. */}
           <div className="flex items-center gap-2">
-            {/* CAN'T GET / RELEASE — see CAN'T GET FROM THE SELECTION. Acts on STYLES, not rows — the confirm says how many of each. */}
+            {/* CAN'T GET / RELEASE — see CAN'T GET FROM THE SELECTION. Acts on the selected sizes. */}
             <button
               type="button"
               onClick={() => { setParkError(null); setConfirmingPark((v) => !v); }}
-              disabled={selectedStyles.length === 0}
+              disabled={selectedRows.length === 0}
               aria-pressed={confirmingPark}
               className={
                 'flex w-[7.5rem] items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:border-slate-300 disabled:bg-white disabled:text-slate-400 disabled:opacity-40 '
-                + (confirmingPark && selectedStyles.length > 0 ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
+                + (confirmingPark && selectedRows.length > 0 ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-300 text-slate-600 hover:bg-slate-100')
               }
             >
               <NoSymbolIcon className="h-4 w-4" />
@@ -2530,15 +2522,15 @@ function AmazonOrderContent() {
           </div>
         </div>
 
-        {(orderError || sendNote || (toPlace && toPlace.units > 0) || (confirmingPark && selectedStyles.length > 0)) && (
+        {(orderError || sendNote || (toPlace && toPlace.units > 0) || (confirmingPark && selectedRows.length > 0)) && (
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 pt-2 text-xs">
             {/* CAN'T GET / RELEASE CONFIRM — here rather than in place of the button, so a whole sentence never wraps row 2. */}
-            {confirmingPark && selectedStyles.length > 0 && (
+            {confirmingPark && selectedRows.length > 0 && (
               <span className="flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-slate-700">
                   {releasing
-                    ? `Release ${selectedStyles.length} style${selectedStyles.length === 1 ? '' : 's'} — back on both order screens?`
-                    : `Can’t get ${selectedStyles.length} style${selectedStyles.length === 1 ? '' : 's'} (${selectedStyleSizes} size${selectedStyleSizes === 1 ? '' : 's'}, Shopify too) — stop ordering until ${data?.no_supply_default_until ? shortDate(data.no_supply_default_until) : 'three months from today'}? Sizes with local stock stay for picking.`}
+                    ? `Release ${selectedRows.length} size${selectedRows.length === 1 ? '' : 's'} — back on both order screens?`
+                    : `Can’t get ${selectedRows.length} size${selectedRows.length === 1 ? '' : 's'} (Shopify too) — stop ordering until ${data?.no_supply_default_until ? shortDate(data.no_supply_default_until) : 'three months from today'}? Sizes with local stock stay for picking.`}
                 </span>
                 {parkError && <span className="text-red-600">{parkError}</span>}
                 <button type="button" disabled={parkBusy} onClick={submitPark} className="rounded bg-slate-800 px-2 py-0.5 text-xs font-medium text-white disabled:opacity-50">
@@ -2689,8 +2681,8 @@ function AmazonOrderContent() {
                           {fileMade.has(r.groupid) ? 'Sent' : 'No AMZ'}
                         </button>
                       )}
-                      {/* CAN'T GET tag — the style's mark, on each of its sizes. A button that opens the detail row, where Release /
-                          Still can't live. A lapsed mark gets a quieter tag: the style is back, the note says why it was away. */}
+                      {/* CAN'T GET tag — the size's mark. A button that opens the detail row, where Release /
+                          Still can't live. A lapsed mark gets a quieter tag: the size is back, the note says why it was away. */}
                       {(r.no_supply || r.no_supply_since) && (
                         <button
                           type="button"
@@ -2868,7 +2860,6 @@ function AmazonOrderContent() {
                         )}
                         <SupplyControl
                           row={r}
-                          sizes={sizesByStyle.get(r.groupid) ?? 1}
                           parkUntil={data?.no_supply_default_until ?? null}
                           onPark={onPark}
                           onClearSupply={onClearSupply}

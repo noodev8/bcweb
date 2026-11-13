@@ -15,7 +15,7 @@ Keep this file short. Decisions go in `docs/claude-pricing-amazon-decisions.md` 
 
 ## Rules (owner-set, authoritative)
 
-- Birkenstock can't be re-ordered. The job is maximum margin from the stock we already hold. Same re-orderable test as Shopify (Birkenstock never; other brands unless Can't get is set).
+- Birkenstock can't be re-ordered. The job is maximum margin from the stock we already hold. Same re-orderable test as Shopify (Birkenstock never; other brands unless the size is marked Can't get — `no_supply_size`, live while `until > CURRENT_DATE`).
 - Shopify and Amazon prices are independent. Never set an Amazon price by Shopify's, or vice versa.
 - An Amazon SKU takes its style's portfolio status. The Amazon status list shows only AMZ- and BOTH-led styles.
 - A brand's own pricing request stands.

@@ -30,7 +30,8 @@ A GAP = a size in the range that is EITHER
           that sold 3–6 months ago at > £3 can be on both — known, owner's call.)
          Every other size of the style is HELD (stock), ON ORDER, or SELLING (sold in 90 days) — shown grey, never worked here.
 
-LEFT OUT: Can't get styles (utils/noSupply.js — style-wide, lapses by itself, so they come back).
+LEFT OUT: styles marked Can't get WHOLE — every live size marked (utils/noSupply.js → noSupplyWholeStyleSql; lapses by itself, so
+         they come back). A partly marked style stays.
 
 THE ORDER = THE STYLE'S BEST SIZE, BY PROFIT A PAIR (owner, 2026-11-09 — replaced the style's total 12-month profit: "If a size can
          make good size profit, then maybe another size can. Not interested in qty at this stage"). For every size of the style (every
@@ -79,7 +80,7 @@ Exports:
 
 const { query } = require('../database');
 const { LONDON_TODAY_SQL } = require('./sql');
-const { noSupplyNowSql } = require('./noSupply');
+const { noSupplyWholeStyleSql } = require('./noSupply');
 const { lastNetSales } = require('./onShelf');
 
 const GAP_DAYS = 90;
@@ -116,7 +117,7 @@ async function readSizeGaps() {
        JOIN title t ON t.groupid = s.groupid
        JOIN size_gap_range r ON LOWER(TRIM(s.brand)) = LOWER(r.brand)
                             AND LOWER(split_part(TRIM(t.shopifytitle), ' ', 1)) = LOWER(r.who)   -- 'Womens' / 'Mens' (header)
-      WHERE NOT ${noSupplyNowSql('s')}`);
+      WHERE NOT ${noSupplyWholeStyleSql('s.groupid')}`);
   if (!stylesQ.rows.length) return empty;
   const groupids = stylesQ.rows.map((r) => r.groupid);
   const sizingBy = new Map(stylesQ.rows.map((r) => [r.groupid, r.sizing]));   // 'UK' | 'EU' — the label on the Best size

@@ -166,7 +166,7 @@ export interface AmazonOrderRow {
   floor: number | null; // cost + FBA fee — /amz-apply blocks below it; null when either part is unknown
   warm_price: number | null; // the Amazon price whose next sale would count as Warm (Simmer's "£3 price"); null = no cost, or not listed
 
-  // "Can't get it" — the STYLE's mark (utils/noSupply.js), carried by every size; same four fields as ShopifyOrderStyle.
+  // "Can't get it" (utils/noSupply.js) — the SIZE's mark (one store, per size). since/by outlive it, for the "Couldn't get it" note.
   no_supply: boolean;
   no_supply_since: string | null;
   no_supply_until: string | null;
@@ -854,12 +854,16 @@ export function getAmazonOrderList() {
 export interface ShopifyOrderSize {
   code: string; size: string; supplier: string | null;
   stock: number; on_order: number; sold_30: number; sold_90: number; sold_365: number;
+  // The size's "Can't get it" mark (utils/noSupply.js — one store, per size). since/until/by outlive it, for the "Couldn't get it" note.
+  no_supply: boolean; no_supply_since: string | null; no_supply_until: string | null; no_supply_by: string | null;
 }
 export interface ShopifyOrderStyle {
   groupid: string; title: string | null; brand: string | null; supplier: string | null; season: string | null; status: string | null;
-  // "Can't get it" (utils/noSupply.js — a style fact, not a channel one). no_supply = marked right now (re-check day still ahead).
-  // since/by outlive the mark, so a style that has come back can say why it was away. Dates 'YYYY-MM-DD' (London), null when never marked or cleared.
+  // "Can't get it" summed up for the style (utils/noSupply.js — marks are per size). no_supply = marked WHOLE (every size marked now);
+  // no_supply_sizes = how many of its sizes are marked now. since/until/by = the mark that speaks for it (newest live; with none live,
+  // newest lapsed, so a style that has come back can say why it was away). Dates 'YYYY-MM-DD' (London), null when never marked.
   no_supply: boolean;
+  no_supply_sizes: number;
   no_supply_since: string | null;
   no_supply_until: string | null;
   no_supply_by: string | null;
@@ -885,9 +889,17 @@ export function getShopifyOrderList() {
       styles: ((b.styles || []) as ShopifyOrderStyle[]).map((st) => ({
         ...st,
         no_supply: st.no_supply === true,
+        no_supply_sizes: Number(st.no_supply_sizes) || 0,
         no_supply_since: st.no_supply_since ?? null,
         no_supply_until: st.no_supply_until ?? null,
         no_supply_by: st.no_supply_by ?? null,
+        sizes: (st.sizes || []).map((z) => ({
+          ...z,
+          no_supply: z.no_supply === true,
+          no_supply_since: z.no_supply_since ?? null,
+          no_supply_until: z.no_supply_until ?? null,
+          no_supply_by: z.no_supply_by ?? null,
+        })),
       })),
       to_place: {
         units: Number(b.to_place?.units) || 0,
@@ -934,20 +946,27 @@ export function clearShopifyDontOrder(code: string) {
   return request<{ cleared: boolean }>({ url: '/shopify-dont-order-clear', method: 'POST', data: { code } }, (b) => ({ cleared: b.cleared === true }));
 }
 
-// "Can't get it" — park style(s) off the order screens for three months (utils/noSupply.js). A fact about the style, whichever channel
-// it sells on. One style from an order screen's button, a ticked batch from Back Office → Seasons. The server stamps the dates and who
-// did it; nothing else about the style changes (season, status, pricing). `updated` = the styles actually marked.
+// "Can't get it" (utils/noSupply.js — ONE store, per size; off both order screens for three months). WHOLE STYLES: a mark on every live
+// size of each — Shopify Order's style view, a ticked batch on Back Office → Seasons. The server stamps the dates and who did it; nothing
+// else changes (season, status, pricing). `updated` = the SIZES actually marked.
 export function setNoSupply(groupids: string[]) {
   return request<{ since: string; until: string; by: string | null; updated: string[] }>(
     { url: '/no-supply-set', method: 'POST', data: { groupids } },
     (b) => ({ since: String(b.since || ''), until: String(b.until || ''), by: b.by ?? null, updated: b.updated || [] })
   );
 }
-// Take the flag off again — the supplier came back, or the note on a style whose park has lapsed. Idempotent; `cleared` = the styles
-// that actually carried a flag.
-export function clearNoSupply(groupids: string[]) {
+// Single SIZES (owner, 2026-11-13) — Amazon Order, which lists by size; "Still can't" on a size.
+export function setNoSupplySizes(codes: string[]) {
+  return request<{ since: string; until: string; by: string | null; updated: string[] }>(
+    { url: '/no-supply-set', method: 'POST', data: { codes } },
+    (b) => ({ since: String(b.since || ''), until: String(b.until || ''), by: b.by ?? null, updated: b.updated || [] })
+  );
+}
+// Release — the supplier came back, or the note on a size / style whose park has lapsed, or an order just landed for it. `groupids`
+// releases every size of each style; `codes` single sizes; both in one call is fine. Idempotent; `cleared` = what actually carried a mark.
+export function clearNoSupply(groupids: string[], codes: string[] = []) {
   return request<{ cleared: string[] }>(
-    { url: '/no-supply-clear', method: 'POST', data: { groupids } },
+    { url: '/no-supply-clear', method: 'POST', data: { groupids, codes } },
     (b) => ({ cleared: b.cleared || [] })
   );
 }
@@ -5030,9 +5049,11 @@ export interface SeasonRow {
   added_12m: boolean;               // record created in the last 12 months
   suggested: boolean;
   suggested_season: SeasonName | null;
-  // "Can't get it" (utils/noSupply.js) — a separate fact from the season, listed on this screen's Can't get tab. no_supply = parked right
-  // now; since/by outlive the park. Dates 'YYYY-MM-DD' (London).
+  // "Can't get it" (utils/noSupply.js — marks are per size) — a separate fact from the season, listed on this screen's Can't get tab.
+  // no_supply = marked WHOLE (every size marked now); no_supply_sizes = how many sizes are marked now; since/by outlive the park.
+  // Dates 'YYYY-MM-DD' (London).
   no_supply: boolean;
+  no_supply_sizes: number;
   no_supply_since: string | null;
   no_supply_until: string | null;
   no_supply_by: string | null;

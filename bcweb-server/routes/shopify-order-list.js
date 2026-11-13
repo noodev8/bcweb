@@ -43,8 +43,10 @@ skusummary.cost via safeNumeric (CLAUDE.md: order cost is ALWAYS skusummary.cost
 basket's spend. `season` is shipped for display only — NOTHING on this screen filters on it any more (owner, 2026-09-26: "for
 ordering, I should use Can't get / Release as the de facto"; the in-season filter and its in_season / season_now fields were removed
 the same day season left the portfolio status — utils/portfolioStatus.js).
-no_supply = "Can't get it" is set and its re-check day (no_supply_until) is still ahead — the page hides it by default. no_supply_since /
-_by stay after the day passes, so the style comes back carrying "Couldn't get it — <date>" until cleared (migrations/20260926_no_supply.sql).
+"Can't get it" (utils/noSupply.js — ONE store, per size, since 2026-11-13). Each SIZE carries its own no_supply / since / until / by.
+The STYLE carries no_supply = marked WHOLE (every live size marked now — the page hides it by default), no_supply_sizes = how many of
+its sizes are marked now (a partly marked style stays on screen, those sizes locked), and since / until / by of the mark that speaks
+for it (the newest live one; with none live, the newest lapsed one, so the style comes back carrying "Couldn't get it — <date>").
 `no_supply_default_until` names the day "Can't get it" would park a style to today (three months out — utils/noSupply.js).
 
 `to_place` / `on_order` (screen level, beside `styles`) are the local-order backlog: ordertype 2 lines still un-placed, and placed but
@@ -70,11 +72,12 @@ Success Response:
   "on_order": { "units": 10, "skus": 6 },                                   // local lines placed with a supplier, not yet arrived
   "styles": [
     { "groupid": "ELZ006-BLACK", "title": "...", "brand": "Lunar", "supplier": "Lunar", "season": "Winter", "status": "STEADY",
-      "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,
+      "no_supply": false, "no_supply_sizes": 0, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,
       "price": 49.99, "cost": 21.50,
       "stock": 7, "on_order": 2, "sold_30": 1, "sold_90": 3, "sold_365": 18,
       "sizes": [
-        { "code": "ELZ006-BLACK-03", "size": "03", "supplier": "Lunar", "stock": 0, "on_order": 0, "sold_30": 0, "sold_90": 0, "sold_365": 1 },
+        { "code": "ELZ006-BLACK-03", "size": "03", "supplier": "Lunar", "stock": 0, "on_order": 0, "sold_30": 0, "sold_90": 0, "sold_365": 1,
+          "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null },
         ...   // every live size, numeric order
       ] },
     ...   // sold_365 desc, then title
@@ -94,7 +97,9 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { notPlaced, placed } = require('../utils/orderStatus');
-const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
+const {
+  NO_SUPPLY_UNTIL_SQL, noSupplyJoinSql, noSupplySelectSql, noSupplyFields, noSupplyStyleCte, noSupplyStyleSelectSql, noSupplyStyleFields,
+} = require('../utils/noSupply');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -107,7 +112,8 @@ router.get('/', async (req, res) => {
     // row set out and a size with none of a thing reads 0. Styles are assembled from these rows below, in JS, so the per-style totals
     // are by construction the sum of the sizes on screen.
     const result = await query(`
-      WITH loc AS (
+      WITH ${noSupplyStyleCte('nsst')},
+      loc AS (
         -- Sellable shelf stock, less anything committed to Amazon (staged at C3-Amazon, or flagged allocated='amz' and waiting to
         -- be gathered) — see the header. Same predicate as amazon-order-list.js.
         SELECT code, SUM(qty) AS units
@@ -137,8 +143,10 @@ router.get('/', async (req, res) => {
       SELECT s.groupid,
              t.shopifytitle AS title,
              s.brand, s.supplier AS style_supplier, s.season, s.portfolio_status AS status,
-             -- "Can't get it" (utils/noSupply.js): parked-now plus since/until/by.
-             ${noSupplySelectSql('s')},
+             -- "Can't get it" (utils/noSupply.js): the STYLE's summary (whole / how many sizes / the speaking mark) ...
+             ${noSupplyStyleSelectSql('nsst')},
+             -- ... and each SIZE's own mark, in a sub-select so its names can't clash with the style's.
+             (SELECT row_to_json(z) FROM (SELECT ${noSupplySelectSql('nss')}) z) AS size_no_supply,
              ${safeNumeric('s.shopifyprice')} AS price,
              ${safeNumeric('s.cost')} AS cost,
              m.code,
@@ -155,6 +163,8 @@ router.get('/', async (req, res) => {
       LEFT JOIN loc ON loc.code = m.code
       LEFT JOIN ord ON ord.code = m.code
       LEFT JOIN sold ON sold.code = m.code
+      ${noSupplyJoinSql('m.code')}
+      LEFT JOIN nsst ON nsst.groupid = s.groupid
       WHERE s.shopify = 1 AND COALESCE(s.brand,'') NOT ILIKE 'birk%'
       ORDER BY s.groupid,
                CASE WHEN SUBSTRING(m.code FROM '[^-]*$') ~ '^[0-9]+([.][0-9]+)?$'
@@ -175,7 +185,7 @@ router.get('/', async (req, res) => {
           supplier: r.style_supplier || null,
           season: r.season || null,
           status: r.status || null,
-          ...noSupplyFields(r),
+          ...noSupplyStyleFields(r),
           price: num(r.price),
           cost: num(r.cost),
           stock: 0, on_order: 0, sold_30: 0, sold_90: 0, sold_365: 0,
@@ -192,6 +202,8 @@ router.get('/', async (req, res) => {
         sold_30: Number(r.sold_30) || 0,
         sold_90: Number(r.sold_90) || 0,
         sold_365: Number(r.sold_365) || 0,
+        // The size's Can't get mark — live, or lapsed (since kept) for the note.
+        ...noSupplyFields(r.size_no_supply || {}),
       };
       st.sizes.push(size);
       st.stock += size.stock;

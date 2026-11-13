@@ -82,12 +82,12 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          not persisted. What IS persisted is what the operator CONFIRMS: an Order becomes orderstatus rows (visible here through
          `ord`), a Pick becomes flagged shelf rows (visible here through pick_pending).
 
-         no_supply = "Can't get it" (utils/noSupply.js) — a STYLE fact, not a channel one ("if we can't get a style, we can't get it,
-         regardless of where we're trying to sell it" — owner), so every size of a marked style carries its style's mark: the same
-         skusummary.no_supply_* columns Shopify Order reads, set on either screen or on Back Office → Seasons. It only stops the
+         no_supply = "Can't get it" (utils/noSupply.js) — PER SIZE since 2026-11-13: the size's no_supply_size row, the one store
+         (this screen marks sizes; a style marked whole on Shopify Order or Seasons is a row on every size). Not a channel fact (one
+         supplier), so the same rows keep the size off Shopify Order too. It only stops the
          SUPPLIER side: the page hides a marked size only when it has no local stock to pick either ("we can get them because we have
          them" — owner, 2026-09-27), and the rate fill leaves such a row's Order half empty while still filling its Pick.
-         `no_supply_default_until` names the day "Can't get it" would park a style to today (three months out).
+         `no_supply_default_until` names the day "Can't get it" would park a size to today (three months out).
 
          NO server-side search/limit (unlike the pricing lists' listLimit cap): the candidate set is ~520 rows (every amzfeed SKU), so — like
          inv-styles — the whole list ships once and the Include / Does-not-contain search on the web page narrows it CLIENT-SIDE with
@@ -126,7 +126,7 @@ Success Response:
       "queued_price": 39.69, "floor": 27.40,                        // pending upload (null if none); cost + FBA fee (null if unknown)
       "warm_price": 41.26,                  // Amazon price whose sale would make £3.01 — Simmer's "£3 price" (null if no cost)
       "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
-      "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,     // the STYLE's mark
+      "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,     // the SIZE's mark
       "on_amazon": true },
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ],
@@ -146,7 +146,7 @@ const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { notPlaced, placed } = require('../utils/orderStatus');
-const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyFields } = require('../utils/noSupply');
+const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyJoinSql, noSupplyFields } = require('../utils/noSupply');
 const { HOT_SHARE, WARM_MIN_UNIT_PROFIT } = require('../utils/portfolio');
 const { priceForProfit } = require('../utils/amzProfit');
 const logger = require('../utils/logger');
@@ -254,8 +254,8 @@ router.get('/', async (req, res) => {
              -- Detail row extras (owner, 2026-09-28): the style's RRP and its picture (bare filename; the web builds the URL).
              ${safeNumeric('sk.rrp')} AS rrp,
              NULLIF(sk.imagename, '') AS imagename,
-             -- "Can't get it" (utils/noSupply.js): the STYLE's mark, carried by each of its sizes.
-             ${noSupplySelectSql('sk')}
+             -- "Can't get it" (utils/noSupply.js): the size's mark.
+             ${noSupplySelectSql('nss')}
       FROM amzfeed a
       JOIN skusummary sk ON sk.groupid = a.groupid
       JOIN skumap m ON m.code = a.code
@@ -266,6 +266,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN ord ON ord.code = a.code
       LEFT JOIN lastsold ON lastsold.code = a.code
       LEFT JOIN queued ON queued.code = a.code
+      ${noSupplyJoinSql('a.code')}
       ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 
@@ -297,7 +298,7 @@ router.get('/', async (req, res) => {
              NULL AS fbafee, NULL AS tax,
              ${safeNumeric('sk.rrp')} AS rrp,
              NULLIF(sk.imagename, '') AS imagename,
-             ${noSupplySelectSql('sk')}
+             ${noSupplySelectSql('nss')}
       FROM unlisted u
       JOIN skumap m ON m.code = u.code
       JOIN skusummary sk ON sk.groupid = u.groupid
@@ -306,6 +307,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN pending ON pending.code = u.code
       LEFT JOIN staged ON staged.code = u.code
       LEFT JOIN ord ON ord.code = u.code
+      ${noSupplyJoinSql('u.code')}
       WHERE u.groupid IN (SELECT u2.groupid FROM unlisted u2 JOIN loc l2 ON l2.code = u2.code)
       ORDER BY u.groupid, u.code
     `);

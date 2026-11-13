@@ -25,8 +25,9 @@ Purpose: Which styles really sell all year? Every style's season (Summer | Winte
          CAN'T GET IT lives here too (owner, 2026-09-26 — "where we set seasons and switch can't get it on and off"). A SEPARATE fact,
          shown beside the season and never merged into it: season is "when does it sell"; can't get is "can I buy more" — for
          ordering it is THE test (owner, 2026-09-26: "for ordering, I should use Can't get / Release as the de facto"), and it only takes
-         a style off the order screens for three months (bcweb-server/utils/noSupply.js). It is about the STYLE, whichever channel it
-         sells on — no wording here names one. So: a Can't get view drawn apart from the season switch, listing every marked style
+         a style off the order screens for three months (bcweb-server/utils/noSupply.js). Stored per SIZE since 2026-11-13: this
+         screen marks / releases every size of the ticked styles, and a style marked on some sizes only (Amazon Order) shows "N sizes".
+         Not a channel fact — no wording here names one. So: a Can't get view drawn apart from the season switch, listing every marked style
          whatever its season; a marker beside the code on every view; and a Can't get / Release pair in the bulk bar, after a divider.
          The words are Can't get and Release, not park/unpark: "parked" already means a pricing review date on Repricing. It is set
          mostly from an order screen, where you find out; this is where you see them all.
@@ -236,11 +237,12 @@ export default function SeasonsPage() {
   const { data, error: loadError, isLoading, refresh } = useApiQuery(['product-seasons'], () => getProductSeasons());
   const allRows = useMemo(() => data?.rows ?? [], [data]);
 
-  // The Can't get view lists every style carrying the mark — parked now, and lapsed ones still showing "Couldn't get it" on the
-  // order screens — whatever its season. The season views are unchanged.
+  // The Can't get view lists every style carrying a mark — marked whole or on some sizes now (marks are per size since 2026-11-13 —
+  // bcweb-server/utils/noSupply.js), and lapsed ones still showing "Couldn't get it" on the order screens — whatever its season. The
+  // season views are unchanged.
   const inSeason = useMemo(
     () => (season === CANT_GET
-      ? allRows.filter((r) => r.no_supply || !!r.no_supply_since)
+      ? allRows.filter((r) => r.no_supply || r.no_supply_sizes > 0 || !!r.no_supply_since)
       : allRows.filter((r) => r.season === season)),
     [allRows, season],
   );
@@ -375,8 +377,8 @@ export default function SeasonsPage() {
     await refresh();
   }
 
-  // CAN'T GET IT, in bulk — mark the ticked styles for three months, or release them (bcweb-server/utils/noSupply.js). Separate from the
-  // season setter on purpose: it changes nothing about the season or the status.
+  // CAN'T GET IT, in bulk — mark every size of the ticked styles for three months, or release them all (bcweb-server/utils/noSupply.js).
+  // Separate from the season setter on purpose: it changes nothing about the season or the status.
   async function applyNoSupply(action: 'park' | 'clear') {
     const ids = rows.filter((r) => selected.has(r.groupid)).map((r) => r.groupid);
     if (ids.length === 0) return;
@@ -387,8 +389,9 @@ export default function SeasonsPage() {
       const res = await setNoSupply(ids);
       setBusy(false);
       if (!res.success || !res.data) { setError(res.error || 'Could not mark them'); return; }
-      const n = res.data.updated.length;
-      setMessage(`Can't get: ${n} style${n === 1 ? '' : 's'} hidden from ordering until ${dayMonth(res.data.until)}.`);
+      const n = ids.length;
+      const z = res.data.updated.length;
+      setMessage(`Can't get: ${n} style${n === 1 ? '' : 's'} (${z} size${z === 1 ? '' : 's'}) hidden from ordering until ${dayMonth(res.data.until)}.`);
     } else {
       const res = await clearNoSupply(ids);
       setBusy(false);
@@ -656,6 +659,14 @@ export default function SeasonsPage() {
                           title={`Can’t get it until ${dayMonth(r.no_supply_until)} — marked ${dayMonth(r.no_supply_since)}${r.no_supply_by ? ` by ${r.no_supply_by}` : ''} · ${r.season}`}
                         >
                           {season === CANT_GET ? `until ${dayMonth(r.no_supply_until)}` : 'Can’t get'}
+                        </span>
+                      ) : r.no_supply_sizes > 0 ? (
+                        // PARTLY MARKED — some sizes, set one at a time on Amazon Order. "3 months" here marks the rest; Release frees them.
+                        <span
+                          className="shrink-0 rounded border border-amber-200 bg-amber-50 px-1 text-[11px] leading-4 text-amber-800"
+                          title={`Can’t get ${r.no_supply_sizes} size${r.no_supply_sizes === 1 ? '' : 's'} until ${dayMonth(r.no_supply_until)}${r.no_supply_by ? ` · ${r.no_supply_by}` : ''} — the rest can be ordered · ${r.season}`}
+                        >
+                          {r.no_supply_sizes} size{r.no_supply_sizes === 1 ? '' : 's'}
                         </span>
                       ) : r.no_supply_since ? (
                         <span

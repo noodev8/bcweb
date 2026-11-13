@@ -50,18 +50,22 @@ NO SEASON FILTER (removed 2026-09-26, the day it was added). An automatic in-sea
       to wait, not the calendar.
 
 NO SUPPLY — "CAN'T GET IT" / "RELEASE" (owner, 2026-09-26). The supplier has none, so the style comes off the order screens for
-      three months, then returns on its own — "I don't want too much to remember". Style level. Always THREE MONTHS, no choice and no
+      three months, then returns on its own — "I don't want too much to remember". Always THREE MONTHS, no choice and no
       "forever" — why is in bcweb-server/utils/noSupply.js. The words are Can't get and Release, deliberately NOT park/unpark:
       "parked" already means a style's pricing review date on Repricing, and one word for two things on the same style is the
       confusion to avoid. It changes NOTHING else: not the season, not the status, not the Repricing lists ("I can't buy any more,
       but I can price what I do have"). A chip counts the hidden ones and its X shows them, dimmed, each with a Release. When the day
       passes the style is back carrying "Couldn't get it — <date>": X dismisses it (you can get it now), "Still can't" marks it
-      again. Ordering a flagged style through Confirm Basket clears the mark too, and marking a style empties its boxes, so a line the
-      operator has just said can't be bought can't ride along in the next send. Stored on skusummary.no_supply_*
-      (migrations/20260926_no_supply.sql), written by /no-supply-set and /no-supply-clear. A STYLE fact, not a Shopify one — "if we
-      can't get a style, we can't get it, regardless of where we're trying to sell it" (owner) — so Amazon Order honours the
-      same mark (since 2026-09-27; a style marked on either screen is off both), and none of this screen's wording for it names a channel. Every marked style, and the lapsed ones still carrying
-      their note, is listed and managed in bulk on Back Office → Seasons (the Can't get view).
+      again (the same sizes). Marking a style empties its boxes, so a line the operator has just said can't be bought can't ride along
+      in the next send. Not a Shopify fact — one supplier — so Amazon Order honours the same marks, and none of this screen's wording
+      for it names a channel. Every marked style, and the lapsed ones still carrying their note, is listed and managed in bulk on Back
+      Office → Seasons (the Can't get view).
+      ONE STORE, PER SIZE (owner, 2026-11-13: "single system" — utils/noSupply.js). Marks live on SIZES (no_supply_size); this screen's
+      "Can't get it" is the whole-style shortcut (a mark on every size) and its Release frees every size. Amazon Order marks single
+      sizes, so a style can be PARTLY marked: it stays on screen, its block says which sizes and until when (Release frees them), and
+      those sizes are struck through in the size strip with their Order box locked. Only a style marked WHOLE (every size) is hidden.
+      Sellers hides a marked size. Confirm Basket releases the mark of each size an order lands for (that size is plainly gettable;
+      its sister sizes are not proven, so they keep theirs).
 
 TWO VIEWS — SELLERS | SIZES (owner, 2026-10-27). SELLERS, the default, is Amazon Order's flat layout for Shopify: one row per size that
       sold on Shopify in 30 days (no Birkenstock — see above), with sold 30d / 90d, £ a unit, local,
@@ -85,7 +89,7 @@ import {
 import AppShell from '@/components/AppShell';
 import CopyButton from '@/components/CopyButton';
 import {
-  getShopifyOrderList, getShopifySellersList, setShopifyDontOrder, clearShopifyDontOrder, addOrderLine, setNoSupply, clearNoSupply,
+  getShopifyOrderList, getShopifySellersList, setShopifyDontOrder, clearShopifyDontOrder, addOrderLine, setNoSupply, setNoSupplySizes, clearNoSupply,
   ShopifyOrderStyle, ShopifyOrderSize, ShopifyOrderToPlace, ShopifyOrderOnOrder, ShopifySellerRow,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -194,8 +198,9 @@ interface StyleBlockProps {
   onQty: (code: string, value: string) => void;
   // "Can't get it" — see NO SUPPLY in the header. Both resolve to an error message, or null when it worked (the list then reloads).
   parkUntil: string | null;   // the day a park set now would lapse — for the confirm's wording
-  onPark: (style: ShopifyOrderStyle) => Promise<string | null>;
-  onClearSupply: (groupid: string) => Promise<string | null>;
+  // onPark: codes = mark just those sizes ("Still can't" on a lapsed note); none = the whole style (every size).
+  onPark: (style: ShopifyOrderStyle, codes?: string[]) => Promise<string | null>;
+  onClearSupply: (groupid: string) => Promise<string | null>;   // releases every size of the style
 }
 const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPark, onClearSupply }: StyleBlockProps) {
   const basketUnits = style.sizes.reduce((n, z) => n + (Number(qty[z.code]) || 0), 0);
@@ -214,8 +219,13 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
     setBusy(false);
     if (err) setSupplyError(err); else setChoosing(false);
   }
-  // A park that has run out: the style is back, and says why it was away until the operator clears it or orders it.
-  const lapsed = !style.no_supply && !!style.no_supply_since;
+  // Partly marked: some sizes (not all) can't be got right now — named, so the block says which.
+  const markedSizes = style.sizes.filter((z) => z.no_supply);
+  const partial = !style.no_supply && markedSizes.length > 0;
+  // A park that has run out: nothing marked now, but the style carries lapsed marks — it's back, and says why it was away until the
+  // operator clears it. "Still can't" re-marks the same sizes.
+  const lapsed = !style.no_supply && markedSizes.length === 0 && !!style.no_supply_since;
+  const lapsedCodes = style.sizes.filter((z) => !!z.no_supply_since).map((z) => z.code);
   return (
     <div className="border-b border-slate-100 px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
@@ -259,7 +269,7 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
           <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
             Couldn&rsquo;t get it — {shortDate(style.no_supply_since)}
             {/* "Still can't" is its own confirmation — the operator has just read the note and answered it — so it marks straight away. */}
-            <button type="button" disabled={busy} onClick={() => run(() => onPark(style))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+            <button type="button" disabled={busy} onClick={() => run(() => onPark(style, lapsedCodes.length > 0 ? lapsedCodes : undefined))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
               Still can&rsquo;t
             </button>
             <button
@@ -272,20 +282,34 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
               <XMarkIcon className="h-3.5 w-3.5" />
             </button>
           </span>
-        ) : choosing ? (
-          <span className="inline-flex items-center gap-1.5 text-slate-600">
-            Can&rsquo;t get it — hide from ordering until {parkUntil ? shortDate(parkUntil) : 'three months from today'}?
-            <button type="button" disabled={busy} onClick={() => run(() => onPark(style))} className="rounded border border-slate-300 px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
-              Yes
-            </button>
-            <button type="button" disabled={busy} onClick={() => { setChoosing(false); setSupplyError(null); }} className="px-1 text-slate-400 hover:text-slate-600">
-              Cancel
-            </button>
-          </span>
         ) : (
-          <button type="button" onClick={() => setChoosing(true)} className="text-slate-400 hover:text-slate-600 hover:underline">
-            Can&rsquo;t get it
-          </button>
+          <>
+            {/* PARTLY MARKED — sizes marked one at a time (Amazon Order). Amber like a whole mark; Release frees them all. */}
+            {partial && (
+              <span className="inline-flex items-center gap-1.5 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-800">
+                Can&rsquo;t get size{markedSizes.length === 1 ? '' : 's'} {markedSizes.map((z) => z.size).join(', ')} until {shortDate(style.no_supply_until)}
+                {style.no_supply_by && <span className="text-amber-600">· {style.no_supply_by}</span>}
+                <button type="button" disabled={busy} onClick={() => run(() => onClearSupply(style.groupid))} className="font-medium underline-offset-2 hover:underline disabled:opacity-50">
+                  Release
+                </button>
+              </span>
+            )}
+            {choosing ? (
+              <span className="inline-flex items-center gap-1.5 text-slate-600">
+                Can&rsquo;t get {partial ? `all ${style.sizes.length} sizes` : 'it'} — hide from ordering until {parkUntil ? shortDate(parkUntil) : 'three months from today'}?
+                <button type="button" disabled={busy} onClick={() => run(() => onPark(style))} className="rounded border border-slate-300 px-1.5 py-0.5 font-medium hover:bg-slate-50 disabled:opacity-50">
+                  Yes
+                </button>
+                <button type="button" disabled={busy} onClick={() => { setChoosing(false); setSupplyError(null); }} className="px-1 text-slate-400 hover:text-slate-600">
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button type="button" onClick={() => setChoosing(true)} className="text-slate-400 hover:text-slate-600 hover:underline">
+                {partial ? 'Can’t get any' : 'Can’t get it'}
+              </button>
+            )}
+          </>
         )}
         {supplyError && <span className="text-red-600">{supplyError}</span>}
       </div>
@@ -299,7 +323,13 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
             <tr>
               <th scope="row" className="w-16 pr-2 text-left font-normal text-slate-400">Size</th>
               {style.sizes.map((z) => (
-                <td key={z.code} className="w-12 border-b border-slate-100 pb-0.5 text-center font-medium text-slate-600">{z.size}</td>
+                <td
+                  key={z.code}
+                  title={z.no_supply ? `Can’t get size ${z.size} until ${shortDate(z.no_supply_until)}${z.no_supply_by ? ` · ${z.no_supply_by}` : ''}` : undefined}
+                  className={'w-12 border-b border-slate-100 pb-0.5 text-center font-medium ' + (z.no_supply ? 'text-amber-700 line-through' : 'text-slate-600')}
+                >
+                  {z.size}
+                </td>
               ))}
             </tr>
             <tr>
@@ -330,12 +360,15 @@ const StyleBlock = memo(function StyleBlock({ style, qty, onQty, parkUntil, onPa
                     placeholder="—"
                     // A size with no supplier can't be written (/order-status-add validates against it) — say so rather than
                     // accept a number the send would quietly skip. None today (verified 2026-09-26); this is the guard, not a case.
-                    disabled={!z.supplier}
-                    title={z.supplier ? `Units of ${z.code} to order from ${z.supplier}` : 'No supplier on this SKU — it can’t be ordered'}
+                    // A size marked Can't get is locked too (owner, 2026-11-13) — Release it first if the supplier is back.
+                    disabled={!z.supplier || z.no_supply}
+                    title={z.no_supply
+                      ? `Can’t get size ${z.size} until ${shortDate(z.no_supply_until)} — Release it to order`
+                      : z.supplier ? `Units of ${z.code} to order from ${z.supplier}` : 'No supplier on this SKU — it can’t be ordered'}
                     aria-label={`Order quantity, size ${z.size}`}
                     className={
                       'w-11 rounded border px-1 py-0.5 text-center text-xs tabular-nums focus:outline-none focus:ring-1 '
-                      + (!z.supplier
+                      + (!z.supplier || z.no_supply
                         ? 'cursor-not-allowed border-slate-200 bg-slate-100'
                         : (Number(qty[z.code]) || 0) > 0
                           ? 'border-brand-500 bg-brand-50 font-semibold text-brand-700 focus:border-brand-500 focus:ring-brand-500'
@@ -710,11 +743,11 @@ function ShopifyOrderContent() {
   // CAN'T GET IT — the two writes a style block can make. Each reloads the list (SWR mutate, stable across renders so the memoised
   // blocks aren't all re-rendered for nothing) and hands back an error message, or null. Parking also EMPTIES that style's boxes: a
   // quantity against a style you've just said you can't get is an order Confirm Basket would otherwise still send, from off screen.
-  const onPark = useCallback(async (style: ShopifyOrderStyle) => {
-    const res = await setNoSupply([style.groupid]);
+  const onPark = useCallback(async (style: ShopifyOrderStyle, only?: string[]) => {
+    const res = only ? await setNoSupplySizes(only) : await setNoSupply([style.groupid]);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return 'Session expired'; }
     if (!res.success) return res.error || 'Couldn’t mark it';
-    const codes = new Set(style.sizes.map((z) => z.code));
+    const codes = new Set(only ?? style.sizes.map((z) => z.code));
     setQty((prev) => {
       if (!Object.keys(prev).some((c) => codes.has(c))) return prev;
       const next = { ...prev };
@@ -866,16 +899,15 @@ function ShopifyOrderContent() {
     setProgress({ done: 0, total: targets.length });
     const failed: string[] = [];
     let units = 0;
-    // Styles that carry a "Can't get it" mark (live or lapsed) and just had an order land — cleared after the loop: a style you've
-    // just ordered is plainly one you can get, so its note would only be noise.
+    // Sizes that carry a "Can't get it" mark (live or lapsed) and just had an order land — released after the loop: a size you've just
+    // ordered is plainly one you can get, so its mark would only be noise. Its sister sizes keep theirs.
     const orderedFlagged = new Set<string>();
     for (let i = 0; i < targets.length; i++) {
       const { code, qty: n, supplier } = targets[i];
       const res = await addOrderLine(supplier, code, n, 2);
       if (res.success) {
         units += n;
-        const st = byCode.get(code)?.style;
-        if (st && st.no_supply_since) orderedFlagged.add(st.groupid);
+        if (byCode.get(code)?.size.no_supply_since) orderedFlagged.add(code);
         setQty((prev) => { const next = { ...prev }; delete next[code]; return next; });
       } else if (res.return_code === 'UNAUTHORIZED') {
         setSending(false); setProgress(null); logout(); return;
@@ -887,7 +919,7 @@ function ShopifyOrderContent() {
     setProgress(null); setSending(false);
     if (failed.length > 0) setSendError(`${failed.length} failed: ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? '…' : ''}`);
     // Best effort — the orders are what matters; a note that fails to clear just stays until the next time.
-    if (orderedFlagged.size > 0) await clearNoSupply([...orderedFlagged]);
+    if (orderedFlagged.size > 0) await clearNoSupply([], [...orderedFlagged]);
     if (units > 0) {
       setSentNote(`Sent ${units} unit${units === 1 ? '' : 's'} to Order Status`);
       // Picks up the new lines in every "+n on order" and in the backlog figures — and in Sellers' On order / Missed.
