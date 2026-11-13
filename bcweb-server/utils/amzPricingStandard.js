@@ -50,7 +50,8 @@ THE RULES (owner, 2026-11-04 — change them here and nowhere else; every number
       27) — every other size when its review date has passed or is unset — the rule routes/amz-all-list.js uses), and a
       size the skill decides on is parked like a manual review: REVIEW_AFTER_PRICE_DAYS after a price, REVIEW_AFTER_LEAVE_DAYS
       after a "leave" (owner: "use smaller windows ... amazon sales are way before 14 days"). A later review date already set is
-      kept. CAN'T TELL sizes are not parked by the skill — they stay Due for the team.
+      kept. Since decision 27 the Due list is only the sizes that are NOT selling (or not live at FBA), so CAN'T TELL is its usual
+      verdict; the owner decides those from the not-selling split (the skill's SKILL.md) and they are parked or priced like any other.
 
 IMPLEMENTATION CHOICES (not owner decisions — flagged so they can be revisited):
   - Units are GROSS orders (sales qty > 0). A return is dated when it comes back and books at £0, so it can't be placed against the
@@ -160,30 +161,34 @@ async function topStyles(db, n, to) {
   return r.rows;
 }
 
-// THE Amazon Due list, by style (rule 10). Same rule as routes/amz-all-list.js's Due switch — FBA stock live or on its way in, due by
-// THE ONE AMAZON RULE (utils/amzDue.js) — so the skill and the screens mean the same by "Due".
+// THE Amazon Due list, by style (rule 10). The same sizes as routes/amz-all-list.js's Due switch — its membership, due by THE ONE
+// AMAZON RULE (utils/amzDue.js) — so the skill and the screens count the same and both work down to zero.
 // Today, or a day AHEAD (`on`: what will be Due then — review dates have no history, so never a past day; the Buy Box half is judged
 // on today's reading whatever `on` says — there is no reading of a day ahead). A Buy Box size with no card shows in `parked` as
 // "Buy Box" (no date decides it). `all` is the OVERRIDE
 // (owner, 2026-11-04: "we need to be able to override due when seeing the list" — the team prices by hand, so the Due list is
 // often empty while the top sellers still need a look): parked sizes come too, with their review date in `parked`, like the
-// screens' Due switch off. The status lists' 0-stock rows are left
-// out: no stock, no verdict.
+// screens' Due switch off. The status lists' 0-stock rows are IN (2026-11-13 — they were left out, so the skill's Due never matched
+// the screen's): no verdict, but they are due and need a hold or a price ahead of arrival like any other.
 async function dueStyles(db, { on = null, all = false } = {}) {
   // Required here, not at the top: utils/amzBuyBox.js reads this file's SETTINGS, and amzDue → amzBuyBoxDeck → amzBuyBox would
   // otherwise load this file half-built (a require cycle).
   const { readBuyBoxSide, sideParams, dueSql } = require('./amzDue');
+  const { STATUSES, channelFilterSql } = require('./portfolioStatus');
   const sp = sideParams(await readBuyBoxSide(db));
   const due = dueSql('a.code', 'm.next_amz_price_review', '$3', 'COALESCE($1::date, CURRENT_DATE)');
+  // Membership = routes/amz-all-list.js's exactly (the screens' due list): FBA stock live or on its way in, PLUS a style on a
+  // Repricing status list with an Amazon lead channel, 0 stock included.
   const r = await db.query(
     `SELECT m.groupid, array_agg(a.code ORDER BY a.code) AS codes,
             COALESCE(jsonb_object_agg(a.code, CASE WHEN a.code = ANY($3::text[]) THEN 'Buy Box' ELSE m.next_amz_price_review::text END)
                        FILTER (WHERE NOT ${due}), '{}'::jsonb) AS parked
-     FROM amzfeed a JOIN skumap m ON m.code = a.code
-     WHERE (COALESCE(a.amzlive, 0) > 0 OR COALESCE(a.amztotal, 0) > 0)
+     FROM amzfeed a JOIN skumap m ON m.code = a.code JOIN skusummary sk ON sk.groupid = a.groupid
+     WHERE (COALESCE(a.amzlive, 0) > 0 OR COALESCE(a.amztotal, 0) > 0
+            OR (sk.portfolio_status = ANY($4::text[]) AND ${channelFilterSql('sk', 'AMZ')}))
        AND ($2::boolean OR ${due})
      GROUP BY m.groupid ORDER BY m.groupid`,
-    [on, all, sp.bb]
+    [on, all, sp.bb, STATUSES]
   );
   return r.rows;
 }
@@ -358,6 +363,10 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
     styleDay[i] += s.qty;
     if (sizeDay.has(s.code)) sizeDay.get(s.code)[i] += s.qty;
   }
+  // Each size's last Amazon sale (rows come in date order) — the not-selling split on --due (rested within 3 months, or never /
+  // older: the Due list is mostly sizes that aren't selling since decision 27). Reaches back ~17 months (`from`); older = none.
+  const lastSold = new Map();
+  for (const s of salesR.rows) lastSold.set(s.code, s.d);
 
   // In stock per day, from the history row in force (unknown before the first row = in stock).
   const histBy = new Map(amzCodes.map((c) => [c, []]));
@@ -517,6 +526,7 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
       stock,
       liveNow: live ? num(f.live) : null,
       units28,
+      lastSold: lastSold.get(f.code) || null,
     };
     const d = decide(row, mode);
     // SELL-OUT + A MONTH'S PROFIT at the CURRENT price (owner, 2026-11-04: "a calculation of time to run out of stock ... and a

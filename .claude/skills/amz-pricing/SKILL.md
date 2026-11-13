@@ -10,11 +10,23 @@ the owner's decisions in memory `amz-size-pricing-standard` (if this machine has
 **check** (`amz-pricing-check.js`) is read only. **Setting a price** (`amz-price-set.js`, below) writes — only ever for a size and
 price the owner has agreed in this conversation.
 
-## The Buy Box screen's data — read it for every style you discuss (2026-11-12)
+## Where this skill sits — one Amazon pricing task (2026-11-13, PLAN.md decisions 21–27)
 
-`/amz/buybox` reads who Amazon SHOWS on every size in FBA stock, hourly 08–18 GMT by cron (rules `utils/amzBuyBox.js`, the
-record + owner decisions `docs/amz-buybox/PLAN.md`). It is today's Buy Box with no report needed, so **look it up before giving a
-judgement on any size** (read only, through the server's `database.js` with `bcweb-server/.env` loaded):
+THE one meaning of Amazon "due" is `utils/amzDue.js`. Every Amazon size is one of two kinds:
+- **Selling at FBA (an Amazon sale in 30 days) or New** — a Buy Box size, **never Due**. Its moves are the New / Raise / Cut cards
+  on **Amazon Pricing** (`/amz`, the mood chosen there; Daily's quieter "Buy Box moves n"), worked by the team "when they have
+  time". This skill doesn't work through the cards. Asked about one of these sizes by name, read its Buy Box data below and give
+  a judgement, and point to the card if it has one.
+- **Everything else** (not selling, on its way in, no stock, priced ahead of arrival) — **Due** when its review date comes round.
+  That is Daily's **"Amazon n sizes due"**, worked **down to zero** (`/amz/all?by=all&half=review`), and it is what `--due` lists.
+  So most of `--due` is CAN'T TELL — the not-selling split below is how those are decided.
+
+## The Buy Box data — read it for every style you discuss (2026-11-12)
+
+**Sizes at Amazon** (`/amz/buybox`, the table under Amazon Pricing) reads who Amazon SHOWS on every size in FBA stock, hourly
+08–18 GMT by cron (rules `utils/amzBuyBox.js`, the record + owner decisions `docs/amz-buybox/PLAN.md`). It is today's Buy Box with
+no report needed, so **look it up before giving a judgement on any size** (read only, through the server's `database.js` with
+`bcweb-server/.env` loaded):
 
 ```sql
 SELECT code, read_at, our_price, holder, bb_price, our_share, lead_share, rivals, rival_at_our_price, next_up, featured, offers
@@ -58,11 +70,12 @@ Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). S
 - **Pricing a test.** Since 2026-11-11 a price goes live through the SP-API; after a change, the screen's **Read this style** (seconds)
   or the next hourly read shows the reaction. Note test prices clearly (e.g. "Buy Box copier test").
 
-**What going through the Room to go up deck taught us (2026-11-12, with the owner):**
+**What working through the Room to go up cards taught us (2026-11-12, with the owner):** (the cards' screen is now called
+**Pricing** — owner, 2026-11-13: "I dont like the word 'Go through'"; code and docs keep deck / go-through)
 - **One step, then a sale** (owner: "otherwise we are making a guess on top of a guess"). Before suggesting a RAISE, look up the
   size's last real price move and the pairs sold since (below). If the last move was a raise and nothing has sold since, the answer
   is **wait**, however much room the Buy Box shows — BLACKSOLE-08 was raised £39.89 → £41.88 in the morning and the screen offered
-  £43.97 that afternoon. Go through holds these back by the same rule (`utils/amzBuyBoxDeck.js`). Cuts are not held.
+  £43.97 that afternoon. The Pricing cards hold these back by the same rule (`utils/amzBuyBoxDeck.js`). Cuts are not held.
   ```sql
   SELECT DISTINCT ON (code) code, COALESCE(changed_at, log_date::timestamptz) AS at, changed_by, old_price, new_price
     FROM amz_price_log WHERE code = 'FLE030-IVES-GREY-06' AND abs(new_price - old_price) >= 0.005
@@ -87,20 +100,26 @@ Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). S
   the lead (`holder = 'OTHER_MFN'`) self-posts, suggest `floor(lead × 1.02)` — FBA wins views there (the share figures above), and
   it keeps more a pair (BLACKSOLE-05: £39.71 ≈ £5.51 against £4.90 a penny under). Only while that is still a cut and not under the
   walk-away. If we are ALREADY within 2% of the self-poster and still not shown, the premium isn't working on that size — a penny
-  under, or leave it. Go through and Team week use the same rule (`utils/amzBuyBoxDeck.js → SELF_POST_PREMIUM`). Still check WHO
+  under, or leave it. The Pricing cards and Team week use the same rule (`utils/amzBuyBoxDeck.js → SELF_POST_PREMIUM`). Still check WHO
   the self-poster is first: the cheap non-Prime seller (A1LSPI8RFKURCB, £31.44 + £4.95) on Ives isn't worth chasing even at 2% over
   (IVES-WHITE-04 / 08 would give ~£1.50 a pair for it). It's a trial — after a move, read the size's share at the next readings and
   tell the owner whether 2% over won views; that is how the rule gets confirmed or dropped.
 - **Look at the sales by day, not "sold since".** BLACKSOLE-05 read "4 sold since" at £41.79, but all 4 went 26–29 Oct and nothing
   sold for 14 days after a self-poster came in at £38.94 — the price was solid until the rival arrived. Check the last sale date
-  (`MAX(solddate)` where qty > 0) and the run of days before calling a price "proven". Go through's 30-day strip shows it.
+  (`MAX(solddate)` where qty > 0) and the run of days before calling a price "proven". The Pricing card's 30-day strip shows it.
 - **A cut while we already hold the box gives margin away.** About half the Room cards had been CUT in the day or two before, on
   sizes shown to most views (Team week's "already 100%" rule). Never suggest a cut to win a Buy Box we already have.
 - **Sold nothing in 30 days while shown is NOT a Buy Box question.** 74 of the 84 non-selling Room sizes were shown to 90%+ of views
-  — no rival is the problem; demand and price are. Split it: last sold on Amazon within 3 months = **wait** (mostly season; the
-  review dates bring it back) · never / 3+ months = Range / Clearance's question. Then: **sisters selling** at a similar price = it's
-  the SIZE (a cut is for clearing, not winning), judge it against the sisters (the standard's job) · **whole style not selling** =
-  season, a season park, not a cut.
+  — no rival is the problem; demand and price are. **The not-selling split** — `--due` prints it under the grid for every CAN'T
+  TELL size (2026-11-13), with price, live / total at FBA, the last Amazon sale and the style's Amazon pairs in 28 days:
+  - **No stock at Amazon** (the status lists' 0-stock rows, in `--due` since 2026-11-13 to match the screen) — no verdict
+    possible: a hold, or a price set ahead of arrival ("don't want to leave them at old clearance price").
+  - **On its way in only** — nothing live, no price fixes it: hold until it lands.
+  - **Resting** — last sold on Amazon within 3 months: **wait** (mostly season; the review date brings it back).
+  - **Not sold for 3+ months, or never** — Range / Clearance's question, not a price nudge.
+
+  Then: **sisters selling** at a similar price (the style's 28-day pairs) = it's the SIZE (a cut is for clearing, not winning),
+  judge it against the sisters (the standard's job) · **whole style not selling** = season, a season park, not a cut.
 
 ## Running it
 
@@ -109,8 +128,9 @@ database — if that file is missing, stop and tell the owner.
 
 ```
 node scripts/amz-pricing-check.js IVES-WHITE                  # one style (part of the groupid is fine; it asks if it matches several)
-node scripts/amz-pricing-check.js --due                       # THE WORK LIST: sizes Due on the Amazon screens today, top sellers now first
-  --grid                                                      # with --due: one short row per size needing a decision — SHOW THIS FIRST
+node scripts/amz-pricing-check.js --due                       # THE WORK LIST: Daily's "Amazon n sizes due" (same sizes), top sellers now first,
+                                                              #   then the not-selling split of the CAN'T TELL sizes
+  --grid                                                      # with --due: one short row per size needing a decision (+ the split) — SHOW THIS FIRST
   --all                                                       # with --due: OVERRIDE Due — parked sizes too ("PARKED to <date>")
   --due-on 2026-11-07                                         # with --due: what will be Due that day
 node scripts/amz-pricing-check.js --top 10                    # the 10 styles with the most Amazon pairs in 12 months (always the same styles — prefer --due)
@@ -124,10 +144,12 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
 
 1. **Ask nothing first** — run it Lean for the style asked (Push only if the owner said "push"). Asked for "what needs doing" / "the
    list" / "top candidates": run `--due`. The skill follows the team's **Due list** (owner, 2026-11-04: "same system as our
-   manual due dates") — since 2026-11-13 THE ONE AMAZON RULE (`utils/amzDue.js`, `docs/amz-buybox/PLAN.md` decision 26): a size
-   the Buy Box answers (selling at FBA, or New) is NEVER Due — its cards are worked on Amazon Pricing (decision 27); every other
-   size by its review date. A Buy Box size shows as "PARKED to Buy Box" under `--all`. A size decided on is parked, so the next run moves on. If `--due` is empty (the team has priced everything by
-   hand), say so and offer `--due --all` (the override — parked sizes too, shown "PARKED to <date>").
+   manual due dates") — since 2026-11-13 THE ONE AMAZON RULE (`utils/amzDue.js`, `docs/amz-buybox/PLAN.md` decisions 26–27): a size
+   the Buy Box answers (selling at FBA, or New) is NEVER Due — its cards are worked on Amazon Pricing; every other size by its
+   review date, 0-stock status-list sizes included, so the count is Daily's "Amazon n sizes due". A Buy Box size shows as "PARKED
+   to Buy Box" under `--all`. A size decided on is parked, so the next run moves on. If `--due` is empty (the team works it to
+   zero most mornings), say so and offer `--due --due-on <tomorrow>` (what comes round next) or `--due --all` (the override —
+   parked sizes too, shown "PARKED to <date>").
 2. **Ask for reports freely** (owner, 2026-11-04: "dont be afraid to ask for reports") — the Buy Box changed two of the first three
    suggestions. A standard pair of windows may be settled later (e.g. this year's window + the same window last year).
    If the output says **Buy Box NOT checked**, tell the owner the dates it prints ("Business Report wanted … for X to Y") and ask
@@ -137,9 +159,10 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
    export has per-size Buy Box % before relying on it.) If they'd rather not, carry on and say the Buy Box wasn't checked.
 3. **Start with the grid** (owner, 2026-11-04: "show results as a grid ... so I can glance and then ask for more detail"): run
    `--due --grid` (or `--due --all --grid`) and show it as a markdown table — style, size, price, Buy Box %, sold/expected, sister
-   median, verdict, suggested price, stock, weeks left. Add one line of your own reading at most. Go into a style only when the owner
-   picks one (run it by name), then:
-3. Report **one style at a time, only what needs a decision** (owner: one decision per message):
+   median, verdict, suggested price, stock, weeks left. Then the not-selling split as one short table per part (or a count per
+   part when it is long — offer the rows). Add one line of your own reading at most. Go into a style only when the owner picks one
+   (run it by name), then:
+4. Report **one style at a time, only what needs a decision** (owner: one decision per message):
    - **LOST BUY BOX** — another offer is shown most of the time. No price is suggested and there is **no step rule** (owner: "Human
      and your judgement rather than a step rule") — give your judgement from the row: its **sister reading** ("against its sisters:
      too high / leave …", compared with the other contested sizes — same page, same competitors), pairs a week, weeks of stock
@@ -151,13 +174,17 @@ node scripts/amz-pricing-check.js --top 10                    # the 10 styles wi
    - **ROOM TO GO UP** — selling over, or in line while cheaper than its sisters → the suggested price.
    - **NOT PRICE** — selling under at a normal price. Say what to look at: stock (live vs total — reserved / transfers), the
      Buy Box if it wasn't checked, another seller on that size.
-   - **LEAVE / CAN'T TELL** — batch them in one line ("04, 08, 09 leave or can't tell yet — too new / under 5 expected").
+   - **LEAVE** — batch them in one line ("04, 08, 09 leave — in line with sisters").
+   - **CAN'T TELL** — by the not-selling split (part, then the sizes), never one by one: say what each part is waiting for and
+     what you'd do (hold / wait / a Range or Clearance question; a price only where the sisters or last year's sales give one).
    Show for each: price, window (from / days in stock), expected vs sold, Buy Box %, sister median, suggested price, £ kept a pair.
-4. If the owner agrees a price, set it with **Setting a price** below — or they set it themselves on the Amazon screens. A price set
+5. If the owner agrees a price, set it with **Setting a price** below — or they set it themselves on the Amazon screens. A price set
    here also parks the size for 7 days (`REVIEW_AFTER_PRICE_DAYS`, the earliest the new price can be judged).
    **LEAVE** sizes the owner agrees to leave: park them with **Parking checked sizes** below (3 days, `REVIEW_AFTER_LEAVE_DAYS`), so
-   the Due list moves on. CAN'T TELL sizes are NOT parked — they stay Due for the team.
-5. If a verdict looks wrong to the owner, **that is the point of this phase** — note the size and why in memory
+   the Due list moves on. **CAN'T TELL sizes are decided like any other** (2026-11-13 — they used to stay Due, but the Due list is
+   now worked to zero and is mostly these): a hold the owner agrees is parked the same way, `--days` up to 14 if they give one; a
+   longer park (30 days, Season) is the owner's on the screens — say so rather than asking for it here.
+6. If a verdict looks wrong to the owner, **that is the point of this phase** — note the size and why in memory
    `amz-size-pricing-standard` (a "verdict disagreements" list) so the rules can be tuned before a screen is built.
 
 ## Reading the columns
@@ -200,8 +227,9 @@ size was parked further out on purpose). It never touches Shopify or `amzfeed`.
 
 The Amazon screens' "mark reviewed" (THE shared write, `utils/amzReviewWrite.js`): the review date + one hold row per size. No price.
 
-1. **Only the codes the owner agreed to leave** ("yes, park the leaves" covers the LEAVE codes the check printed for that style —
-   nothing else).
+1. **Only the codes the owner agreed to leave or hold** ("yes, park the leaves" covers the LEAVE codes the check printed for that
+   style; "hold the inbound ones" covers that part of the not-selling split as printed — nothing else). The note says which
+   ("Hold — on its way in (amz-pricing)").
 2. Dry run first, show the lines (each size's review date now → new; a later date already set is kept):
    ```
    node scripts/amz-review-set.js FLE030-IVES-WHITE-04 FLE030-IVES-WHITE-07 --by "Andreas" --note "Leave — in line with sisters (amz-pricing)"

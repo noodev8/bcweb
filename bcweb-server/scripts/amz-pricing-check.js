@@ -8,10 +8,12 @@ Purpose: Print THE Amazon pricing standard's verdict for every size of a style (
 Usage:
     node scripts/amz-pricing-check.js <style text> [options]      e.g.  IVES-WHITE   or   FLE030-IVES-WHITE
     node scripts/amz-pricing-check.js --top 10 [options]           the 10 styles with the most Amazon pairs in 12 months
-    node scripts/amz-pricing-check.js --due [N] [options]          THE WORK LIST: every size Due on the Amazon screens today (review
-                            date passed or none, FBA stock), sizes needing a decision first, most FBA pairs first;
-                            N styles shown in full (default 10). A size decided on is parked (amz-price-set / amz-review-set), so
-                            the next run moves on — the same rotation as the team's manual Due list (owner, 2026-11-04).
+    node scripts/amz-pricing-check.js --due [N] [options]          THE WORK LIST: every size Due on the Amazon screens today — the
+                            same sizes as the due list (/amz/all?by=all&half=review, utils/amzDue.js): not a Buy Box size, review
+                            date passed or none, FBA stock OR a status-list style with 0 stock. Sizes needing a decision first, top
+                            sellers in 28 days first; N styles shown in full (default 10); then the not-selling split of the CAN'T
+                            TELL sizes (no stock / inbound / resting / 3+ months). A size decided on is parked (amz-price-set /
+                            amz-review-set), so the next run moves on — the team's Due list, worked to zero (decision 27).
     --due-on YYYY-MM-DD     with --due: what will be Due on that day (look ahead; verdicts are still today's)
     --grid                  with --due: one short row per size needing a decision — the glance view (owner, 2026-11-04)
     --all                   with --due: the OVERRIDE — parked sizes too (shown "PARKED to <date>")
@@ -70,8 +72,43 @@ const money = (v) => (v === null || v === undefined ? '—' : `£${Number(v).toF
 const pad = (s, n) => String(s ?? '').padEnd(n);
 const lpad = (s, n) => String(s ?? '').padStart(n);
 
-// Verdicts that need a person's decision; LEAVE is parked for REVIEW_AFTER_LEAVE_DAYS; CAN'T TELL stays Due for the team.
+// Verdicts that need a person's decision; LEAVE is parked for REVIEW_AFTER_LEAVE_DAYS. CAN'T TELL is decided from the not-selling
+// split below (since decision 27 the Due list is the sizes NOT selling at FBA, so it is the usual verdict there).
 const ACTION = new Set(['LOST_BUY_BOX', 'TOO_HIGH', 'ROOM_TO_GO_UP', 'NOT_PRICE']);
+
+// THE NOT-SELLING SPLIT (SKILL.md, 2026-11-12/13) for a CAN'T TELL size on the Due list — what it is waiting for, not a verdict:
+// no stock at all (a hold, or a price set ahead of arrival — the status lists' 0-stock rows) · on its way in only (no price fixes
+// it) · last sold on Amazon within 3 months (resting, mostly season — wait) · never / 3+ months (Range / Clearance's question).
+const RESTING_DAYS = 91;
+const SPLIT = [
+  ['none', 'No stock at Amazon — hold, or a price ahead of arrival'],
+  ['inbound', 'On its way in only — nothing live, no price fixes it'],
+  ['resting', 'Resting — sold on Amazon within 3 months (mostly season: wait)'],
+  ['long', "Not sold on Amazon for 3+ months, or never — Range / Clearance's question"],
+];
+function splitOf(s, asOf) {
+  if (!(s.stock > 0)) return 'none';
+  if (s.liveNow === 0) return 'inbound';
+  if (s.lastSold && (Date.parse(asOf) - Date.parse(s.lastSold)) / 86400000 < RESTING_DAYS) return 'resting';
+  return 'long';
+}
+// One block per part, one line per size: code, price, stock (live / total), last Amazon sale, the style's Amazon pairs in 28 days
+// (sisters selling = it's the SIZE; the whole style quiet = season), and why the standard can't tell.
+function printNotSelling(rows) {
+  const all = rows.flatMap((r) => r.wait.map((s) => ({ s, st: r.res.style })));
+  if (!all.length) return;
+  console.log(`\nNot selling — can't tell (${all.length} sizes), by what they are waiting for:`);
+  for (const [key, title] of SPLIT) {
+    const part = all.filter((x) => splitOf(x.s, x.st.asOf) === key);
+    if (!part.length) continue;
+    console.log(`\n  ${title} · ${part.length}`);
+    for (const { s, st } of part) {
+      console.log('    ' + pad(s.code, 30) + lpad(money(s.price), 8) + lpad(`${s.liveNow ?? '—'}/${s.stock ?? '—'}`, 8) +
+        '  last sold ' + pad(s.lastSold || 'never', 10) + '  style 28d ' + lpad(st.units28, 3) + (s.reason ? `  · ${s.reason}` : ''));
+    }
+  }
+  console.log("\n  price · live/total at FBA · last Amazon sale · the style's Amazon pairs in 28 days · why the standard can't tell");
+}
 
 function printStyle(res, only = null, parkedTo = null) {
   const { style: st } = res;
@@ -125,7 +162,7 @@ function printDue(results, due, o, buyBox, parkedTo) {
   const nSizes = rows.reduce((x, r) => x + r.act.length + r.leave.length + r.wait.length, 0);
   const withAct = rows.filter((r) => r.act.length);
   console.log(`${o.all ? 'ALL IN STOCK (override — parked sizes included)' : `DUE ${o.dueOn ? `ON ${o.dueOn}` : 'TODAY'}`}: ${nSizes} sizes in ${rows.length} styles · ${withAct.reduce((x, r) => x + r.act.length, 0)} need a decision (${withAct.length} styles) · ` +
-    `${rows.reduce((x, r) => x + r.leave.length, 0)} leave · ${rows.reduce((x, r) => x + r.wait.length, 0)} can't tell (stay Due)`);
+    `${rows.reduce((x, r) => x + r.leave.length, 0)} leave · ${rows.reduce((x, r) => x + r.wait.length, 0)} not selling (can't tell)`);
   if (buyBox) console.log(`Business Report: ${buyBox.size} of our sizes read.`);
   else if (rows.length) {
     const from = rows.reduce((m, r) => (!m || (r.res.style.reportFrom && r.res.style.reportFrom < m) ? r.res.style.reportFrom : m), null);
@@ -149,12 +186,13 @@ function printDue(results, due, o, buyBox, parkedTo) {
     }
     const more = withAct.length - shown.length;
     if (more > 0) console.log(`\n${more} more styles need a decision — --due ${withAct.length} --grid to see all.`);
+    printNotSelling(rows);
     return;
   }
   for (const r of shown) {
     printStyle(r.res, new Set(r.act.map((s) => s.code)), parkedTo);
     if (r.leave.length) console.log(`  leave → park ${std.SETTINGS.REVIEW_AFTER_LEAVE_DAYS} days: ${r.leave.map((s) => s.code).join(' ')}`);
-    if (r.wait.length) console.log(`  can't tell, stay Due: ${r.wait.map((s) => s.size).join(', ')}`);
+    if (r.wait.length) console.log(`  not selling (can't tell): ${r.wait.map((s) => s.size).join(', ')} — split below`);
   }
   const rest = withAct.slice(o.due);
   if (rest.length) {
@@ -168,9 +206,7 @@ More needing a decision (--due ${withAct.length} to see all):`);
 Nothing to decide — leave, park ${std.SETTINGS.REVIEW_AFTER_LEAVE_DAYS} days:`);
     for (const r of leaveOnly) console.log(`  ${r.leave.map((s) => s.code).join(' ')}`);
   }
-  const waitOnly = rows.filter((r) => !r.act.length && !r.leave.length && r.wait.length);   // parked-only styles (--all) need nothing
-  if (waitOnly.length) console.log(`
-Can't tell yet (stay Due): ${waitOnly.map((r) => r.res.style.groupid).join(', ')}`);
+  printNotSelling(rows);
 }
 
 async function main() {
