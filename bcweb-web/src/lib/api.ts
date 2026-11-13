@@ -5045,14 +5045,26 @@ export function getShopSaleList() {
 
 export type ShopPaytype = 'card' | 'cash';
 
-// WRITE — books one CM3 sale. Send `code` for a product (one free unit comes off the count if there is one — from `location` when the
-// size is on more than one shelf) or `description` for a misc item (groupid 'misc', no stock move). takenFrom = the shelf a unit came
-// off; null = no stock move. NO_STOCK = the named shelf has no free pair left.
-// noStock = book the sale with no stock move even though the system shows some (the pair was already taken off its shelf by hand).
-export function recordShopSale(args: { code?: string; location?: string; noStock?: boolean; description?: string; price: number; paytype: ShopPaytype }) {
-  return request<{ sale: { id: number; code: string; price: number; paytype: string; solddate: string; ordertime: string }; takenFrom: string | null }>(
+// One basket line. Send `code` for a product (one free unit comes off the count if there is one — from `location` when the size is on
+// more than one shelf) or `description` for a misc item (groupid 'misc', no stock move). noStock = book it with no stock move even though
+// the system shows some (the pair was already taken off its shelf by hand). price = what was paid for THIS item.
+export interface ShopSaleItem { code?: string; location?: string; noStock?: boolean; description?: string; price: number }
+
+export interface ShopSaleBasket {
+  ordernum: string;   // the basket's number — every line's sales.ordernum
+  paytype: string;
+  total: number;
+  solddate: string;
+  ordertime: string;
+  lines: { id: number; code: string; price: number; takenFrom: string | null }[];   // takenFrom null = no stock move
+}
+
+// WRITE — books ONE shop sale (CM3): every item in one transaction, all or nothing, one payment. NO_STOCK / NOT_FOUND = nothing was
+// recorded; the message names the item.
+export function recordShopSale(args: { items: ShopSaleItem[]; paytype: ShopPaytype }) {
+  return request<{ basket: ShopSaleBasket }>(
     { url: '/shop-sale-record', method: 'POST', data: args },
-    (b) => ({ sale: b.sale, takenFrom: b.takenFrom ?? null })
+    (b) => ({ basket: b.basket })
   );
 }
 
