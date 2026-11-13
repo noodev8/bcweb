@@ -182,8 +182,10 @@ returns every in-stock size's answer + reason (`answer_of`), each answer's reaso
 the Buy Box screen's one answer bar with reasons, Go through's New · Raise · Cut tabs. First run (reading of 2026-11-12, 292 in stock):
 Chilled New 17 (7 cards) · Raise 25 (14) · Cut 5 · Leave 55 · Not for this screen 190; Fierce Raise 0 · Cut 41 · Leave 74 · Not 160;
 Climb Raise 25 (bigger steps) · Cut 0 · Leave 60. Writes tested in rolled-back transactions; nothing pressed live.
-**Built the safe way while still open with the owner** (one question at a time): Fierce's Cut keeps the 2% self-poster premium; New with a
-DEARER lead = no card; New where a penny under is a loss = level with the lead if still a cut and not a loss, else no card; a "hold" can't
+**Answered 2026-11-13:** Fierce's Cut has NO self-poster premium — a penny under every lead (owner: "go a penny under"); the 2% trial
+stays Chilled's. New with a DEARER rival shown over us = a card UP to a penny under it, never over the RRP (owner: "get the card";
+L3882-24-39 £56 -> £57.98 on the day). New where a penny under is a loss = level with the lead if still a cut and not a loss, else no card (owner: "keep it as it is").
+**Still open:** a "hold" can't
 be Set on Go through (Set is greyed at the same price), so the record never sees one; the bar's look (a thin proportional bar, five answers
 under it, the chosen one's reasons as chips).
 **Changed 2026-11-13 (owner: "fierce, chilled climb should be a level above the cards. We should drill down into the cards with a mood
@@ -199,7 +201,7 @@ Talked through with the owner one decision at a time; drawn as a staff guide (cl
     | | Fierce (shift stock) | Chilled (normal, today's rules) | Climb (fight for margin) |
     |---|---|---|---|
     | Raise | none | next dearer −1p, max +5%, max 2% over a cheaper rival | max **+8%** (owner), same caps |
-    | Cut | sold-in-30-days sizes PLUS sizes that stopped selling while a rival holds the window (34 on the day), and a penny under a rival tied at our price (the 'tie' group) | a penny under the lead (2% over a self-poster, the trial), sold in 30 days | none — let rivals sell out |
+    | Cut | sold-in-30-days sizes PLUS sizes that stopped selling while a rival holds the window (34 on the day), and a penny under a rival tied at our price (the 'tie' group); a penny under EVERY lead, self-posters too (no 2% premium — owner, 2026-11-13) | a penny under the lead (2% over a self-poster, the trial), sold in 30 days | none — let rivals sell out |
     Always, every mood: never under £3 a pair (New, before its first sale: break-even), never over RRP, one step then a sale. The mood doesn't touch the New tab — it has no raises (decision 20). A two-person mood clash (one on Fierce, one on Climb) is accepted; the recorded mood shows if it happens.
 16. **Due dates — one door per answer.** Raise / Cut sizes are priced on Go through; the Due list keeps its ONE rule (every size has a Due date). **A Set OR a Leave on Go through moves the size's Amazon Due date (`skumap.next_amz_price_review`) 4 weeks out, keeping a later date** (replaces the 7-day park on Set). Go through still ignores Due dates. If Go through isn't worked, the sizes come back on the Due list by themselves (owner: "they all have a due date"). **Working order for staff: Go through first, then the Due list** (a size just landed in Raise / Cut keeps its old date until pressed). **No Buy Box tags on the Due list** (owner: Raise / Cut sizes simply shouldn't appear there; any size can still be found and priced by hand). Why: since the readings began, 48 cuts were made outside Go through, 21 on sizes already shown to 100% of views; ~3 in 4 Due-list moves in 30 days were cuts (461 of ~620).
 17. **Set / Leave recorded** — who, when, mood, suggested price, Set or Leave — **kept 12 months** (the same as the readings a press is judged against). It gives the agree rate: an answer nearly always Set, whose Sets nearly always work, could later be made differently (a Boost-style batch or Auto is a SEPARATE idea, not this). **Leave asks nothing** (no reason — "will slow us down") and the card shows no earlier Leave. **A left card comes back when its suggested price would change, or after 7 days**, whichever first (today Leave stores nothing and the card is back next visit).

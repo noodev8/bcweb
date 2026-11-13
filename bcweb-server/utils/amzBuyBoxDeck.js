@@ -17,18 +17,18 @@ NEW (decision 20 — "new is just first sale, then normal rules"): live at FBA, 
          with live > 0, or a ledger row with total > 0 — history reaches back to 2025-05-02), and NO Amazon sale yet. While new it is in
          no other pile. The card: a rival leads → a PENNY UNDER THE LEAD, straight away (no sold-in-30-days test — "bite quickly ... get
          it sold"); floor = BREAK-EVEN (profit £0, not the £3 walk-away — a pair sold at £0–£3 lands in Amazon Order's Simmer; a loss is
-         never reordered). We already lead → no card. NOT DECIDED by the owner yet (built the safe way, asked one at a time):
-           - a rival leads at a price DEARER than ours → no card (like the normal `dearer` group: price isn't the reason);
+         never reordered). We already lead → no card. A rival shown at a price DEARER than ours → UP to a penny under it, never over
+         the RRP (owner, 2026-11-13: "get the card"; at the RRP already = no card, reason `rrp`). And (owner, 2026-11-13: "keep it"):
            - a penny under would be below break-even → level with the lead if that is still a cut and not a loss, else no card
              (the same shape as Chilled's walk-away rule).
          The first sale — or NEW_DAYS without one — ends it: the size joins the normal answers. No raises on New, so the mood doesn't
-         touch it.
+         touch it (a New move up to a dearer lead is the lead's price, not a mood's step).
 
 MOODS (decision 15) — Fierce · Chilled · Climb; every screen load starts on Chilled, nothing stored (the mood goes on each press row).
          The mood changes raises everywhere and cuts outside New:
            Fierce  (shift stock)        Raise: none.  Cut: sold-in-30-days can_match, PLUS can_match sizes that sold nothing, PLUS `tie`
-                                        sizes (a penny under the rival tied at our price). The 2% self-poster premium is kept (open
-                                        question: or a penny under everything?).
+                                        sizes (a penny under the rival tied at our price). NO self-poster premium: a penny under
+                                        every lead (owner, 2026-11-13: "go a penny under").
            Chilled (= the rules before) Raise: next dearer − 1p, max +5%, max 2% over a cheaper rival, max RRP. Cut: sold-in-30-days
                                         can_match, a penny under the lead (2% over a self-posting lead, the trial).
            Climb   (fight for margin)   Raise: as Chilled but max +8%.  Cut: none — let rivals sell out.
@@ -39,7 +39,7 @@ THE MOVES (suggest):
              rival already sells BELOW us, capped at 2% over that cheapest rival (across the 2026-11-12 reading our share of views was
              78% as the cheapest offer, 54% at 0–2% over, 46% at 2–5%, 12% at 5–8%, ~0 at 20%+). A size already 2%+ over the cheaper
              rival gets no move → LEAVE (`cheaper_rival`), not Raise.
-  can_match  when the lead is a SELF-POSTER: 2% over it (a TRIAL — the FBA premium; only while still a cut and not under the walk-away;
+  can_match  when the lead is a SELF-POSTER (Chilled only — Climb doesn't cut, Fierce goes a penny under): 2% over it (a TRIAL — the FBA premium; only while still a cut and not under the walk-away;
              already within 2% of it and still not shown = the premium isn't working there, so a penny under). Otherwise a penny under
              the lead, postage included (at our exact price Amazon gives the tie to the rival). If a penny under is below the walk-away,
              level with the lead (a tie, said on the card).
@@ -138,7 +138,7 @@ function suggest(r, mood = DEFAULT_MOOD) {
       if (r.walk !== null && under < ceil2(r.walk)) return null;
       return { price: under, note: 'A penny under the rival tied at our price (Fierce) — it may follow' };
     }
-    if (r.holder === 'OTHER_MFN') {
+    if (r.holder === 'OTHER_MFN' && normMood(mood) !== 'fierce') {   // Fierce: a penny under every lead (owner, 2026-11-13)
       const over = floor2(r.bb_price * (1 + SELF_POST_PREMIUM));
       if (over < r.our_price - 0.005 && (r.walk === null || over >= ceil2(r.walk))) {
         return { price: over, note: `2% over the self-posting lead (${'£' + r.bb_price.toFixed(2)}) — FBA usually wins views there (a trial)`, over_lead: true };
@@ -161,7 +161,13 @@ function suggestNew(r) {
   if (r.our_price === null) return { reason: 'unknown' };
   if (isUs(r.holder)) return { reason: 'lead' };
   if (r.holder === 'NONE' || r.bb_price === null) return { reason: 'no_bb' };
-  if (r.bb_price > r.our_price + 0.005) return { reason: 'dearer' };
+  if (r.bb_price > r.our_price + 0.005) {
+    // A DEARER rival is shown over us (owner, 2026-11-13: "get the card"): UP to a penny under it — never over the RRP.
+    let p = r2(r.bb_price - PENNY);
+    let note = `New — up to a penny under the dearer lead (${'£' + r.bb_price.toFixed(2)}): Amazon shows them over us even at our lower price`;
+    if (r.rrp !== null && r.rrp !== undefined && p > r.rrp) { p = floor2(r.rrp); note = `New — up to the RRP, under the dearer lead (${'£' + r.bb_price.toFixed(2)})`; }
+    return p > r.our_price + 0.005 ? { price: p, note } : { reason: 'rrp' };
+  }
   const under = r2(r.bb_price - PENNY);
   const be = r.breakeven;
   if (be === null || be === undefined) return { reason: 'unknown' };

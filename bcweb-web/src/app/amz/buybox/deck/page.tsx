@@ -66,9 +66,9 @@ import { useAuth } from '@/contexts/AuthContext';
 
 // `dot` / `tag` = the answer's colour (LAYOUT, header) — the tab dot and the solid verb tag; PriceLadder's arrow uses the same hue.
 const DECKS: { key: AmzDeckKind; label: string; verb: string; tagText: string; rule: string; dot: string; tag: string }[] = [
-  { key: 'new', label: 'New', verb: 'New', tagText: 'New · cut', rule: 'Landed at Amazon in the last 30 days, no Amazon sale yet — a penny under the lead to get the first sale, never below break-even', dot: 'bg-violet-500', tag: 'bg-violet-600' },
+  { key: 'new', label: 'New', verb: 'New', tagText: 'New · cut', rule: 'Landed at Amazon in the last 30 days, no Amazon sale yet — a penny under the lead to get the first sale (up to it when a dearer seller is shown, never over the RRP), never below break-even', dot: 'bg-violet-500', tag: 'bg-violet-600' },
   { key: 'raise', label: 'Raise', verb: 'Raise', tagText: 'Raise', rule: 'We have the Buy Box and the next rival is more than 2% above — a small step up (Chilled 5%, Climb 8%). Sold in 30 days', dot: 'bg-emerald-500', tag: 'bg-emerald-600' },
-  { key: 'cut', label: 'Cut', verb: 'Cut', tagText: 'Cut', rule: 'A rival has the Buy Box at a price that still keeps us £3 a pair — a penny under it (2% over a self-poster)', dot: 'bg-rose-500', tag: 'bg-rose-600' },
+  { key: 'cut', label: 'Cut', verb: 'Cut', tagText: 'Cut', rule: 'A rival has the Buy Box at a price that still keeps us £3 a pair — a penny under it (Chilled: 2% over a self-poster)', dot: 'bg-rose-500', tag: 'bg-rose-600' },
 ];
 
 // Who a featured offer is, in words, for the Buy Box fact's one line.
@@ -457,10 +457,12 @@ function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, on
     if (card.rrp !== null && p2 > card.rrp + 0.005) warnings.push({ text: `Over the RRP (${money(card.rrp)})` });
     if (Math.abs(p2 - card.our_price) / card.our_price > BIG_MOVE) warnings.push({ text: `A big move — ${pct(card.our_price, p2)}` });
     if (room && card.next_up !== null && p2 >= card.next_up - 0.005) warnings.push({ text: `At or above the next rival (${money(card.next_up)}) — it may take the Buy Box` });
-    // Over a self-posting lead by up to 2% is the suggestion itself (a trial), so it isn't warned; past 2%, or level with any lead, is.
+    // Over a self-posting lead by up to 2% is the suggestion itself (a trial, Chilled), so it isn't warned; past 2%, or level with any
+    // lead, is. Fierce has no premium (a penny under every lead), so there any price at or over the lead is warned.
+    const premium = card.holder === 'OTHER_MFN' && mood !== 'fierce';
     if (!room && card.bb_price !== null && p2 >= card.bb_price - 0.005
-        && !(card.holder === 'OTHER_MFN' && p2 <= Math.floor(card.bb_price * 102 + 1e-6) / 100 + 0.005 && p2 > card.bb_price + 0.005)) {
-      warnings.push({ text: card.holder === 'OTHER_MFN'
+        && !(premium && p2 <= Math.floor(card.bb_price * 102 + 1e-6) / 100 + 0.005 && p2 > card.bb_price + 0.005)) {
+      warnings.push({ text: premium
         ? `More than 2% over the self-posting lead (${money(card.bb_price)}) — FBA's edge runs out about there`
         : `Not under the lead (${money(card.bb_price)}) — a tie usually goes to them` });
     }
@@ -522,7 +524,8 @@ function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, on
           (two lines reserved on a laptop, so a long reason doesn't move the buttons). */}
       <div className="px-4 pt-4 sm:px-5">
         <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1">
-          <span className={`rounded-md px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-white ${meta.tag}`}>{meta.tagText}</span>
+          <span className={`rounded-md px-2 py-0.5 text-xs font-bold uppercase tracking-wider text-white ${meta.tag}`}>
+            {isNew && card.suggest > card.our_price ? 'New · up' : meta.tagText}</span>
           <span className="text-2xl font-semibold tabular-nums tracking-tight text-slate-900 sm:text-[1.75rem]">
             <span className="font-medium text-slate-400">{money(card.our_price)}</span>
             <span className="mx-2 font-normal text-slate-300">→</span>{money(card.suggest)}
