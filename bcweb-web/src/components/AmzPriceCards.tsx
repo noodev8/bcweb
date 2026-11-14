@@ -24,12 +24,11 @@ NO SUGGESTION of its own (owner: "no suggestion — I'll type the price or give 
          utils/amzBuyBoxDeck.js → readDeck, the same rules) with "Use it", which only fills the box (owner: "keep the cards and the
          recommendations").
 
-THE CARD (trimmed by the owner, 2026-11-14: "too many figures … noise. I am interested in matching the buy box or moving up or down
-         as normal. Want to see what my current profit"): who (picture, groupid + size, name, brand, Full price screen →) → [search:
-         status line, Buy Box suggestion] → the price (nudges −£1 −50p −30p / +30p +50p +£1; profit now, and at the typed price once it
-         moves) → Buy Box (who leads, at what, our share; match keeps £x + Match) → one line of stock and sales → decide (review chips,
-         Leave, Set). Nothing blocks: a loss shows red, over RRP is noted; no walk-away / break-even figures or warnings. profit_line =
-         server profitLine — no second copy of the profit formula here.
+THE CARD is components/AmzCardFrame — THE one Amazon price card layout, shared with the Buy Box cards (owner, 2026-11-14: "the
+         same layout and make it simpler"; read its header). Here: [search: status line, the Buy Box suggestion with Use it] · the box
+         starts at today's price · the review chips · one line of stock and sales, then the last price change. The sellers pop-up and
+         the last change come with ?cards=1 (offers / featured / last_change, 2026-11-14). profit_line = server profitLine — no second
+         copy of the profit formula here.
 
 SET = the normal W-A1 (POST /amz-apply), sent to Amazon at once, note "Due card" / "Search card", with the chosen review date.
 LEAVE = POST /amz-review (the list's "no change — just set review"): the price stays, the review date moves; note "… — left". On to
@@ -41,16 +40,15 @@ ORDER: styles in the server's order (most FBA stock first), each style's sizes t
          THE LIST STAYS PUT while you work (a snapshot: no refetch on focus); Refresh reloads it.
 FULL PRICE SCREEN: /amz/sku/<code> with ?from= this page + &at=<code>, so its Back lands on the same card.
 
-KEYS (not while typing in the price box, except Enter / Esc / ↑ ↓): Enter = Set · → or L = Leave (Next) · ← = previous card · E = edit
-         the price · in the box ↑ / ↓ = +30p / −30p.
+KEYS: the frame's (Enter = Set · → or L = Leave (Next) · ← = previous card · E = edit the price · in the box ↑ / ↓ = ±30p).
 =======================================================================================================================================
 */
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
+import AmzCardFrame, { LastChangeLine, money } from '@/components/AmzCardFrame';
 import { applyAmzPrice, getAmzDueCards, getAmzSearchCards, markAmzReviewed, type AmzMood, type AmzPriceCard } from '@/lib/api';
 import { REVIEW_PERIODS, seasonPark } from '@/lib/reviewPeriods';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -60,8 +58,6 @@ import { prettyPathLabel } from '@/lib/nav';
 
 export type PriceCardsMode = 'due' | 'search';
 
-const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
-const NUDGES = [-1, -0.5, -0.3, 0.3, 0.5, 1];   // the price screen's steps (components/AmzPriceSetter)
 const DEFAULT_REVIEW = 7;                        // header: the skill's REVIEW_AFTER_PRICE_DAYS
 const NOTE = { due: 'Due card', search: 'Search card' } as const;
 const END = '__end__';                           // search cards: past the last card
@@ -70,7 +66,6 @@ const SEASON = seasonPark();
 const TODAY_MS = new Date(new Date().toDateString()).getTime();
 
 const noSubscribe = () => () => {};   // useSyncExternalStore for the "hydrated yet?" flag (nothing to subscribe to)
-const money = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `£${v.toFixed(2)}`);
 const r2 = (n: number) => Math.round(n * 100) / 100;
 function profitAt(card: AmzPriceCard, price: number): number | null {
   const l = card.profit_line;
@@ -83,8 +78,6 @@ function saleLabel(v: string): string {
   const days = Math.round((TODAY_MS - dayOf(v).getTime()) / 86400000);
   return days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`;
 }
-// Profit a pair: red when it is a loss — the only colour (owner, 2026-11-14: no walk-away warning).
-const keepCls = (v: number | null) => (v !== null && v < 0 ? 'text-red-600' : 'text-slate-900');
 function holderLabel(card: AmzPriceCard): string {
   switch (card.bb_holder) {
     case 'US': return 'We have it';
@@ -297,47 +290,17 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
 }) {
   const now = card.price;
   const [priceStr, setPriceStr] = useState(done?.kind === 'set' ? done.price.toFixed(2) : now !== null ? now.toFixed(2) : '');
-  const [imgFailed, setImgFailed] = useState(false);
-  const boxRef = useRef<HTMLInputElement>(null);
 
   const price = Number.parseFloat(priceStr);
   const valid = Number.isFinite(price) && price > 0;
   const changed = valid && (now === null || Math.round(price * 100) !== Math.round(now * 100));
-  const profit = valid ? profitAt(card, price) : null;
   // The Buy Box lead's price to match (postage included) — only when someone else leads.
   const matchAt = card.bb_lead !== null && card.bb_lead !== undefined && !['US', 'US_SHARED'].includes(card.bb_holder ?? '') ? Number(card.bb_lead) : null;
-  const matchKeeps = matchAt !== null ? profitAt(card, matchAt) : null;
   const suggest = mode === 'search' ? card.bb_suggest ?? null : null;
   const usedSuggestion = suggest !== null && valid && Math.round(price * 100) === Math.round(suggest * 100);
-  const nudge = (d: number) => {
-    const base = Number.isFinite(price) ? price : now ?? 0;
-    setPriceStr(Math.max(0.01, r2(base + d)).toFixed(2));
-  };
   // A not-due search card is only looked at (header): its Leave is Next — nothing written, its review date kept.
   const lookOnly = mode === 'search' && card.parked;
   const forward = () => (done || lookOnly ? onNext() : onLeave());
-
-  // KEYS (header). Re-bound each render so the handlers see this render's price.
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const inBox = e.target === boxRef.current;
-      const typing = !inBox && (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement);
-      if (typing) return;
-      if (e.key === 'Enter') { e.preventDefault(); if (changed && !busy) onSet(price, usedSuggestion); return; }
-      if (inBox) {
-        if (e.key === 'ArrowUp') { e.preventDefault(); nudge(0.3); }
-        else if (e.key === 'ArrowDown') { e.preventDefault(); nudge(-0.3); }
-        else if (e.key === 'Escape') boxRef.current?.blur();
-        return;
-      }
-      if (e.key === 'ArrowRight' || e.key === 'l' || e.key === 'L') { e.preventDefault(); forward(); }
-      else if (e.key === 'ArrowLeft') { e.preventDefault(); onPrev(); }
-      else if (e.key === 'e' || e.key === 'E') { e.preventDefault(); boxRef.current?.focus(); boxRef.current?.select(); }
-    }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  });
 
   const reviewChips = [...REVIEW_PERIODS.map((d) => ({ days: d, label: `${d}d`, title: `Review in ${d} days` })),
     { days: SEASON.days, label: SEASON.label, title: SEASON.title }];
@@ -345,95 +308,34 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
   const status = mode === 'search' ? statusOf(card) : null;
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      {/* WHO */}
-      <div className="flex items-center gap-4 border-b border-slate-100 px-5 py-4">
-        <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
-          {card.imagename && !imgFailed && (
-            <Image src={IMAGE_BASE + card.imagename} alt={card.title || card.code} fill sizes="80px" onError={() => setImgFailed(true)} className="object-contain" />
-          )}
+    <AmzCardFrame
+      code={card.code} groupid={card.groupid} size={card.size} title={card.title} brand={card.brand} imagename={card.imagename}
+      counter={`${n} of ${of}`}
+      links={[{ href: priceScreenHref, label: 'Full price screen →', title: 'The full price screen for this SKU — sales and price history; its Back returns to this card' }]}
+      status={status && <span className={status.cls}>{status.text}</span>}
+      reason={suggest !== null ? (
+        <>
+          <span className="text-slate-600">Buy Box suggests <b className="tabular-nums text-slate-900">{money(suggest)}</b></span>
+          {card.bb_suggest_note && <span className="min-w-0 flex-1 truncate text-slate-400" title={card.bb_suggest_note}>{card.bb_suggest_note}</span>}
+          <button type="button" onClick={() => setPriceStr(suggest.toFixed(2))} disabled={usedSuggestion}
+            className="ml-auto rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40">Use it</button>
+        </>
+      ) : undefined}
+      priceStr={priceStr} setPriceStr={setPriceStr}
+      now={now} profitNow={card.profit_now} profitAt={(p) => profitAt(card, p)} rrp={card.rrp}
+      holder={holderLabel(card)} share={card.bb_share ?? null} matchAt={matchAt} offers={card.offers} featured={card.featured}
+      facts={<>
+        <div>
+          <span className={card.fba === 0 ? 'text-amber-700' : ''}>{card.fba} at Amazon{card.fba_inbound ? ` · +${card.fba_inbound} coming` : ''}</span>
+          <span className="text-slate-300"> · </span>
+          {card.last_sold
+            ? <span>{card.units} sold in 30 days · {card.u12} in 12 months · last {saleLabel(card.last_sold)}</span>
+            : <span>no Amazon sale yet</span>}
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-base font-semibold text-slate-900">{card.groupid}</span>
-            <span className="rounded bg-slate-900 px-2 py-0.5 text-sm font-semibold text-white">{card.size}</span>
-            <span className="text-xs tabular-nums text-slate-400">{n} of {of}</span>
-          </div>
-          <div className="mt-0.5 truncate text-sm text-slate-600">{card.title || '—'}<span className="ml-2 text-slate-400">{card.brand}</span></div>
-          {status && <div className={'mt-1 text-sm font-medium ' + status.cls}>{status.text}</div>}
-        </div>
-        <Link href={priceScreenHref} className="shrink-0 text-sm text-brand-700 hover:underline" title="The full price screen for this SKU — sales and price history; its Back returns to this card">
-          Full price screen →
-        </Link>
-      </div>
-
-      {/* THE PRICE — [search: the Buy Box suggestion] the box with the nudges; profit a pair at the box; the marks it is judged against. */}
-      <div className="px-5 py-4">
-        {suggest !== null && (
-          <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-200 px-3 py-2 text-sm">
-            <span className="text-slate-600">Buy Box suggests <b className="tabular-nums text-slate-900">{money(suggest)}</b></span>
-            {card.bb_suggest_note && <span className="min-w-0 flex-1 truncate text-slate-400" title={card.bb_suggest_note}>{card.bb_suggest_note}</span>}
-            <button type="button" onClick={() => setPriceStr(suggest.toFixed(2))} disabled={usedSuggestion}
-              className="ml-auto rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40">Use it</button>
-          </div>
-        )}
-        <div className="flex flex-wrap items-center gap-2">
-          {NUDGES.filter((d) => d < 0).map((d) => (
-            <button key={d} type="button" onClick={() => nudge(d)} className={`${pill} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}>
-              −{d <= -1 ? `£${-d}` : `${Math.round(-d * 100)}p`}
-            </button>
-          ))}
-          <div className="relative">
-            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-xl font-semibold text-slate-400">£</span>
-            <input ref={boxRef} value={priceStr} onChange={(e) => setPriceStr(e.target.value)} inputMode="decimal" aria-label="New price"
-              className="h-11 w-32 rounded-lg border border-slate-300 bg-white pl-7 pr-2 text-xl font-semibold tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
-          </div>
-          {NUDGES.filter((d) => d > 0).map((d) => (
-            <button key={d} type="button" onClick={() => nudge(d)} className={`${pill} border-slate-200 bg-white text-slate-700 hover:bg-slate-50`}>
-              +{d >= 1 ? `£${d}` : `${Math.round(d * 100)}p`}
-            </button>
-          ))}
-          {changed && (
-            <button type="button" onClick={() => setPriceStr(now !== null ? now.toFixed(2) : '')} className="text-xs text-slate-500 underline hover:text-slate-700">
-              back to {money(now)}
-            </button>
-          )}
-        </div>
-        {/* PROFIT (owner, 2026-11-14 trim: "want to see what my current profit") — now, and the typed price once it moves.
-            Red under break-even; "over RRP" only when it is. No walk-away / break-even / RRP figures. */}
-        <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
-          <span>Now <b className="tabular-nums text-slate-900">{money(now)}</b> keeps <b className={'tabular-nums ' + keepCls(card.profit_now)}>{money(card.profit_now)}</b> a pair</span>
-          {changed && <span>→ at {money(price)} keeps <b className={'tabular-nums ' + keepCls(profit)}>{money(profit)}</b></span>}
-          {valid && card.rrp !== null && price > card.rrp && <span className="text-amber-700">over RRP {money(card.rrp)}</span>}
-        </div>
-        {/* BUY BOX (owner, 2026-11-14: "knowing clearly what the buy box is and whether I want to match or not"; "those two lines …
-            together under the big price") — who leads and at what, what matching keeps, and Match, which only fills the box (Set
-            still writes). No Match when we hold it. */}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
-          <span>Buy Box <b className="font-medium text-slate-900">{holderLabel(card)}</b>
-            {card.bb_share !== null && card.bb_share !== undefined && <span className="text-slate-500"> · we&apos;re shown {Math.round(card.bb_share)}%</span>}</span>
-          {matchAt !== null && (
-            <span className="inline-flex items-center gap-3">
-              <span>match keeps <b className={'tabular-nums ' + keepCls(matchKeeps)}>{money(matchKeeps)}</b></span>
-              <button type="button" onClick={() => setPriceStr(matchAt.toFixed(2))}
-                className="rounded-md border border-slate-300 bg-white px-3 py-0.5 text-sm font-medium text-slate-800 hover:bg-slate-50">Match {money(matchAt)}</button>
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* STOCK AND SALES — one quiet line. */}
-      <div className="border-y border-slate-100 px-5 py-2.5 text-sm text-slate-600">
-        <span className={card.fba === 0 ? 'text-amber-700' : ''}>{card.fba} at Amazon{card.fba_inbound ? ` · +${card.fba_inbound} coming` : ''}</span>
-        <span className="text-slate-300"> · </span>
-        {card.last_sold
-          ? <span>{card.units} sold in 30 days · {card.u12} in 12 months · last {saleLabel(card.last_sold)}</span>
-          : <span>no Amazon sale yet</span>}
-      </div>
-
-      {/* DECIDE — the review date (Set and Leave both use it), Leave / Next, Set. One reserved line for a warning / what was done. */}
-      <div className="px-5 py-4">
-        <div className="flex flex-wrap items-center gap-2">
+        <LastChangeLine change={card.last_change} />
+      </>}
+      review={
+        <>
           <span className="mr-1 text-sm text-slate-500">Review in</span>
           {reviewChips.map((c) => (
             <button key={c.label} type="button" onClick={() => onReview(c.days)} title={c.title}
@@ -441,29 +343,24 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
               {c.label}
             </button>
           ))}
-          <span className="ml-auto inline-flex gap-2">
-            <button type="button" onClick={onPrev} disabled={n <= 1} title="Previous card (←)"
-              className="inline-flex h-11 items-center rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40">←</button>
-            <button type="button" onClick={forward} disabled={busy && !done && !lookOnly}
-              title={done || lookOnly ? 'Next card — nothing written (→)' : 'Keep the price, set the review date (→ or L)'}
-              className="inline-flex h-11 items-center rounded-lg border border-slate-300 bg-white px-5 text-sm font-semibold text-slate-800 hover:bg-slate-50 disabled:opacity-50">
-              {done || lookOnly ? 'Next →' : 'Leave'}
-            </button>
-            <button type="button" onClick={() => valid && onSet(price, usedSuggestion)} disabled={busy || !changed}
-              title={changed ? 'Save, send to Amazon and set the review date (Enter)' : 'Move the price first'}
-              className="inline-flex h-11 items-center rounded-lg bg-emerald-600 px-6 text-sm font-semibold text-white hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400">
-              Set {valid ? money(price) : ''}
-            </button>
-          </span>
-        </div>
-        <div className="mt-2 h-5 truncate text-sm">
-          {done?.kind === 'set' ? (
-            <span className={done.sent ? 'text-emerald-700' : 'text-amber-700'}>Set to {money(done.price)} — {done.sent ? 'sent to Amazon' : `NOT sent${done.message ? `: ${done.message}` : ''} (it stays on Send to Amazon)`}</span>
-          ) : done?.kind === 'left' ? (
-            <span className="text-slate-500">Left at {money(now)}</span>
-          ) : null}
-        </div>
-      </div>
-    </div>
+        </>
+      }
+      onPrev={onPrev} prevDisabled={n <= 1}
+      secondary={{
+        label: done || lookOnly ? 'Next →' : 'Leave', onClick: forward, disabled: busy && !done && !lookOnly,
+        title: done || lookOnly ? 'Next card — nothing written (→)' : 'Keep the price, set the review date (→ or L)',
+      }}
+      primary={{
+        // "Already £x" when the box holds today's price — nothing to send; Leave keeps it (owner, 2026-11-14: a grey Set read as broken).
+        label: valid && !changed ? `Already ${money(price)}` : `Set ${valid ? money(price) : ''}`,
+        onClick: () => { if (valid && changed && !busy) onSet(price, usedSuggestion); },
+        disabled: busy || !changed, title: changed ? 'Save, send to Amazon and set the review date (Enter)' : 'Already the price on Amazon — Leave keeps it',
+      }}
+      note={done?.kind === 'set' ? (
+        <span className={'truncate ' + (done.sent ? 'text-emerald-700' : 'text-amber-700')}>Set to {money(done.price)} — {done.sent ? 'sent to Amazon' : `NOT sent${done.message ? `: ${done.message}` : ''} (it stays on Send to Amazon)`}</span>
+      ) : done?.kind === 'left' ? (
+        <span className="text-slate-500">Left at {money(now)}</span>
+      ) : null}
+    />
   );
 }

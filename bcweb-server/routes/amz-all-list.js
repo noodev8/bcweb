@@ -45,7 +45,9 @@ Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=
            reduced to cards"): each row also carries what a card shows — imagename, u12 (Amazon pairs, 12 months), breakeven, walk
            (the £3 walk-away, amzPricingStandard SETTINGS.WALK_AWAY_PROFIT — the Buy Box cards' floor), profit_line (profit a pair =
            per_pound × price + at_zero, utils/amzBuyBoxDeck.js → profitLine, so a typed price is priced without a second copy of the
-           formula), profit_now. One query for the returned rows. Display only — nothing here blocks a price.
+           formula), profit_now; offers + featured (the latest Buy Box reading's sellers, amz_buybox_now — the card's sellers pop-up)
+           and last_change (utils/amzBuyBoxDeck.js → lastChanges, THE copy — the card's "Last change" line; owner 2026-11-14: the
+           two kinds of card the same). Two queries for the returned rows. Display only — nothing here blocks a price.
            With q, a size that has a Buy Box card in ?mood= (default chilled) also carries that card's suggestion — bb_suggest,
            bb_suggest_note, bb_deck (new / raise / cut) — from utils/amzBuyBoxDeck.js → readDeck (the same rules as the Buy Box
            cards, never a second copy). Shown on the search card with a "Use it" button; never applied by itself.
@@ -76,7 +78,7 @@ const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const { readBuyBoxSide, dueBy, buyBoxMoves } = require('../utils/amzDue');
-const { matchesSearch, matchesStyle, profitLine, readDeck } = require('../utils/amzBuyBoxDeck');
+const { matchesSearch, matchesStyle, profitLine, readDeck, lastChanges } = require('../utils/amzBuyBoxDeck');
 const { amzProfit, priceForProfit, breakevenPrice } = require('../utils/amzProfit');
 const { SETTINGS } = require('../utils/amzPricingStandard');
 const logger = require('../utils/logger');
@@ -144,7 +146,7 @@ router.get('/', async (req, res) => {
 
     // THE RULE (header): each row's half, and whether it is due.
     const side = await readBuyBoxSide(pool);
-    const judged = result.rows.map((r) => ({ r, d: dueBy(side, r.code, r.review_parked !== true) }))
+    const judged = result.rows.map((r) => ({ r, d: dueBy(side, r.code, r.review_parked !== true, Number(r.fba) > 0) }))
       .filter((x) => !reviewHalf || x.d.by === 'review')
       .filter((x) => includeParked || x.d.due)
       .filter((x) => matchesSearch(x.r, q) && matchesStyle(x.r, g));
@@ -184,16 +186,23 @@ router.get('/', async (req, res) => {
 
     // CARDS (header, ?cards=1): the card's economics and picture for the returned rows, in one query.
     if (withCards && rows.length) {
+      const codes = rows.map((r) => r.code);
       const econ = (await query(
-        `SELECT a.code, a.fbafee, sk.cost, sk.tax, sk.imagename,
+        `SELECT a.code, a.fbafee, sk.cost, sk.tax, sk.imagename, bb.offers, bb.featured,
                 (SELECT COALESCE(SUM(s.qty), 0) FROM sales s WHERE s.channel = 'AMZ' AND s.code = a.code AND s.qty > 0
                    AND s.solddate >= CURRENT_DATE - 365)::int AS u12
          FROM amzfeed a JOIN skusummary sk ON sk.groupid = a.groupid
-         WHERE a.code = ANY($1)`, [rows.map((r) => r.code)])).rows;
+         LEFT JOIN amz_buybox_now bb ON bb.code = a.code AND bb.error IS NULL
+         WHERE a.code = ANY($1)`, [codes])).rows;
       const econOf = Object.fromEntries(econ.map((e) => [e.code, e]));
+      const lastOf = await lastChanges(pool, codes);
       for (const row of rows) {
         const e = econOf[row.code];
+        row.last_change = lastOf[row.code] ?? null;
         if (!e) continue;
+        // THE SELLERS (the card's "N offers" pop-up, same as the Buy Box cards): the latest reading's offers and featured shares.
+        row.offers = Array.isArray(e.offers) ? e.offers : [];
+        row.featured = Array.isArray(e.featured) ? e.featured : [];
         const ec = { cost: e.cost, fbafee: e.fbafee, tax: e.tax };
         row.imagename = e.imagename || null;
         row.u12 = Number(e.u12) || 0;

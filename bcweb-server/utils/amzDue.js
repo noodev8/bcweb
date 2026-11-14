@@ -12,7 +12,10 @@ THE RULE — two halves, every size in exactly one:
                  Raise / Cut, reason `ready`) is a BUY BOX MOVE instead — Daily's secondary line, worked "when they have time" on the
                  Amazon Pricing home.
   REVIEW HALF    everything else — sold nothing in 30 days ("Not selling"), inbound only, out of stock, priced ahead of arrival, live but
-                 not read yet: DUE when its review date (skumap.next_amz_price_review) is empty or has come round, as before.
+                 not read yet: DUE when its review date (skumap.next_amz_price_review) is empty or has come round AND IT IS LIVE AT FBA
+                 (amzfeed.amzlive > 0). LIVE ONLY (owner, 2026-11-14: "take them off, also dont show the ones coming in. These are just
+                 for live stock"): a size with none sellable at Amazon — out of stock, or only on its way in — is never due; its price
+                 can't sell anything yet. Its review date is left alone, so it comes back by itself once stock is live.
   DECISION 27 (owner, 2026-11-13: "Lets remove the 1 number rule now ... leave with due and a secondary number of BUY BOX MOVES ...
   they will focus on due down to zero"): until then the cards counted as due too ("Amazon to price" = cards + due), and a live queue
   that refills hourly made the morning number feel like going round in circles. Now Due is a list that reaches zero and stays there;
@@ -48,13 +51,13 @@ async function readBuyBoxSide(db) {
 }
 
 /**
- * Is this size due? { due, by: 'buybox' | 'review', answer, reason, card }. reviewDue = its review date is empty or today / passed.
- * A Buy Box size is never due (header); `card` says it is a Buy Box move.
+ * Is this size due? { due, by: 'buybox' | 'review', answer, reason, card }. reviewDue = its review date is empty or today / passed;
+ * live = its sellable FBA stock (amzfeed.amzlive) is above 0. A Buy Box size is never due (header); `card` says it is a Buy Box move.
  */
-function dueBy(side, code, reviewDue) {
+function dueBy(side, code, reviewDue, live) {
   const b = side.get(code);
   if (b) return { due: false, by: 'buybox', answer: b.answer, reason: b.reason, card: b.card };
-  return { due: !!reviewDue, by: 'review', answer: null, reason: null, card: false };
+  return { due: !!reviewDue && !!live, by: 'review', answer: null, reason: null, card: false };
 }
 
 /** Daily's BUY BOX MOVES: the sizes with a card in Chilled. */
@@ -72,12 +75,13 @@ function sideParams(side) {
 }
 
 /**
- * THE rule as a SQL boolean (header): not a Buy Box size, and its review date empty or come round. codeCol / reviewCol are trusted
- * column expressions (never request input); bbParam the placeholder holding sideParams(side).bb; onExpr the day "due" is judged on
- * (the skill's --on; default today).
+ * THE rule as a SQL boolean (header): not a Buy Box size, its review date empty or come round, and live at FBA. codeCol / reviewCol
+ * are trusted column expressions (never request input); bbParam the placeholder holding sideParams(side).bb; onExpr the day "due" is
+ * judged on (the skill's --on; default today). LIVE is tested on amzfeed by code, so every caller gets it without a new column.
  */
 function dueSql(codeCol, reviewCol, bbParam, onExpr = 'CURRENT_DATE') {
-  return `(NOT ${codeCol} = ANY(${bbParam}::text[]) AND (${reviewCol} IS NULL OR ${reviewCol} <= ${onExpr}))`;
+  return `(NOT ${codeCol} = ANY(${bbParam}::text[]) AND (${reviewCol} IS NULL OR ${reviewCol} <= ${onExpr})`
+    + ` AND EXISTS (SELECT 1 FROM amzfeed due_f WHERE due_f.code = ${codeCol} AND COALESCE(due_f.amzlive, 0) > 0))`;
 }
 
 module.exports = { DUE_MOOD, readBuyBoxSide, dueBy, buyBoxMoves, sideParams, dueSql };

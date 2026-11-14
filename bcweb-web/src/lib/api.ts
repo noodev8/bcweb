@@ -570,6 +570,9 @@ export interface AmzPriceCard extends AmzWinnerRow {
   profit_now: number | null;
   // A Buy Box move in the chosen mood (search cards only): the Buy Box cards' suggestion, shown — never applied by itself.
   bb_suggest?: number | null; bb_suggest_note?: string | null; bb_deck?: AmzDeckKind | null;
+  // The same as the Buy Box cards (owner, 2026-11-14): the latest reading's sellers (the sellers pop-up) and the last real price move.
+  offers?: AmzBuyBoxOffer[]; featured?: AmzBuyBoxFeatured[];
+  last_change?: AmzLastChange | null;
 }
 export function getAmzDueCards() {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
@@ -728,6 +731,8 @@ export function getAmzBuyBox() {
 export type AmzMood = 'fierce' | 'chilled' | 'climb';
 export type AmzDeckKind = 'new' | 'raise' | 'cut';
 export type AmzAnswer = AmzDeckKind | 'leave' | 'off';
+// A size's last real price move (server utils/amzBuyBoxDeck.js → lastChanges) and net Amazon pairs sold since that day.
+export interface AmzLastChange { at: string; by: string | null; old_price: number; new_price: number; sold_since: number }
 export interface AmzDeckCard {
   deck: AmzDeckKind; group: AmzBuyBoxGroup; code: string; groupid: string | null; title: string | null; brand: string | null; asin: string | null;
   imagename: string | null; read_at: string;
@@ -736,7 +741,7 @@ export interface AmzDeckCard {
   on_order: number; at_home: number;   // placed with the supplier, not arrived · sellable local stock — shown, never in the suggestion
   next_review: string | null;           // the Amazon review date, YYYY-MM-DD — a later one than a Set / Leave's 4 weeks is kept
   // The last real price move (holds skipped) and net Amazon pairs sold since that day; null = never changed.
-  last_change: { at: string; by: string | null; old_price: number; new_price: number; sold_since: number } | null;
+  last_change: AmzLastChange | null;
   // The 30-day strip: sold[i] = net Amazon pairs that UK day (oldest first, today last); moves = real price changes by day index;
   // last_sold_ago = days since the last pair sold (any time), null = never sold on Amazon.
   strip: { sold: number[]; moves: { day: number; by: string | null; old_price: number; new_price: number }[]; last_sold_ago: number | null };

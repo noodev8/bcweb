@@ -240,6 +240,29 @@ function matchesStyle(r, g) {
  * "due" (PLAN.md decision 26), without the card queries. q = the search (matchesSearch), groupid = one style (matchesStyle) — screens
  * only; amzDue never passes them.
  */
+/**
+ * LAST CHANGED (THE copy — the Buy Box cards and the price cards, routes/amz-all-list ?cards=1): each size's last real price MOVE
+ * (holds skipped), by whom, and net Amazon pairs sold since that day (sales carry a date only, so a sale earlier on the same day
+ * counts — as Team week). changed_at is NULL on the 458 rows logged before it existed (Apr – Jul 2026): fall back to log_date, else
+ * those NULLs would sort FIRST under DESC and pass for the latest change.
+ * Returns { code: { at, by, old_price, new_price, sold_since } } — a size never changed is absent.
+ */
+async function lastChanges(db, codes) {
+  if (!codes.length) return {};
+  const { rows } = await db.query(
+    `WITH last AS (
+       SELECT DISTINCT ON (code) code, COALESCE(changed_at, log_date::timestamptz) AS changed_at, changed_by,
+              old_price::float8 AS old_price, new_price::float8 AS new_price
+       FROM amz_price_log WHERE code = ANY($1) AND abs(new_price - old_price) >= 0.005
+       ORDER BY code, COALESCE(changed_at, log_date::timestamptz) DESC, id DESC)
+     SELECT l.code, l.changed_at::text AS changed_at, l.changed_by, l.old_price, l.new_price,
+            (SELECT COALESCE(SUM(s.qty), 0) FROM sales s WHERE s.channel = 'AMZ' AND s.code = l.code
+               AND s.solddate >= (l.changed_at AT TIME ZONE 'Europe/London')::date)::int AS sold_since
+     FROM last l`, [codes]);
+  return Object.fromEntries(rows.map((x) => [x.code, {
+    at: x.changed_at, by: x.changed_by, old_price: x.old_price, new_price: x.new_price, sold_since: x.sold_since }]));
+}
+
 async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', groupid: gIn = '' } = {}) {
   const mood = normMood(moodIn);
   const q = typeof qIn === 'string' ? qIn.trim().toLowerCase() : '';
@@ -286,23 +309,10 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
       `SELECT DISTINCT ON (code) code, action, suggested::float8 AS suggested,
               (pressed_at > now() - make_interval(days => $2)) AS recent
        FROM amz_buybox_press WHERE code = ANY($1) ORDER BY code, pressed_at DESC, id DESC`, [candCodes, LEAVE_BACK_DAYS]),
-    // LAST CHANGED: the size's last real price MOVE (holds skipped), by whom, and net Amazon pairs sold since that day (sales carry a
-    // date only, so a sale earlier on the same day counts — as Team week). changed_at is NULL on the 458 rows logged before it
-    // existed (Apr – Jul 2026): fall back to log_date, else those NULLs would sort FIRST under DESC and pass for the latest change.
-    () => db.query(
-      `WITH last AS (
-         SELECT DISTINCT ON (code) code, COALESCE(changed_at, log_date::timestamptz) AS changed_at, changed_by,
-                old_price::float8 AS old_price, new_price::float8 AS new_price
-         FROM amz_price_log WHERE code = ANY($1) AND abs(new_price - old_price) >= 0.005
-         ORDER BY code, COALESCE(changed_at, log_date::timestamptz) DESC, id DESC)
-       SELECT l.code, l.changed_at::text AS changed_at, l.changed_by, l.old_price, l.new_price,
-              (SELECT COALESCE(SUM(s.qty), 0) FROM sales s WHERE s.channel = 'AMZ' AND s.code = l.code
-                 AND s.solddate >= (l.changed_at AT TIME ZONE 'Europe/London')::date)::int AS sold_since
-       FROM last l`, [candCodes]),
-  ]) : [{ rows: [] }, { rows: [] }];
+    () => lastChanges(db, candCodes),   // LAST CHANGED (lastChanges, above)
+  ]) : [{ rows: [] }, {}];
   const pressOf = Object.fromEntries(pressRows.rows.map((x) => [x.code, x]));
-  const lastOf = Object.fromEntries(lastRows.rows.map((x) => [x.code, {
-    at: x.changed_at, by: x.changed_by, old_price: x.old_price, new_price: x.new_price, sold_since: x.sold_since }]));
+  const lastOf = lastRows;
 
   for (const x of cand) {
     const p = pressOf[x.r.code];
@@ -467,5 +477,5 @@ function pressFields(b) {
 
 module.exports = {
   MOODS, DEFAULT_MOOD, TABS, ANSWERS, RAISE_CAP, OVER_CHEAPER_CAP, SELF_POST_PREMIUM, NEW_DAYS, LEAVE_BACK_DAYS, REVIEW_DAYS,
-  PRESS_KEEP_MONTHS, cheaperRival, suggest, suggestNew, answerFor, profitLine, matchesSearch, matchesStyle, readDeck, recordPress, pressFields,
+  PRESS_KEEP_MONTHS, cheaperRival, suggest, suggestNew, answerFor, profitLine, matchesSearch, matchesStyle, readDeck, recordPress, pressFields, lastChanges,
 };
