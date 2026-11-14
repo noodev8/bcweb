@@ -571,6 +571,9 @@ function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, on
                             <td className="py-px pr-4 tabular-nums">{money(o.price)}</td>
                             <td className="py-px pr-4">{o.us ? 'Us' : isLead ? 'Lead' : 'Rival'}</td>
                             <td className="py-px pr-4">{o.fba ? 'FBA' : 'Self-post'}</td>
+                            {/* BB = Amazon's own Buy Box winner flag on the offer (itemOffers). Amazon's share-of-views list can leave
+                                a winner out (L3882-00-38: £53.24 flagged, 16% of views credited to nobody), so the flag is shown too. */}
+                            <td className="py-px pr-3">{o.bb && <span className="rounded border border-emerald-300 px-1 text-[10px] font-medium text-emerald-700" title="Amazon flags this offer as a Buy Box winner">BB</span>}</td>
                             <td className="py-px tabular-nums text-emerald-700">{f && f.share > 0 ? `${Math.round(f.share)}%` : ''}</td>
                           </tr>
                         );

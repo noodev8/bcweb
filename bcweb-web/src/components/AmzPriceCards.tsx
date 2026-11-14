@@ -24,11 +24,12 @@ NO SUGGESTION of its own (owner: "no suggestion — I'll type the price or give 
          utils/amzBuyBoxDeck.js → readDeck, the same rules) with "Use it", which only fills the box (owner: "keep the cards and the
          recommendations").
 
-THE CARD: who (picture, groupid + size, name, brand, Full price screen →) → [search: status line, Buy Box suggestion] → the price (the
-         price screen's nudges −£1 −50p −30p / +30p +50p +£1, profit a pair at the box, RRP, the £3 walk-away and break-even) → four
-         facts (Stock at Amazon, Last sale, Sold, Buy Box) → decide (review chips, Leave, Set). Warnings are advice, nothing blocks (as
-         every pricing screen): under break-even, under the walk-away, over the RRP. profit_line = server profitLine — no second copy
-         of the profit formula here.
+THE CARD (trimmed by the owner, 2026-11-14: "too many figures … noise. I am interested in matching the buy box or moving up or down
+         as normal. Want to see what my current profit"): who (picture, groupid + size, name, brand, Full price screen →) → [search:
+         status line, Buy Box suggestion] → the price (nudges −£1 −50p −30p / +30p +50p +£1; profit now, and at the typed price once it
+         moves) → Buy Box (who leads, at what, our share; match keeps £x + Match) → one line of stock and sales → decide (review chips,
+         Leave, Set). Nothing blocks: a loss shows red, over RRP is noted; no walk-away / break-even figures or warnings. profit_line =
+         server profitLine — no second copy of the profit formula here.
 
 SET = the normal W-A1 (POST /amz-apply), sent to Amazon at once, note "Due card" / "Search card", with the chosen review date.
 LEAVE = POST /amz-review (the list's "no change — just set review"): the price stays, the review date moves; note "… — left". On to
@@ -78,11 +79,12 @@ function profitAt(card: AmzPriceCard, price: number): number | null {
 // '12 Oct 2025' from YYYY-MM-DD (a calendar day, read as one — never through toISOString).
 function dayOf(v: string): Date { const [y, m, d] = v.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
 const dateLabel = (v: string) => dayOf(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-function saleLabel(v: string | null): string {
-  if (!v) return 'Never on Amazon';
+function saleLabel(v: string): string {
   const days = Math.round((TODAY_MS - dayOf(v).getTime()) / 86400000);
-  return `${dateLabel(v)} · ${days} day${days === 1 ? '' : 's'} ago`;
+  return days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'} ago`;
 }
+// Profit a pair: red when it is a loss — the only colour (owner, 2026-11-14: no walk-away warning).
+const keepCls = (v: number | null) => (v !== null && v < 0 ? 'text-red-600' : 'text-slate-900');
 function holderLabel(card: AmzPriceCard): string {
   switch (card.bb_holder) {
     case 'US': return 'We have it';
@@ -302,6 +304,9 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
   const valid = Number.isFinite(price) && price > 0;
   const changed = valid && (now === null || Math.round(price * 100) !== Math.round(now * 100));
   const profit = valid ? profitAt(card, price) : null;
+  // The Buy Box lead's price to match (postage included) — only when someone else leads.
+  const matchAt = card.bb_lead !== null && card.bb_lead !== undefined && !['US', 'US_SHARED'].includes(card.bb_holder ?? '') ? Number(card.bb_lead) : null;
+  const matchKeeps = matchAt !== null ? profitAt(card, matchAt) : null;
   const suggest = mode === 'search' ? card.bb_suggest ?? null : null;
   const usedSuggestion = suggest !== null && valid && Math.round(price * 100) === Math.round(suggest * 100);
   const nudge = (d: number) => {
@@ -311,13 +316,6 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
   // A not-due search card is only looked at (header): its Leave is Next — nothing written, its review date kept.
   const lookOnly = mode === 'search' && card.parked;
   const forward = () => (done || lookOnly ? onNext() : onLeave());
-
-  // Warnings are advice (header) — the worst one shown.
-  const warn = !valid ? null
-    : card.breakeven !== null && price < card.breakeven ? { text: `Under break-even (${money(card.breakeven)}) — a loss a pair`, cls: 'text-red-600' }
-    : card.walk !== null && price < card.walk ? { text: `Under the £3 walk-away (${money(card.walk)})`, cls: 'text-amber-700' }
-    : card.rrp !== null && price > card.rrp ? { text: `Over the RRP (${money(card.rrp)})`, cls: 'text-amber-700' }
-    : null;
 
   // KEYS (header). Re-bound each render so the handlers see this render's price.
   useEffect(() => {
@@ -401,22 +399,36 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
             </button>
           )}
         </div>
-        <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 text-sm text-slate-600">
-          <span>Now <b className="tabular-nums text-slate-900">{money(now)}</b>{card.profit_now !== null && <span className="text-slate-400"> · keeps {money(card.profit_now)}</span>}</span>
-          <span>At the box keeps <b className={'tabular-nums ' + (profit !== null && profit < 0 ? 'text-red-600' : 'text-slate-900')}>{money(profit)}</b> a pair</span>
-          <span>RRP <span className="tabular-nums">{money(card.rrp)}</span></span>
-          <span title="The lowest price that keeps £3 a pair">Walk-away <span className="tabular-nums">{money(card.walk)}</span></span>
-          <span title="Profit £0 a pair">Break-even <span className="tabular-nums">{money(card.breakeven)}</span></span>
+        {/* PROFIT (owner, 2026-11-14 trim: "want to see what my current profit") — now, and the typed price once it moves.
+            Red under break-even; "over RRP" only when it is. No walk-away / break-even / RRP figures. */}
+        <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-sm text-slate-600">
+          <span>Now <b className="tabular-nums text-slate-900">{money(now)}</b> keeps <b className={'tabular-nums ' + keepCls(card.profit_now)}>{money(card.profit_now)}</b> a pair</span>
+          {changed && <span>→ at {money(price)} keeps <b className={'tabular-nums ' + keepCls(profit)}>{money(profit)}</b></span>}
+          {valid && card.rrp !== null && price > card.rrp && <span className="text-amber-700">over RRP {money(card.rrp)}</span>}
+        </div>
+        {/* BUY BOX (owner, 2026-11-14: "knowing clearly what the buy box is and whether I want to match or not"; "those two lines …
+            together under the big price") — who leads and at what, what matching keeps, and Match, which only fills the box (Set
+            still writes). No Match when we hold it. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
+          <span>Buy Box <b className="font-medium text-slate-900">{holderLabel(card)}</b>
+            {card.bb_share !== null && card.bb_share !== undefined && <span className="text-slate-500"> · we&apos;re shown {Math.round(card.bb_share)}%</span>}</span>
+          {matchAt !== null && (
+            <span className="inline-flex items-center gap-3">
+              <span>match keeps <b className={'tabular-nums ' + keepCls(matchKeeps)}>{money(matchKeeps)}</b></span>
+              <button type="button" onClick={() => setPriceStr(matchAt.toFixed(2))}
+                className="rounded-md border border-slate-300 bg-white px-3 py-0.5 text-sm font-medium text-slate-800 hover:bg-slate-50">Match {money(matchAt)}</button>
+            </span>
+          )}
         </div>
       </div>
 
-      {/* FOUR FACTS */}
-      <div className="grid grid-cols-2 gap-px border-y border-slate-100 bg-slate-100 sm:grid-cols-4">
-        <Fact label="Stock at Amazon" value={`${card.fba} live${card.fba_inbound ? ` · +${card.fba_inbound} coming` : ''}`} warn={card.fba === 0} />
-        <Fact label="Last Amazon sale" value={saleLabel(card.last_sold)} warn={!card.last_sold} />
-        <Fact label="Sold on Amazon" value={`${card.units} in 30 days · ${card.u12} in 12 months`} />
-        <Fact label="Buy Box" value={holderLabel(card)}
-          sub={card.bb_share !== null && card.bb_share !== undefined ? `we're shown ${Math.round(card.bb_share)}% of views` : undefined} />
+      {/* STOCK AND SALES — one quiet line. */}
+      <div className="border-y border-slate-100 px-5 py-2.5 text-sm text-slate-600">
+        <span className={card.fba === 0 ? 'text-amber-700' : ''}>{card.fba} at Amazon{card.fba_inbound ? ` · +${card.fba_inbound} coming` : ''}</span>
+        <span className="text-slate-300"> · </span>
+        {card.last_sold
+          ? <span>{card.units} sold in 30 days · {card.u12} in 12 months · last {saleLabel(card.last_sold)}</span>
+          : <span>no Amazon sale yet</span>}
       </div>
 
       {/* DECIDE — the review date (Set and Leave both use it), Leave / Next, Set. One reserved line for a warning / what was done. */}
@@ -449,23 +461,9 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
             <span className={done.sent ? 'text-emerald-700' : 'text-amber-700'}>Set to {money(done.price)} — {done.sent ? 'sent to Amazon' : `NOT sent${done.message ? `: ${done.message}` : ''} (it stays on Send to Amazon)`}</span>
           ) : done?.kind === 'left' ? (
             <span className="text-slate-500">Left at {money(now)}</span>
-          ) : warn ? (
-            <span className={warn.cls}>{warn.text}</span>
-          ) : mode === 'due' ? (
-            <span className="text-slate-400">{card.next_review ? `Review date was ${dateLabel(card.next_review)}` : 'No review date yet'}</span>
           ) : null}
         </div>
       </div>
-    </div>
-  );
-}
-
-function Fact({ label, value, sub, warn = false }: { label: string; value: string; sub?: string; warn?: boolean }) {
-  return (
-    <div className="bg-white px-4 py-3">
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className={'mt-0.5 text-sm font-medium ' + (warn ? 'text-amber-700' : 'text-slate-900')}>{value}</div>
-      {sub && <div className="text-xs text-slate-500">{sub}</div>}
     </div>
   );
 }
