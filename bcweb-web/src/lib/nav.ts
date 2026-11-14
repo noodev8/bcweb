@@ -7,13 +7,12 @@ Purpose: Turn an arbitrary origin path into a readable back-link label, for when
          the drill pages and the Find pages so their "← Back" reads sensibly instead of a raw path (or a wrong hardcoded default).
 =======================================================================================================================================
 */
-// Screens whose on-screen name no longer matches their route. /segments is Repricing in the nav, but reached from the dashboard's
-// Winners card too — one screen, two names — so a link back to it just says Back (owner, 2026-09-26).
+// Screens whose on-screen name no longer matches their route. /segments is PORTFOLIO on screen (2026-11-13; was Repricing).
 // /analytics/stock-sales is Slow on screen (2026-10-12; was Selling vs Sitting, before that Stock vs Sales); the route kept its old name.
 // /analytics/slow-sizes is RANGE on screen (2026-11-06 — owner: "lose its 'slow movers' name"; Daily's Range figure opens it); its two
 // lists are named by their box (?band=), so a back link says where it goes.
 const RENAMED: Record<string, string> = {
-  '/segments': 'Back', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow movers', '/amz-loaded': 'AMZ loaded',
+  '/segments': 'Portfolio', '/pricing/vs-amazon': 'Shopify vs Amazon', '/analytics/stock-sales': 'Slow movers', '/amz-loaded': 'AMZ loaded',
   '/ebay': 'eBay listings', '/analytics/slow-sizes': 'Range', '/analytics/deep-sizes': 'Deep sellers', '/prospects/size-gaps': 'Size gaps',
   // /amz is the AMAZON PRICING home and /amz/buybox the Buy Box table since 2026-11-13 (docs/amz-buybox/PLAN.md decisions 23–25).
   '/amz': 'Amazon Pricing', '/amz/buybox': 'Sizes at Amazon', '/amz/buybox/deck': 'Pricing',

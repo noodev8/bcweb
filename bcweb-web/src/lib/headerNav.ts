@@ -17,7 +17,7 @@ LABELS ARE SHORTER THAN THE DASHBOARD'S: a header tab is read sideways at a glan
 */
 
 import { ComponentType, SVGProps } from 'react';
-import { Squares2X2Icon, UserGroupIcon, ArchiveBoxIcon } from '@heroicons/react/24/outline';
+import { UserGroupIcon, ArchiveBoxIcon } from '@heroicons/react/24/outline';
 
 export interface HeaderTab {
   label: string;
@@ -30,8 +30,8 @@ export interface HeaderTab {
 
 export const HEADER_TABS: HeaderTab[] = [
   { label: 'Inventory', href: '/inventory', icon: ArchiveBoxIcon },
-  // Also lit on the Shopify / Amazon pricing screens (lists, drills, find) — they're where Repricing takes you (owner, 2026-09-24).
-  { label: 'Repricing', href: '/segments', icon: Squares2X2Icon, also: ['/pricing', '/amz'] },
+  // Repricing (/segments) was the middle tab until 2026-11-13 — owner: remove it; the screen became Portfolio, under Admin on the
+  // dashboard beside Finance.
   { label: 'Customer Orders', href: '/customer-orders', icon: UserGroupIcon },
 ];
 

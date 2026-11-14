@@ -1,7 +1,7 @@
 'use client';
 /*
 =======================================================================================================================================
-Component: StatusTiles  (the Repricing screen's Status tab — its first and default tab since 2026-09-24)
+Component: StatusTiles  (the whole Portfolio screen, /segments, since 2026-11-13 — it was Repricing's Status tab from 2026-09-24)
 =======================================================================================================================================
 Purpose: One tile per portfolio status (WINNERS | STEADY | NEW | LOSERS — the stored skusummary.portfolio_status tag, set
          by "Update now" here), for EACH CHANNEL: a Shopify row (styles) and an Amazon row (SKUs — Amazon prices per
@@ -48,8 +48,7 @@ function fmtStamp(s: string): string {
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]}, ${m[4]}` : s;
 }
 
-// `toolbar` = the page's Status | Segment | Campaign switch, drawn on the same row as the update control.
-export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
+export default function StatusTiles() {
   const { data, error, isLoading, refresh } = useApiQuery(['repricing-status-overview'], () => getStatusOverview());
   // The brand breakdown (from the retired Winners screen). GET /portfolio-status — stored tags only.
   const portfolio = useApiQuery('portfolio-status', () => getPortfolioStatus());
@@ -107,7 +106,6 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
       {/* The stamp and its refresh sit together as one quiet control: the date says how old the tags are, the button beside it is
           how to make them current. Neutral, not a brand-colour call to action — it is housekeeping, not the job of the screen. */}
       <div className="flex flex-wrap items-center gap-3">
-        {toolbar}
         {bars.length > 1 && bar !== null && <BarDial bars={bars} selected={bar} onChange={setBar} />}
         <div className="ml-auto inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1 pl-3 pr-1 text-sm shadow-sm">
           <span className="text-slate-500">
@@ -153,7 +151,7 @@ export default function StatusTiles({ toolbar }: { toolbar?: ReactNode }) {
                   // Only WINNERS carries its rule on the tile — it is the one that changes with the tier. The other three were
                   // printed once in a key under the last row, removed 2026-10-12 (owner asked; the rules are in lib/portfolioStatusUi).
                   rule={isWin ? (raised && bar !== null ? `${barLabel(bar)} in 12 months` : STATUS_RULE.WINNERS) : null}
-                  href={statusListHref(s.status, viewPath, 'Back', ch, { bar: isWin && raised ? bar : null })}
+                  href={statusListHref(s.status, viewPath, 'Portfolio', ch, { bar: isWin && raised ? bar : null })}
                   dimmed={raised && !isWin}
                   brands={isWin && portfolio.data ? winnerBrands[ch === 'amazon' ? 'AMZ' : 'SHP'] : undefined}
                 />

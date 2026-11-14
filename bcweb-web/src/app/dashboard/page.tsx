@@ -8,7 +8,7 @@ Purpose: The platform's front page. Guarded by AppShell.
 DAILY IS THE MAIN THING (owner, 2026-10-26: "i want daily to be the main thing so its clear what to work on ... i dont want
 duplicates"). The page reads top to bottom in order of importance:
 
-  1. DAILY — the day's jobs, the one bold block on the page (a deep brand band). SIZED BY WEIGHT (owner, 2026-10-26: "sales can be
+  1. DAILY — the day's jobs, the first block on the page (one white surface, owner 2026-11-13 — the deep brand band went). SIZED BY WEIGHT (owner, 2026-10-26: "sales can be
      smaller"): the five jobs are equal tiles in one row; Sales is a compact figure in the band's header bar. Each says how much is waiting, so it is clear where to start:
        Sales      today's profit and units, all channels (GET /analytics-sales?window=today — the Sales screen's own headline).
                   Moved here from the menu (owner, 2026-10-26: "add sales to daily").
@@ -118,7 +118,6 @@ const GROUPS: Group[] = [
     blurb: 'Groups, rules and price checks',
     icon: TagIcon,
     tiles: [
-      { title: 'Repricing', subtitle: 'Status, segment and campaign lists', description: 'Winners, steady, new and losers per channel, and the segment and campaign lists.', href: '/segments', icon: Squares2X2Icon },
       { title: 'Shopify vs Amazon', subtitle: 'Shopify never under Amazon', description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread.', href: '/pricing/vs-amazon', icon: ScaleIcon },
       { title: 'Collections', subtitle: 'Shopify collection tags', description: 'Put styles in Shopify collections, or take them out — up to 3 per style.', href: '/collections', icon: RectangleStackIcon },
       { title: 'Price Changes', subtitle: 'Recent moves, and what shifted', description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since.', href: '/analytics/price-changes', icon: ArrowsRightLeftIcon },
@@ -179,6 +178,8 @@ const GROUPS: Group[] = [
       { title: 'Update Shopify', subtitle: 'Pull in new orders now', description: 'Run the Shopify order update now rather than waiting for the scheduled run.', href: '/customer-orders', icon: CloudArrowDownIcon, action: 'update-shopify' },
       { title: 'Amazon status', subtitle: 'Read from Amazon automatically', description: 'Amazon sales, FBA stock, prices, returns and fees come in by themselves — check they are, and last night’s listings check.', href: '/update-amazon', icon: SignalIcon },
       { title: 'Finance', subtitle: 'Close the month', description: 'Close the month: Amazon, Shopify, PayPal and the shop, out to the two QuickFile files.', href: '/finance', icon: CalculatorIcon },
+      // Portfolio (/segments) — was Repricing in the Pricing group; moved here 2026-11-13 (owner: "It is more like a finance screen").
+      { title: 'Portfolio', subtitle: 'Winners, steady, new, losers', description: 'Winners, steady, new and losers per channel, stock now, winners by brand and 12-month revenue.', href: '/segments', icon: Squares2X2Icon },
       { title: 'Facebook', subtitle: 'Social post', description: 'Queue and publish the daily Facebook post.', href: '/social', icon: MegaphoneIcon },
       // Hidden while SKU_HEALTH is false (lib/features.ts, owner 2026-11-05).
       ...(SKU_HEALTH ? [{ title: 'SKU health', subtitle: 'Sellers, stock and what has not sold', description: 'Three numbers: SKUs that sold in 90 days, SKUs in stock, and SKUs not sold in 12 months.', href: '/sku-health', icon: PresentationChartLineIcon }] : []),
@@ -220,7 +221,7 @@ export default function DashboardPage() {
 }
 
 /* =====================================================================================================================================
-   DAILY — the hero. A deep brand band: Sales as a compact figure in its header bar, then the five jobs as equal white tiles, each with how much is waiting. Counts load on their own
+   DAILY — the hero. One white surface: Sales as a compact figure in its header bar, then the five jobs as equal cells on hairlines, each with how much is waiting. Counts load on their own
    (the menu never waits for them); a count that fails shows a dash, never an error over the page.
 ===================================================================================================================================== */
 function Daily() {
@@ -252,28 +253,30 @@ function Daily() {
   const shopifyMissed = sellers.data ? sellers.data.missed_count : null;
 
   return (
-    <section aria-labelledby="daily-heading" className="rounded-2xl bg-brand-700 p-5 shadow-lg sm:p-6">
+    <section aria-labelledby="daily-heading" className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
       {/* Header bar: the title, and SALES as a compact figure — a glance, not a job (owner, 2026-10-26: "sales can be smaller"). */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
-        <div className="flex items-baseline gap-4">
-          <h1 id="daily-heading" className="text-2xl font-semibold tracking-tight text-white">Daily</h1>
-          <p className="text-sm text-brand-100">The numbers are what&apos;s waiting.</p>
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-slate-100 px-5 py-4">
+        <div className="flex items-center gap-3">
+          <span aria-hidden className="h-2.5 w-2.5 rounded-full bg-brand-500" />
+          <h1 id="daily-heading" className="text-xl font-semibold tracking-tight text-slate-900">Daily</h1>
+          <p className="hidden text-sm text-slate-500 sm:block">The numbers are what&apos;s waiting.</p>
         </div>
         <Link
           href="/analytics/sales"
-          className="inline-flex items-baseline gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-sm text-brand-100 outline-none ring-1 ring-white/20 transition hover:bg-white/20 focus-visible:ring-2 focus-visible:ring-white"
+          className="group inline-flex items-baseline gap-2 rounded-full bg-slate-50 px-4 py-1.5 text-sm text-slate-500 outline-none ring-1 ring-inset ring-slate-200 transition hover:bg-white hover:ring-brand-500 focus-visible:ring-2 focus-visible:ring-brand-500"
         >
-          <span className="font-medium text-white">Sales today</span>
-          <span className="text-lg font-semibold tabular-nums text-white">{today ? gbp(today.profit) : '–'}</span>
-          <span>profit{today ? ` · ${today.unitsNet} units` : ''}</span>
-          <ChevronRightIcon className="h-4 w-4 self-center text-white/60" />
+          <span className="font-medium text-slate-700">Sales today</span>
+          <span className="text-base font-semibold tabular-nums text-slate-900">{today ? gbp(today.profit) : '–'}</span>
+          <span>profit{today ? ` on ${today.unitsNet} units` : ''}</span>
+          <ChevronRightIcon className="h-4 w-4 self-center text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
         </Link>
       </div>
 
-      {/* THE JOBS — five equal tiles. */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      {/* THE JOBS — five equal cells on hairline dividers (gap-px over a slate fill), one white surface rather than a coloured band
+          (owner, 2026-11-13: the blue band and its gradient were "not good"; colour stays a small mark — the dot by the title). */}
+      <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-5">
         {/* PRICING — two lists, two counts, two links (no cross-channel total). */}
-        <div className="flex flex-col rounded-xl bg-white p-4">
+        <div className={jobCell}>
           <TileHead icon={Squares2X2Icon} title="Pricing" sub="Prices to look at" />
           <div className="mt-auto grid grid-cols-3 gap-2 pt-4">
             <CountLink href="/pricing" label="Shopify" n={due.data?.shopify ?? null} unit="due" />
@@ -287,15 +290,15 @@ function Daily() {
 
         {/* ORDERING — two screens, two links, like Pricing (owner, 2026-10-27: "will have to choose which one they want"). Amazon has
             no count; Shopify's is the Sellers view's Sold out (missed in code) — sold in 30 days with nothing local, on order or at FBA. */}
-        <div className="flex flex-col rounded-xl bg-white p-4">
+        <div className={jobCell}>
           <TileHead icon={ClipboardDocumentListIcon} title="Ordering" sub="What needs buying in or sending" />
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
             <Link
               href="/amazon-order"
-              className="flex flex-col rounded-lg border border-slate-200 px-3 py-2 text-center outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
+              className={innerBox + ' flex flex-col'}
             >
-              <span className="block text-xs font-medium text-slate-500">Amazon</span>
-              <span className="mt-auto block pt-1 text-sm font-medium text-brand-700">Open Amazon Order</span>
+              <span className={innerLabel}>Amazon</span>
+              <span className="mt-auto block pt-1 text-sm font-semibold text-brand-600">Open Amazon Order</span>
             </Link>
             <CountLink href="/shopify-order" label="Shopify" n={shopifyMissed} unit="sizes sold out" />
           </div>
@@ -305,7 +308,7 @@ function Daily() {
             longer term 40% as high as possible. Do one, will help the other"): New stuff — of the new SKUs (first in 90 days) the %
             sold -> New Additions; Range — of every size we hold the % sold in the last 90 days -> the Slow movers front screen. Selling
             a new SKU moves it into the Range's sold part, so pushing the first lifts the second. */}
-        <div className="flex flex-col rounded-xl bg-white p-4">
+        <div className={jobCell}>
           <TileHead icon={SparklesIcon} title="Selling" sub="Both as high as possible" />
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
             <CountLink href="/analytics/new-additions" label="New stuff" n={soldPct} unit={newSkus ? `${newSkus.sold} of ${newSkus.total} new` : 'new SKUs'} />
@@ -316,14 +319,14 @@ function Daily() {
 
         {/* PROSPECTS and AMZ LOADED — one figure each, in the SAME inner box as the paired cards (owner, 2026-11-06: "align the 7 and 0
             … to match the other boxes"), so every number on Daily sits at one height and size. */}
-        <div className="flex flex-col rounded-xl bg-white p-4">
+        <div className={jobCell}>
           <TileHead icon={LightBulbIcon} title="Prospects" sub="New products to look into" />
           <div className="mt-auto grid grid-cols-1 gap-2 pt-4">
             <CountLink href="/prospects" label="On the list" n={prospects} unit="finds" />
           </div>
         </div>
 
-        <div className="flex flex-col rounded-xl bg-white p-4">
+        <div className={jobCell + ' sm:col-span-2 lg:col-span-1'}>
           <TileHead icon={InboxStackIcon} title="AMZ loaded" sub="In stock, not on Amazon yet" />
           <div className="mt-auto grid grid-cols-1 gap-2 pt-4">
             <CountLink href="/amz-loaded" label="To look at" n={amzLoadedDue} unit="styles" />
@@ -404,15 +407,20 @@ function BackupWarning() {
   );
 }
 
+// Daily's look (owner, 2026-11-13 refresh, frontend-design pass): one white surface, cells on hairlines, inner boxes as soft grey wells
+// that take a brand edge on hover. THE NUMBERS ARE THE ONE LOUD THING — everything around them is quiet: plain icons (no tinted chips),
+// sentence-case labels (no all caps), no hover shadows. Shared so the Ordering link box and the count boxes can't drift apart.
+const jobCell = 'flex flex-col bg-white p-5';
+const innerBox = 'rounded-xl bg-slate-50 px-3 py-3 text-center outline-none ring-1 ring-inset ring-slate-200/70 transition-colors hover:bg-white hover:ring-brand-500 focus-visible:ring-2 focus-visible:ring-brand-500';
+const innerLabel = 'block text-xs font-medium text-slate-500';
+
 function TileHead({ icon: I, title, sub }: { icon: Icon; title: string; sub: string }) {
   return (
-    <div className="flex items-start gap-3">
-      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
-        <I className="h-5 w-5" />
-      </span>
+    <div className="flex items-start gap-2.5">
+      <I aria-hidden className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
       <div className="min-w-0">
-        <h2 className="text-base font-semibold leading-snug text-slate-900">{title}</h2>
-        <p className="text-xs leading-snug text-slate-500">{sub}</p>
+        <h2 className="text-[15px] font-semibold leading-snug text-slate-900">{title}</h2>
+        <p className="mt-0.5 text-xs leading-snug text-slate-500">{sub}</p>
       </div>
     </div>
   );
@@ -431,11 +439,12 @@ function CountLink({ href, label, n, unit, done }: { href: string; label: string
   return (
     <Link
       href={href}
-      className="rounded-lg border border-slate-200 px-3 py-2 text-center outline-none transition hover:border-brand-500 hover:bg-brand-50 focus-visible:border-brand-500 focus-visible:ring-2 focus-visible:ring-brand-100"
+      className={innerBox}
     >
-      <span className="block text-xs font-medium text-slate-500">{label}</span>
-      <span className="block text-3xl font-semibold tabular-nums leading-tight text-slate-900">{n === null ? '–' : n}</span>
-      <span className="block text-xs text-slate-500">{unit}</span>
+      <span className={innerLabel}>{label}</span>
+      {/* Nothing waiting reads faint (a 0, or the dash while loading), so the eye lands only on the numbers that are work. */}
+      <span className={'mt-1 block text-3xl font-semibold tabular-nums leading-none tracking-tight ' + (n === null || n === 0 ? 'text-slate-300' : 'text-slate-900')}>{n === null ? '–' : n}</span>
+      <span className="mt-1.5 block text-xs text-slate-500">{unit}</span>
       {done !== undefined && (done
         ? <span className="block text-xs font-medium text-emerald-700" title={`${done} done today`}>✓ {done}</span>
         : <span className="block text-xs text-slate-400" title="None done today yet">✓ 0</span>)}
@@ -447,7 +456,7 @@ function CountLink({ href, label, n, unit, done }: { href: string; label: string
 // without opening anything.
 function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: string | null; onToggle: (id: string | null) => void }) {
   const open = groups.find((g) => g.id === openId) ?? null;
-  const card = 'flex h-full flex-col rounded-xl border bg-white p-4 text-left transition ';
+  const card = 'flex h-full flex-col rounded-2xl border bg-white p-4 text-left outline-none transition focus-visible:ring-2 focus-visible:ring-brand-500 ';
   return (
     <>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -461,7 +470,7 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
               onClick={() => onToggle(isOpen ? null : g.id)}
               aria-expanded={isOpen}
               aria-controls={'group-panel-' + g.id}
-              className={card + (isOpen ? 'border-brand-500 shadow-md ring-1 ring-brand-500' : 'border-slate-200 shadow-sm hover:border-brand-500 hover:shadow-md')}
+              className={card + (isOpen ? 'border-brand-500 shadow-md ring-1 ring-brand-500' : 'border-slate-200 shadow-sm hover:border-slate-300 hover:shadow-md')}
             >
               <div className="flex items-center gap-3">
                 <span className={'inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ' + (isOpen ? 'bg-brand-500 text-white' : 'bg-brand-50 text-brand-600')}>
@@ -479,7 +488,7 @@ function GroupRow({ groups, openId, onToggle }: { groups: Group[]; openId: strin
 
       {/* THE PANEL — one, full width below the row. */}
       {open && (
-        <section id={'group-panel-' + open.id} className="mt-3 rounded-xl bg-slate-200 p-4 ring-1 ring-slate-300">
+        <section id={'group-panel-' + open.id} className="mt-3 rounded-2xl bg-white/60 p-4 ring-1 ring-slate-200">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {open.tiles.map((t) => t.action === 'update-shopify' ? (
               <UpdateShopifyTile key={open.id + t.title} title={t.title} subtitle={t.subtitle} />

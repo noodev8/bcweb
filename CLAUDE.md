@@ -39,17 +39,17 @@ Start the API first. Seed/reset a user: `node scripts/seed-user.js <username> <p
 - **Shopify vs Amazon** (`/pricing/vs-amazon`) is the manual tool: the owner's floor is Shopify never under Amazon's DEAREST live size (Amazon can pull the Buy Box). Apply = a plain W1, note "Amazon Match", 10-day review unless the style already has a later one (kept). Ignores the review cooldown on purpose.
 - **Nothing blocks a price.** Below cost (Amazon: cost + FBA fee) and over RRP are flagged only.
 - **Review dates** (`next_shopify_price_review`, `next_amz_price_review`) hide a style/size from Due until then; optional on every change. The periods are ONE list, `bcweb-web/src/lib/reviewPeriods.ts` (3 · 7 · 14 · 30 + a Season chip, `seasonPark()`). AMZ loaded and New Additions keep their own lists.
-- **UI words:** "Winners" on screen means ONLY the portfolio WINNERS status. The `/segments` screen is **Repricing**; the winners/losers lists are **Selling | Stuck** (code, routes and `?mode=` keep the old words). "Can't get / Release" is ordering; never call it park/unpark — "parked" means a pricing review date.
+- **UI words:** "Winners" on screen means ONLY the portfolio WINNERS status. The `/segments` screen is **Portfolio** (was Repricing; owner 2026-11-13: "more like a finance screen" — Admin group beside Finance, no header tab); the winners/losers lists are **Selling | Stuck** (code, routes and `?mode=` keep the old words). "Can't get / Release" is ordering; never call it park/unpark — "parked" means a pricing review date.
 
 ## Shopify pricing
 
 - **Home** `/pricing` → `/pricing/all?by=all` (`routes/pricing-all-list.js`): ONE list of every Shopify-live style in stock, plus every row of the status lists (0-stock included), with a Due switch. No segment pickers.
-- **Repricing** (`/segments`): tabs **Status** (default) | Segment | Campaign (`utils/pricingGroup.js`).
+- **Portfolio** (`/segments`, was Repricing): the status tiles only — the Segment / Campaign tabs and `/segments/[name]` were removed 2026-11-13 (server routes left, unused; list pages still take `?by=segment|campaign`, `utils/pricingGroup.js`).
   - Status = stored `skusummary.portfolio_status` WINNERS | STEADY | NEW | LOSERS, stamped by "Update now", rules `utils/portfolioStatus.js`. A WINNER = 12-month revenue **net of returns** > £1,500 — a FIXED bar, re-measured only on request (`node scripts/winner-bar-review.js`). **No season test and no HARVEST status** — don't add them back without the owner. An Amazon SKU takes its style's status.
   - Lead channel `skusummary.portfolio_channel` SHP | AMZ | BOTH (≥80% of 12m revenue on one channel; NULL = BOTH); a channel's lists show its own + BOTH (`channelFilterSql`, the one predicate).
   - Status lists are ONE unsplit list, **out of stock included** (prices set ahead of arrival). Segment / campaign lists need stock.
   - Tiles count STYLES (Amazon too); **no cross-channel total anywhere**. The tier toggle (`?bar=`) narrows only the WINNERS tiles. No status trend (removed — it charted the calendar).
-  - Repricing does **not** link to the order screens.
+  - Portfolio does **not** link to the order screens.
 - **Selling | Stuck**: Selling = in stock, un-parked, ≥2 units in 30d AND ≥£2 avg net profit/unit → price up. Stuck = in stock, un-parked, nothing sold in 30d → price down. Same bars on both channels, named constants in the route files. A style that sells 1 unit or sells on thin margin is on neither — deliberate, don't loosen a bar. The old LOSERS machinery was removed knowingly — read the route headers before reinstating any of it. Lists are the whole set; `limit` is only a safety cap (`utils/listLimit.js`).
 - **Drill:** header + pricing timeline (one row per price, pace `/wk` computed app-side) + size curve showing ALL sizes.
 - **Seasons** (`/seasons`) now feed only Inventory's WINTER/SUMMER commands and the Google Ads season filter.

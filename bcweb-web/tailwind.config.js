@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 // Tailwind CSS 3 (CLAUDE.md). Scans the App Router tree, shared components AND src/lib for class names.
-// src/lib MUST stay in: helpers there return class strings (segmentUi.ts → dueTone). Without it a class used ONLY there is purged —
+// src/lib MUST stay in: helpers there return class strings (e.g. orderStatusUi.ts, pickUi.ts). Without it a class used ONLY there is purged —
 // that is how the Segments green "ok" cells went white (2026-09-25): once no screen happened to use bg-green-100 too, it vanished.
 module.exports = {
   content: [
