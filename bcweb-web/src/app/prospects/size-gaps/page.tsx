@@ -391,7 +391,8 @@ function tileTip(z: SizeGapSize, sizing: string): string {
   const pp = z.per_pair != null ? ` · ${money(z.per_pair)} a pair (12m)` : '';
   if (z.state === 'held') return `${size} · ${n(z.units)} in stock${pp}`;
   if (z.state === 'onorder') return `${size} · ${n(z.on_order)} on order${pp}`;
-  if (z.state === 'selling') return `${size} · sold in the last 90 days${z.last_sale ? ` (last ${dayOf(z.last_sale)})` : ''}${pp}`;
+  // Short on purpose (owner, 2026-11-14): "sold in the last 90 days" read as "sold out" — just the date of the last sale.
+  if (z.state === 'selling') return `${size} · ${z.last_sale ? `last sale ${dayOf(z.last_sale)}` : 'sale in 90 days'}${pp}`;
   const what = (z.is_new ? 'not on our system' : `on our system, none in stock or on order, ${z.last_sale ? `last sold ${dayOf(z.last_sale)}` : 'never sold'}`) + pp;
   if (!z.mark) return `${size} · ${what}`;
   const m = z.mark;
