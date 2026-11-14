@@ -188,7 +188,7 @@ router.get('/', async (req, res) => {
     if (withCards && rows.length) {
       const codes = rows.map((r) => r.code);
       const econ = (await query(
-        `SELECT a.code, a.fbafee, sk.cost, sk.tax, sk.imagename, bb.offers, bb.featured,
+        `SELECT a.code, a.fbafee, sk.cost, sk.tax, sk.imagename, bb.offers, bb.featured, bb.sales_rank,
                 (SELECT COALESCE(SUM(s.qty), 0) FROM sales s WHERE s.channel = 'AMZ' AND s.code = a.code AND s.qty > 0
                    AND s.solddate >= CURRENT_DATE - 365)::int AS u12
          FROM amzfeed a JOIN skusummary sk ON sk.groupid = a.groupid
@@ -203,6 +203,7 @@ router.get('/', async (req, res) => {
         // THE SELLERS (the card's "N offers" pop-up, same as the Buy Box cards): the latest reading's offers and featured shares.
         row.offers = Array.isArray(e.offers) ? e.offers : [];
         row.featured = Array.isArray(e.featured) ? e.featured : [];
+        row.sales_rank = e.sales_rank === null || e.sales_rank === undefined ? null : Number(e.sales_rank);   // Fashion BSR ("Rank:")
         const ec = { cost: e.cost, fbafee: e.fbafee, tax: e.tax };
         row.imagename = e.imagename || null;
         row.u12 = Number(e.u12) || 0;

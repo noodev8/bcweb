@@ -31,6 +31,10 @@ THE BUY BOX IS SHARED BY SHARE OF VIEWS (owner, 2026-11-12 — "swap to the shar
   - OUR ELIGIBILITY (owner, 2026-11-12): itemOffers' IsFeaturedMerchant for our offer → our_eligible (+ elig on every offer in the
     offers jsonb). false = Amazon won't consider us for the Buy Box at all, so 0% whatever the price — tagged on the screen; the fix
     is in Seller Central, not the price. Kept in history (change-only), migration 20261112d. IVES-WHITE 03–09 were all eligible.
+  - SALES RANK (owner, 2026-11-14): Amazon's Fashion Best Sellers Rank, read alongside (searchCatalogItems by ASIN, 20 a call) into
+    amz_buybox_now.sales_rank — "Rank:" on the price card. Sizes carry the parent's rank (a family figure). Today only, no history.
+    0 = read fine but Amazon gave no rank ("Rank: none" on the card — usually not selling, owner 2026-11-14); NULL = the rank call
+    failed / not read (nothing shown — never mistaken for "none"), and never an error on the Buy Box reading. Migration 20261114.
 
 HISTORY (change-only, KEEP_MONTHS): a size gets a row only when holder / Buy Box price / our price / cheapest rival (seller + price) /
 rival count / our share of views (as a WHOLE %) / our eligibility differs from its previous row. Purged by the read itself: a row older than the cut-off goes only once a newer row is also
@@ -79,6 +83,7 @@ const STALE_RUN_MINUTES = 20;                // a 'running' run older than this 
 const LOCK_KEY = 'amz_buybox';
 const OFFERS_BATCH = 20; const OFFERS_WAIT_MS = 11000;
 const SUMMARY_BATCH = 20; const SUMMARY_WAIT_MS = 31000;
+const RANK_BATCH = 20; const RANK_WAIT_MS = 600;        // searchCatalogItems: 2 calls a second
 
 // Amazon's quota for these batch calls refills slowly (1 per 10 s / 30 s); amzSpApi's own 429 retry waits only ~12 s in all. A 429
 // here (two reads back to back, or the cron straight after a press) waits one full refill and tries again, up to 3 times.
@@ -254,7 +259,31 @@ async function readAmazon(sizes, onProgress = () => {}) {
       (asin) => ({ uri: '/products/pricing/2022-05-01/items/competitiveSummary', method: 'GET', asin, marketplaceId: mkt, includedData: ['featuredBuyingOptions'] }),
       summaryByAsin),
   ]);
-  return sizes.map((s) => summarise(s, offersByAsin.get(s.asin), summaryByAsin.get(s.asin), me));
+  const rankByAsin = await readRanks(asins, mkt);
+  return sizes.map((s) => ({ ...summarise(s, offersByAsin.get(s.asin), summaryByAsin.get(s.asin), me), sales_rank: rankByAsin.get(s.asin) ?? null }));
+}
+
+/** Fashion Best Sellers Rank per ASIN (header: SALES RANK). Best-effort — a failed call leaves those ranks blank. */
+async function readRanks(asins, mkt) {
+  const out = new Map();
+  const parts = chunk(asins, RANK_BATCH);
+  for (let i = 0; i < parts.length; i += 1) {
+    try {
+      const res = await sp.spGet('/catalog/2022-04-01/items', {
+        identifiers: parts[i], identifiersType: 'ASIN', marketplaceIds: mkt, includedData: 'salesRanks', pageSize: RANK_BATCH,
+      });
+      parts[i].forEach((asin) => out.set(asin, 0));   // read fine: 0 = Amazon gave no rank ("Rank: none" — usually not selling)
+      for (const item of res.items || []) {
+        const ranks = ((item.salesRanks || []).find((r) => r.marketplaceId === mkt) || (item.salesRanks || [])[0] || {}).displayGroupRanks || [];
+        const r = ranks.find((d) => /fashion/i.test(d.websiteDisplayGroup || d.title || '')) || ranks[0];
+        if (r && Number.isFinite(Number(r.rank))) out.set(item.asin, Number(r.rank));
+      }
+    } catch (e) {
+      logger.error(`amzBuyBox: sales rank batch failed: ${e.message}`);
+    }
+    if (i < parts.length - 1) await sp.sleep(RANK_WAIT_MS);
+  }
+  return out;
 }
 
 // our_share is compared and stored as a WHOLE % — Amazon's view weights move by fractions between reads, and a fraction is not news.
@@ -279,19 +308,19 @@ async function saveReadings(client, runId, readings, scopeAll) {
     await client.query(
       `INSERT INTO amz_buybox_now (code, read_at, run_id, asin, our_price, holder, bb_price, rival_seller, rival_price, next_up, rivals,
                                    rival_at_our_price, amazon_retail, our_share, lead_share, featured, competitive_price, offers, error,
-                                   our_eligible)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                                   our_eligible, sales_rank)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
        ON CONFLICT (code) DO UPDATE SET read_at = EXCLUDED.read_at, run_id = EXCLUDED.run_id, asin = EXCLUDED.asin,
          our_price = EXCLUDED.our_price, holder = EXCLUDED.holder, bb_price = EXCLUDED.bb_price, rival_seller = EXCLUDED.rival_seller,
          rival_price = EXCLUDED.rival_price, next_up = EXCLUDED.next_up, rivals = EXCLUDED.rivals,
          rival_at_our_price = EXCLUDED.rival_at_our_price, amazon_retail = EXCLUDED.amazon_retail,
          our_share = EXCLUDED.our_share, lead_share = EXCLUDED.lead_share, featured = EXCLUDED.featured,
          competitive_price = EXCLUDED.competitive_price, offers = EXCLUDED.offers, error = EXCLUDED.error,
-         our_eligible = EXCLUDED.our_eligible`,
+         our_eligible = EXCLUDED.our_eligible, sales_rank = EXCLUDED.sales_rank`,
       [r.code, now, runId, r.asin, r.our_price ?? null, r.holder || 'NONE', r.bb_price ?? null, r.rival_seller ?? null, r.rival_price ?? null,
         r.next_up ?? null, r.rivals ?? 0, !!r.rival_at_our_price, !!r.amazon_retail, r.our_share ?? null, r.lead_share ?? null,
         r.featured ? JSON.stringify(r.featured) : null, r.competitive_price ?? null, r.offers ? JSON.stringify(r.offers) : null, r.error,
-        r.our_eligible ?? null]);
+        r.our_eligible ?? null, r.sales_rank ?? null]);
     if (r.error) continue; // a failed read says nothing about the Buy Box — no history row
     const p = last.get(r.code);
     if (p && HISTORY_KEYS.every((k) => same(p[k], r[k]))) continue;
@@ -387,6 +416,7 @@ async function readScreen(db) {
       our_price: num(r.our_price), set_since: num(r.set_since), rrp: num(r.rrp),
       holder: r.holder, bb_price: num(r.bb_price), rivals: Number(r.rivals), rival_price: num(r.rival_price), rival_seller: r.rival_seller,
       next_up: num(r.next_up), rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail, our_eligible: r.our_eligible,
+      sales_rank: r.sales_rank === null || r.sales_rank === undefined ? null : Number(r.sales_rank),
       our_share: num(r.our_share), lead_share: num(r.lead_share), featured: r.featured || [],
       competitive_price: num(r.competitive_price), offers: r.offers || [], error: r.error,
       group: c.group, target: c.target, kept: c.kept, walk: c.walk,

@@ -323,7 +323,7 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
       ) : undefined}
       priceStr={priceStr} setPriceStr={setPriceStr}
       now={now} profitNow={card.profit_now} profitAt={(p) => profitAt(card, p)} rrp={card.rrp}
-      holder={holderLabel(card)} share={card.bb_share ?? null} matchAt={matchAt} offers={card.offers} featured={card.featured}
+      holder={holderLabel(card)} share={card.bb_share ?? null} matchAt={matchAt} offers={card.offers} featured={card.featured} rank={card.sales_rank ?? null}
       facts={<>
         <div>
           <span className={card.fba === 0 ? 'text-amber-700' : ''}>{card.fba} at Amazon{card.fba_inbound ? ` · +${card.fba_inbound} coming` : ''}</span>

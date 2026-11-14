@@ -421,7 +421,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
       floor: answer === 'new' ? r.breakeven : r.walk,
       holder: r.holder, bb_price: r.bb_price, lead_share: r.lead_share, our_share: r.our_share, next_up: r.next_up, rivals: r.rivals,
       rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail,
-      offers: r.offers, featured: r.featured,
+      offers: r.offers, featured: r.featured, sales_rank: r.sales_rank ?? null,
       suggest: s.price, suggest_note: s.note, over_lead: !!s.over_lead,
       profit_now: profitNow, profit_suggest: profitSuggest, profit_line: profitLine(econ),
       gain_week: gain, stake,

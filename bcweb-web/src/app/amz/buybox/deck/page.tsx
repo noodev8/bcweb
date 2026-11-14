@@ -483,7 +483,7 @@ function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, on
       profitExtra={room && !edited && !setDone && card.gain_week !== null && card.gain_week > 0
         ? <span className="text-slate-500" title="About this much more profit a week if it keeps selling at the same pace">+£{card.gain_week.toFixed(2)} a week</span>
         : undefined}
-      holder={holderOf(card)} share={card.our_share} matchAt={matchAt} offers={card.offers} featured={card.featured}
+      holder={holderOf(card)} share={card.our_share} matchAt={matchAt} offers={card.offers} featured={card.featured} rank={card.sales_rank ?? null}
       bbTags={<>
         {card.rival_at_our_price && (
           <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-px text-[11px] text-slate-600"

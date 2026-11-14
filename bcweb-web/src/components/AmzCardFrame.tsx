@@ -36,6 +36,10 @@ import type { AmzBuyBoxFeatured, AmzBuyBoxOffer, AmzLastChange } from '@/lib/api
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
 const NUDGES = [-1, -0.5, -0.3, 0.3, 0.5, 1];   // the price screen's steps (components/AmzPriceSetter)
 
+// Amazon's own seller id on amazon.co.uk — names its row in the sellers pop-up (owner, 2026-11-14). The server's copy (the
+// "Amazon sells it" tag) is utils/amzBuyBox.js AMAZON_RETAIL_UK.
+const AMAZON_RETAIL_UK = 'A3P5ROKL5A1OLE';
+
 export const money = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `£${v.toFixed(2)}`);
 const r2 = (n: number) => Math.round(n * 100) / 100;
 // Profit a pair: red when it is a loss — the only colour.
@@ -75,6 +79,7 @@ export interface AmzCardFrameProps {
   share: number | null;                               // our share of views
   matchAt: number | null;                             // the lead's price — null when we hold it / unknown
   offers?: AmzBuyBoxOffer[]; featured?: AmzBuyBoxFeatured[];
+  rank?: number | null;                               // Amazon Fashion Best Sellers Rank (owner, 2026-11-14: "Rank:", nothing else)
   bbTags?: ReactNode;                                 // "following us", "Amazon sells it"
   // FACTS — one or two quiet lines
   facts: ReactNode;
@@ -89,6 +94,16 @@ export interface AmzCardFrameProps {
 export default function AmzCardFrame(p: AmzCardFrameProps) {
   const [imgFailed, setImgFailed] = useState(false);
   const boxRef = useRef<HTMLInputElement>(null);
+  // The sellers pop-up closes on a click anywhere outside it (owner, 2026-11-14) — <details> alone only closes on its own summary.
+  const offersRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      const d = offersRef.current;
+      if (d?.open && !d.contains(e.target as Node)) d.open = false;
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, []);
   const price = Number.parseFloat(p.priceStr);
   const valid = Number.isFinite(price) && price > 0;
   const changed = valid && (p.now === null || Math.round(price * 100) !== Math.round(p.now * 100));
@@ -142,11 +157,27 @@ export default function AmzCardFrame(p: AmzCardFrameProps) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2" title={p.code}>
-            <span className="font-mono text-base font-semibold text-slate-900">{p.groupid && p.size ? p.groupid : p.code}</span>
-            {p.groupid && p.size && <span className="rounded bg-slate-900 px-2 py-0.5 text-sm font-semibold text-white">{p.size}</span>}
+            {/* The full code, size included — no separate size badge (owner, 2026-11-14: "takes focus away") */}
+            <span className="font-mono text-base font-semibold text-slate-900">{p.code}</span>
             {p.counter && <span className="text-xs tabular-nums text-slate-400">{p.counter}</span>}
           </div>
           <div className="mt-0.5 truncate text-sm text-slate-600" title={p.title || undefined}>{p.title || '—'}<span className="ml-2 text-slate-400">{p.brand}</span></div>
+          {/* RRP + Rank by the title (owner, 2026-11-14: the Buy Box line was cramped). RRP always shown ("add RRP as well"); amber,
+              worded "over", only when the box is above it. A tap puts it in the box ("some suppliers insist on RRP") — like Match, it
+              only fills the box; Set still writes. Rank: Amazon's Fashion rank — 0 = Amazon gave none ("none", usually not selling);
+              null = not read, shown as nothing. */}
+          {(p.rrp !== null || p.rank != null) && (
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-4 text-sm text-slate-500">
+              {p.rrp !== null && (
+                <button type="button" onClick={() => p.setPriceStr(p.rrp!.toFixed(2))} disabled={p.locked}
+                  title="Put the RRP in the box (Set still sends it)"
+                  className={'hover:text-slate-900 ' + (valid && price > p.rrp + 0.005 ? 'text-amber-700' : '')}>
+                  {valid && price > p.rrp + 0.005 ? 'over ' : ''}RRP {money(p.rrp)}
+                </button>
+              )}
+              {p.rank != null && <span>Rank: <b className="font-medium tabular-nums text-slate-900">{p.rank > 0 ? p.rank.toLocaleString('en-GB') : 'none'}</b></span>}
+            </div>
+          )}
           {p.status && <div className="mt-1 text-sm font-medium">{p.status}</div>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-0.5 text-sm sm:flex-row sm:gap-4">
@@ -187,15 +218,6 @@ export default function AmzCardFrame(p: AmzCardFrameProps) {
           <span>Now <b className="tabular-nums text-slate-900">{money(p.now)}</b> keeps <b className={'tabular-nums ' + keepCls(p.profitNow)}>{money(p.profitNow)}</b> a pair</span>
           {changed && <span>→ at {money(price)} keeps <b className={'tabular-nums ' + keepCls(profit)}>{money(profit)}</b></span>}
           {p.profitExtra}
-          {/* RRP always shown (owner, 2026-11-14: "add RRP as well"); amber, worded "over", only when the box is above it. A tap puts
-              it in the box ("some suppliers insist on RRP") — like Match, it only fills the box; Set still writes. */}
-          {p.rrp !== null && (
-            <button type="button" onClick={() => p.setPriceStr(p.rrp!.toFixed(2))} disabled={p.locked}
-              title="Put the RRP in the box (Set still sends it)"
-              className={'hover:text-slate-900 ' + (valid && price > p.rrp + 0.005 ? 'text-amber-700' : 'text-slate-500')}>
-              {valid && price > p.rrp + 0.005 ? 'over ' : ''}RRP {money(p.rrp)}
-            </button>
-          )}
         </div>
         <div className="relative mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
           <span>Buy Box <b className="font-medium text-slate-900">{p.holder}</b>
@@ -203,7 +225,7 @@ export default function AmzCardFrame(p: AmzCardFrameProps) {
             {p.offers && p.offers.length > 0 && (
               <>
                 {' · '}
-                <details className="inline">
+                <details ref={offersRef} className="inline">
                   <summary className="inline cursor-pointer list-none text-brand-700 hover:underline">{p.offers.length} offers</summary>
                   {/* The sellers pop-up — over the card, so it never takes space. BB = Amazon's own Buy Box winner flag (itemOffers):
                       the share-of-views list can leave a winner out (L3882-00-38: £53.24 flagged, 16% of views credited to nobody). */}
@@ -216,7 +238,7 @@ export default function AmzCardFrame(p: AmzCardFrameProps) {
                           return (
                             <tr key={`${o.seller}-${i}`} className={o.us ? 'font-semibold text-slate-900' : 'text-slate-600'}>
                               <td className="py-px pr-4 tabular-nums">{money(o.price)}</td>
-                              <td className="py-px pr-4">{o.us ? 'Us' : isLead ? 'Lead' : 'Rival'}</td>
+                              <td className="py-px pr-4">{o.us ? 'Us' : o.seller === AMAZON_RETAIL_UK ? (isLead ? 'Amazon · lead' : 'Amazon') : isLead ? 'Lead' : 'Rival'}</td>
                               <td className="py-px pr-4">{o.fba ? 'FBA' : 'Self-post'}</td>
                               <td className="py-px pr-3">{o.bb && <span className="rounded border border-emerald-300 px-1 text-[10px] font-medium text-emerald-700" title="Amazon flags this offer as a Buy Box winner">BB</span>}</td>
                               <td className="py-px tabular-nums text-emerald-700">{f && f.share > 0 ? `${Math.round(f.share)}%` : ''}</td>

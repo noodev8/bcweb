@@ -572,6 +572,7 @@ export interface AmzPriceCard extends AmzWinnerRow {
   bb_suggest?: number | null; bb_suggest_note?: string | null; bb_deck?: AmzDeckKind | null;
   // The same as the Buy Box cards (owner, 2026-11-14): the latest reading's sellers (the sellers pop-up) and the last real price move.
   offers?: AmzBuyBoxOffer[]; featured?: AmzBuyBoxFeatured[];
+  sales_rank?: number | null;   // Amazon Fashion Best Sellers Rank (the parent's — a family figure), latest Buy Box read
   last_change?: AmzLastChange | null;
 }
 export function getAmzDueCards() {
@@ -695,6 +696,7 @@ export interface AmzBuyBoxRow {
   // SHARE OF VIEWS (2026-11-12): our_share = % of page views where we are the featured offer (null = not known this read);
   // lead_share = the share of the offer featured to the most views — holder / bb_price are that offer's.
   our_share: number | null; lead_share: number | null; featured: AmzBuyBoxFeatured[];
+  sales_rank: number | null;     // Amazon Fashion Best Sellers Rank (the parent's), 0 = Amazon gave none, null = not read
   competitive_price: number | null;
   offers: AmzBuyBoxOffer[]; error: string | null;
   group: AmzBuyBoxGroup; target: number | null; kept: number | null; walk: number | null;
@@ -752,6 +754,7 @@ export interface AmzDeckCard {
   floor: number | null;   // the card's floor: break-even on New, the £3 walk-away everywhere else
   holder: AmzBuyBoxHolder; bb_price: number | null; lead_share: number | null; our_share: number | null; next_up: number | null; rivals: number;
   rival_at_our_price: boolean; amazon_retail: boolean; offers: AmzBuyBoxOffer[]; featured: AmzBuyBoxFeatured[];
+  sales_rank: number | null;     // Amazon Fashion Best Sellers Rank ("Rank:" on the card)
   suggest: number; suggest_note: string;
   over_lead: boolean;   // cut: the suggestion is 2% OVER a self-posting lead (a trial), not a penny under it
   profit_now: number | null; profit_suggest: number | null;
