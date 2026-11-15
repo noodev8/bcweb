@@ -9,8 +9,9 @@ Purpose: Get Google's own numbers into the database. Pick the report file(s), se
          What it does show at all times is HOW OLD the data is, because every number below it is only as current as the last import.
 
 WHY THERE IS NO SCHEDULE
-Imports are deliberately unscheduled (docs/google-ads-spec.md §7.8). The operator downloads the reports when about to work the
-screen, which may be weekly or quarterly. That makes staleness a normal state rather than a fault — so it is reported plainly instead
+Since 2026-11-15 the nightly sweep imports from the Google Ads API (scripts/google-ads-sweep.js, docs/google-ads-spec.md §8); this
+panel is the fallback and the way to back-fill a range by hand. Before that, imports were unscheduled — the operator downloaded the
+reports when about to work the screen, which might be weekly or quarterly. That makes staleness a normal state rather than a fault — so it is reported plainly instead
 of being treated as an error.
 
 WHY THE FRESHNESS LINE EXISTS (AND WHY IT NO LONGER SHOWS GAPS)

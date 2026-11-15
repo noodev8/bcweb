@@ -121,6 +121,13 @@ module.exports = {
     feedLabel: process.env.GOOGLE_FEED_LABEL || 'GB'
   },
 
+  // Google Ads API — the nightly report sweep (scripts/google-ads-sweep.js via utils/googleAdsApi.js). Reuses the SAME service account
+  // as `google` above (added as a read-only user in the Ads account), so the only value here is which Ads account to read: the 10-digit
+  // customer ID from the top of the Google Ads screen. Optional: unset, the sweep says NOT CONFIGURED and the CSV upload still works.
+  googleAds: {
+    customerId: process.env.GOOGLE_ADS_CUSTOMER_ID || ''
+  },
+
   // Google Sheets — the owner's car mileage log, read (never written) by /finance-car so the Finance screen can pre-fill the Car box
   // instead of the owner opening the sheet and adding the month up by hand. Reuses the SAME service account as `google` above
   // (GOOGLE_MERCHANT_CREDENTIALS_JSON), so there is no second credential to manage: only the sheet id and tab live here.

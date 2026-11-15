@@ -8,11 +8,11 @@ Purpose: Google Ads module — how fresh is the ad data, and where are the holes
          Requires auth. Read-only.
 
 WHY THIS IS MORE THAN "WHEN DID IT LAST RUN"
-Imports here are deliberately unscheduled — the owner downloads the reports when they are about to work the screen, which may be
-weekly or may be quarterly (docs/google-ads-spec.md §7.8). That makes staleness a normal state rather than a fault, and it makes
-the SHAPE of what we hold the thing worth reporting:
+Since 2026-11-15 the nightly sweep (scripts/google-ads-sweep.js) imports the last 30 days from the Google Ads API, so the data should
+be at most a day or two old; the upload remains for back-fills (docs/google-ads-spec.md §8). Staleness now means the sweep has
+stopped — its bclog row says why. Either way the SHAPE of what we hold is the thing worth reporting:
 
-  - `lastRun`   when a human last imported anything (bclog).
+  - `lastRun`   when the last successful import ran — upload or sweep (bclog; `by` is 'Scheduler' for the sweep).
   - `coverage`  the first and last day we actually hold data for, per report, and how many days that is.
   - `gaps`      days INSIDE that range with nothing at all.
 
@@ -128,6 +128,10 @@ router.get('/', async (req, res) => {
              workstation AS by
         FROM bclog
        WHERE section = 'Google Ads'
+         -- Imports only: the screen's Assign / Campaign rows share this section and are not imports. 'Import:' is the upload,
+         -- 'Import (API):' the nightly sweep (scripts/google-ads-sweep.js). A failed sweep ('Import (API) FAILED') wrote nothing, so it
+         -- is not the last import; a broken sweep shows as the freshness line ageing (coverage below), and its reason is in bclog.
+         AND log LIKE 'Import%' AND log NOT LIKE '%FAILED%'
        ORDER BY created_at DESC
        LIMIT 1
     `);

@@ -597,11 +597,15 @@ price and sales timeline. Enough to answer "did moving this style change anythin
 
 ## 7.8 What the owner actually has to do
 
-The whole operating routine, once built:
+**Since 2026-11-15: nothing.** The nightly sweep (§8) reads both reports from the Google
+Ads API and imports the last 30 days through the same plan as the upload. The rest of
+this section is the manual routine, kept for the fallback: the upload panel still works,
+and it's how to back-fill a range by hand (or run the sweep with `--from/--to`).
+
+The manual routine, as first built:
 
 **When you want to work the screen** — download both saved reports from the Google Ads
-Report editor, drop them on the import panel, commit. Then use the screen. That is it.
-No folder, no schedule, no cron.
+Report editor, drop them on the import panel, commit. Then use the screen.
 
 **The one rule:** if it has been more than 30 days since the last import, widen the
 report's date range to cover the gap before downloading. Otherwise the missed days fall
@@ -625,29 +629,40 @@ someone forgets:
 
 ---
 
-## 8. Automation — the honest phasing
+## 8. Automation — the API sweep (built 2026-11-15)
 
-The owner asked whether the upload can be automated away. It can, but not in v1.
+**Phase 1** was the manual download + upload (§7.8), with the parser written as a pure
+function over parsed rows so the API could be a swap and not a rewrite. It was.
 
-**Phase 1 (this spec).** Manual download from the Report editor, upload on the screen.
-Immediate, no external approvals, and the parser is written as a pure function over
-parsed rows — deliberately, so phase 2 is a swap and not a rewrite.
+**Phase 2 — `scripts/google-ads-sweep.js`, nightly on the VPS cron.** Reads both reports
+from the Google Ads API (`utils/googleAdsApi.js`, THE one place BCWEB calls it) for the
+last 30 days to yesterday, and hands rows in `parseReport()`'s shape to the same
+`buildPlan` / `applyProduct` / `applyCampaign` as the upload. Dry run by default;
+`--commit` writes in one transaction with a bclog row (`Import (API): …`, who
+`Scheduler`); a failure writes `Import (API) FAILED …` and nothing else.
+`--days N` or `--from/--to` widen the window for a back-fill.
 
-**Phase 2 (later).** Google Ads API pull on a cron sweep, no upload at all. Shape:
-`scripts/google-ads-sweep.js`, same pattern as `scripts/google-price-sweep.js`.
+What it needed — less than this section first said (the original plan assumed an MCC,
+a developer token and an OAuth refresh token; Google changed the rules):
 
-What phase 2 requires, so it is not a surprise:
+- **No developer token.** Google retired them on 2026-09-09; access belongs to the
+  Google Cloud project. `merchant-feed-api-462809` has **Explorer** access (2,880
+  operations a day; the sweep uses two).
+- **No new credential.** The existing merchant-feed service account asks for the
+  `adwords` scope (`utils/googleAuth.js`). It works because its email is added as a
+  **read-only user** in the Google Ads account (Admin → Access and security) — Google's
+  direct service-account access, no Workspace delegation needed.
+- **One `.env` var**, `GOOGLE_ADS_CUSTOMER_ID` (3313418382), set by hand on the VPS.
 
-- A **developer token**, applied for through a Google Ads Manager (MCC) account. Basic
-  access is usually granted in a few days but it is an application, not a setting.
-- An **OAuth2 client and refresh token**. The existing `merchant-feed-api` service
-  account **cannot be reused** — the Google Ads API rejects service accounts without
-  Workspace domain-wide delegation, and `brookfieldcomfort@gmail.com` is a consumer
-  account. This needs the installed-app OAuth flow, like `drive_token.json`.
-- A new `.env` var set on the VPS **by hand** — the deploy rsync excludes `.env`.
+Checked against the stored CSV imports on the first run: every overlapping product row
+(2,003) and every campaign click / impression / cost / share figure matched exactly.
+The API also fills two things the saved campaign report never carried —
+`lost_is_budget` and conversions. Censoring is the same as the export (0.0999 / 0.9001
+in the API = '< 10%' / '> 90%' → NULL). How each API difference is matched to the CSV
+is in the header of `utils/googleAdsApi.js`.
 
-Not hard, but it is a week of waiting on Google that should not hold up a screen that
-is useful the day it ships.
+The API version is pinned there (`v25`). When Google retires it, the sweep's bclog row
+says so and the screen's freshness line starts ageing — bump the constant.
 
 ---
 
