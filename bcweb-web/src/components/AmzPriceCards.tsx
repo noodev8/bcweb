@@ -17,7 +17,13 @@ Purpose: Owner: "the usual price change screen but reduced to cards to make it e
            ONE STYLE    /amz/search-cards?g=<groupid>&from=&back=  the search cards for one style exactly (server matchesStyle) —
                                            the product menu's Amazon Price card (components/ProductNavCards; owner, 2026-11-13, from
                                            New Additions: "choose a style … and go through the cards"). Back returns to ?from=.
-         Data: GET /amz-all-list ?cards=1 (getAmzDueCards / getAmzSearchCards).
+           STEP CARDS   /amz/step-cards?step=<list>&when=<chip>[&at=<code>]  a Stock ladder list's sizes (owner, 2026-11-15,
+                                           docs/stock-ladder.md): Overstocked · Unsold 90 · Unsold 180 · Clearance, opened by the
+                                           list's PRICE THESE for what the list is showing (its chip: due · week · later · all). Never a
+                                           Buy Box size (server). Walked in order like search; a not-due size's Leave is "Next". The
+                                           reason line is the step's AIM (lib/stockLadder → stepAim) — no suggestion (owner, option A).
+                                           Back = the list on the same chip.
+         Data: GET /amz-all-list ?cards=1 (getAmzDueCards / getAmzSearchCards / getAmzStepCards).
 
 NO SUGGESTION of its own (owner: "no suggestion — I'll type the price or give me the options like we have on the amazon price
          screen. up, down, set"). On a search card a size with a Buy Box card in the chosen mood shows THAT card's suggestion (server
@@ -50,17 +56,19 @@ import Link from 'next/link';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzCardFrame, { LastChangeLine, money } from '@/components/AmzCardFrame';
-import { applyAmzPrice, getAmzDueCards, getAmzSearchCards, markAmzReviewed, type AmzMood, type AmzPriceCard } from '@/lib/api';
+import { applyAmzPrice, getAmzDueCards, getAmzSearchCards, getAmzStepCards, markAmzReviewed, type AmzMood, type AmzPriceCard,
+  type LadderListKey } from '@/lib/api';
+import { CHIPS, LIST_TEXT, isChip, isLadderList, stepAim, stepListHref } from '@/lib/stockLadder';
 import { REVIEW_PERIODS, seasonPark } from '@/lib/reviewPeriods';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useAuth } from '@/contexts/AuthContext';
 import { prettyPathLabel } from '@/lib/nav';
 
-export type PriceCardsMode = 'due' | 'search';
+export type PriceCardsMode = 'due' | 'search' | 'step';
 
 const DEFAULT_REVIEW = 7;                        // header: the skill's REVIEW_AFTER_PRICE_DAYS
-const NOTE = { due: 'Due card', search: 'Search card' } as const;
+const NOTE = { due: 'Due card', search: 'Search card', step: 'Step card' } as const;
 const END = '__end__';                           // search cards: past the last card
 // Taken once at module load (react-hooks/purity): the Season chip and "n days ago".
 const SEASON = seasonPark();
@@ -109,22 +117,33 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const moodParam = useUrlParam('mood');
   const mood: AmzMood = moodParam === 'fierce' || moodParam === 'climb' ? moodParam : 'chilled';
   const at = useUrlParam('at');   // the card to open on (the full price screen's Back)
+  // STEP CARDS (header): the Stock ladder list and its chip.
+  const stepParam = useUrlParam('step');
+  const step = isLadderList(stepParam) ? stepParam : null;
+  const whenParam = useUrlParam('when');
+  const when = isChip(whenParam) ? whenParam : 'all';
+  const walk = mode !== 'due';   // search and step cards walk start to end; due cards wrap round to what's left
+  // The log note: "Step card · Unsold 90" says which list the price came from.
+  const noteFor = mode === 'step' && step ? `${NOTE.step} · ${LIST_TEXT[step].name}` : NOTE[mode];
   // CAME FROM ANOTHER SCREEN (the product menu passes ?from= / ?back=): Back returns there. Our own paths only.
   const fromRaw = useUrlParam('from');
   const from = fromRaw && fromRaw.startsWith('/') && !fromRaw.startsWith('//') ? fromRaw : null;
-  const backLabel = useUrlParam('back') || (from ? prettyPathLabel(from) : 'Amazon Pricing');
+  const backLabel = useUrlParam('back') || (from ? prettyPathLabel(from) : mode === 'step' && step ? LIST_TEXT[step].name : 'Amazon Pricing');
   const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
-  const backHref = from ?? (mode === 'search' && q ? `/amz?q=${encodeURIComponent(q)}` : '/amz');
+  const backHref = from ?? (mode === 'step' && step ? stepListHref(step, when)
+    : mode === 'search' && q ? `/amz?q=${encodeURIComponent(q)}` : '/amz');
   const fromQs = from ? `&from=${encodeURIComponent(from)}&back=${encodeURIComponent(backLabel)}` : '';
   const selfPath = mode === 'search'
     ? `/amz/search-cards?${g ? `g=${encodeURIComponent(g)}` : `q=${encodeURIComponent(q)}`}&mood=${mood}${fromQs}`
-    : '/amz/due-cards';
+    : mode === 'step' ? `/amz/step-cards?step=${step ?? ''}&when=${when}` : '/amz/due-cards';
 
   // A snapshot (header): nothing refetches by itself. Waits for the client (useUrlParam reads null until hydrated).
   const key = !hydrated ? null : mode === 'due' ? ['amz-price-cards', 'due']
-    : g ? ['amz-price-cards', 'style', g, mood] : q ? ['amz-price-cards', 'search', q, mood] : null;
+    : mode === 'step' ? (step ? ['amz-price-cards', 'step', step, when] : null)
+      : g ? ['amz-price-cards', 'style', g, mood] : q ? ['amz-price-cards', 'search', q, mood] : null;
   const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(key,
-    () => (mode === 'due' ? getAmzDueCards() : getAmzSearchCards(g ? { g } : { q }, mood)),
+    () => (mode === 'due' ? getAmzDueCards() : mode === 'step' ? getAmzStepCards(step as LadderListKey, when)
+      : getAmzSearchCards(g ? { g } : { q }, mood)),
     { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false });
   // FRESH ON EVERY OPEN (owner, 2026-11-13: Daily said 8 due, the screen showed 0 until Refresh — a copy from an earlier visit).
   // revalidateOnMount reads again on every open; until that read is in, nothing shows, so a card is never priced from the old copy.
@@ -157,7 +176,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   // The next card after `code`: DUE wraps round to what's still to do (null = Due is clear); SEARCH walks on in order (END at the end).
   function nextAfter(code: string, doneNow: Map<string, Done>): string | null {
     const i = cards.findIndex((c) => c.code === code);
-    if (mode === 'search') return cards[i + 1]?.code ?? END;
+    if (walk) return cards[i + 1]?.code ?? END;
     const order = [...cards.slice(i + 1), ...cards.slice(0, i)];
     return order.find((c) => !doneNow.has(c.code))?.code ?? null;
   }
@@ -165,7 +184,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   async function setPrice(card: AmzPriceCard, price: number, used: boolean) {
     if (busy) return;
     setBusy(true); setMsg(null);
-    const res = await applyAmzPrice(card.code, price, `${NOTE[mode]}${used ? ' (Buy Box suggestion)' : ''}`, review);
+    const res = await applyAmzPrice(card.code, price, `${noteFor}${used ? ' (Buy Box suggestion)' : ''}`, review);
     setBusy(false);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
     if (!res.success || !res.data) { setMsg({ text: `${card.code}: ${res.error || 'could not set the price'}`, tone: 'err' }); return; }
@@ -185,7 +204,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
     const nextDone = new Map(done).set(card.code, { kind: 'left' });
     setDone(nextDone);
     setCur(nextAfter(card.code, nextDone));
-    const res = await markAmzReviewed([card.code], review, `${NOTE[mode]} — left`);
+    const res = await markAmzReviewed([card.code], review, `${noteFor} — left`);
     if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
     if (!res.success) {
       setDone((p) => { const n = new Map(p); if (n.get(card.code)?.kind === 'left') n.delete(card.code); return n; });
@@ -207,10 +226,12 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
 
   const setCount = cards.filter((c) => done.get(c.code)?.kind === 'set').length;
   const leftCount = cards.filter((c) => done.get(c.code)?.kind === 'left').length;
-  const title = mode === 'due' ? 'Not selling · due' : g ? `Style ${g}` : `Search “${q}”`;
+  const title = mode === 'due' ? 'Not selling · due'
+    : mode === 'step' ? `${step ? LIST_TEXT[step].name : 'Range'} · ${CHIPS.find((c) => c.key === when)?.label ?? 'All'}`
+      : g ? `Style ${g}` : `Search “${q}”`;
 
   return (
-    <AppShell crumb={<span className="font-medium text-slate-800">{mode === 'due' ? 'Due cards' : 'Search cards'}</span>}>
+    <AppShell crumb={<span className="font-medium text-slate-800">{mode === 'due' ? 'Due cards' : mode === 'step' ? 'Step cards' : 'Search cards'}</span>}>
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
         {/* TOOLBAR — Back · what these cards are · progress count · Refresh. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -252,7 +273,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
         {data?.truncated && <p className="text-sm text-amber-700">Showing the first {cards.length} of {data.total} — narrow the search.</p>}
 
         {data && (current ? (
-          <Card key={current.code} mode={mode} card={current} n={index + 1} of={cards.length} busy={busy} done={done.get(current.code) ?? null}
+          <Card key={current.code} mode={mode} step={step} card={current} n={index + 1} of={cards.length} busy={busy} done={done.get(current.code) ?? null}
             review={review} onReview={setReview} onSet={(p, used) => setPrice(current, p, used)} onLeave={() => leave(current)} onPrev={previous}
             onNext={() => setCur(nextAfter(current.code, done))}
             priceScreenHref={`/amz/sku/${encodeURIComponent(current.code)}?from=${encodeURIComponent(`${selfPath}${selfPath.includes('?') ? '&' : '?'}at=${encodeURIComponent(current.code)}`)}`} />
@@ -260,6 +281,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
           <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-center shadow-sm">
             <div className="text-lg font-medium text-slate-900">
               {mode === 'due' ? (cards.length ? 'All done — Due is clear' : 'Nothing due')
+                : mode === 'step' ? (cards.length ? 'End of the list' : 'Nothing to price on this list')
                 : cards.length ? (g ? 'End of the style' : 'End of the search')
                   : g ? `${g} has no sizes at Amazon` : `Nothing at Amazon matches “${q}”`}
             </div>
@@ -267,7 +289,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
               {cards.length ? `${setCount} set · ${leftCount} left. ` : ''}
               {mode === 'due' ? 'A size comes back when its review date comes round.' : ''}
             </p>
-            {mode === 'search' && cards.length > 0 && (
+            {walk && cards.length > 0 && (
               <button type="button" onClick={() => setCur(cards[0].code)} className="mt-3 text-sm text-brand-700 hover:underline">Start again from the first card</button>
             )}
           </div>
@@ -287,8 +309,8 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   );
 }
 
-function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave, onPrev, onNext, priceScreenHref }: {
-  mode: PriceCardsMode; card: AmzPriceCard; n: number; of: number; busy: boolean; done: Done | null;
+function Card({ mode, step, card, n, of, busy, done, review, onReview, onSet, onLeave, onPrev, onNext, priceScreenHref }: {
+  mode: PriceCardsMode; step: LadderListKey | null; card: AmzPriceCard; n: number; of: number; busy: boolean; done: Done | null;
   review: number; onReview: (d: number) => void;
   onSet: (price: number, usedSuggestion: boolean) => void; onLeave: () => void; onPrev: () => void; onNext: () => void;
   priceScreenHref: string;
@@ -304,13 +326,15 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
   const suggest = mode === 'search' ? card.bb_suggest ?? null : null;
   const usedSuggestion = suggest !== null && valid && Math.round(price * 100) === Math.round(suggest * 100);
   // A not-due search card is only looked at (header): its Leave is Next — nothing written, its review date kept.
-  const lookOnly = mode === 'search' && card.parked;
+  const lookOnly = mode !== 'due' && card.parked;   // search and step cards
   const forward = () => (done || lookOnly ? onNext() : onLeave());
 
   const reviewChips = [...REVIEW_PERIODS.map((d) => ({ days: d, label: `${d}d`, title: `Review in ${d} days` })),
     { days: SEASON.days, label: SEASON.label, title: SEASON.title }];
   const pill = 'inline-flex h-9 min-w-[3.25rem] items-center justify-center rounded-md border px-2 text-sm font-medium tabular-nums';
-  const status = mode === 'search' ? statusOf(card) : null;
+  const status = mode !== 'due' ? statusOf(card) : null;
+  // STEP CARDS (header): the step's aim is the reason line — no suggestion.
+  const aim = mode === 'step' && step ? stepAim(step, card.ladder_idle_days ?? 0, card.ladder_over ?? 0) : null;
 
   return (
     <AmzCardFrame
@@ -325,7 +349,7 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
           <button type="button" onClick={() => setPriceStr(suggest.toFixed(2))} disabled={usedSuggestion}
             className="ml-auto rounded-md border border-slate-300 bg-white px-3 py-1 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40">Use it</button>
         </>
-      ) : undefined}
+      ) : aim ? <span className="text-slate-700">{aim}</span> : undefined}
       priceStr={priceStr} setPriceStr={setPriceStr}
       now={now} profitNow={card.profit_now} profitAt={(p) => profitAt(card, p)} rrp={card.rrp}
       holder={holderLabel(card)} share={card.bb_share ?? null} matchAt={matchAt} busy={busy || done?.kind === 'set'} onMatch={(m) => { if (!busy) onSet(m, false); }} offers={card.offers} featured={card.featured} rank={card.sales_rank ?? null}

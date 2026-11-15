@@ -1,6 +1,6 @@
 # Stock Ladder
 
-Agreed with the owner 2026-11-15. **Nothing built yet.** Doc with flow chart: https://claude.ai/artifact/L4gnEvZYgria73p6MPUr5i
+Agreed with the owner 2026-11-15. **Built:** the front screen (Range) and the drill-down below. Doc with flow chart: https://claude.ai/artifact/L4gnEvZYgria73p6MPUr5i
 
 Every SKU we hold sits in exactly ONE of five buckets, set by how long it has gone without a sale. Purpose: see a SKU's bucket while
 pricing, and pick a bucket and price it.
@@ -66,6 +66,29 @@ Agreed 2026-11-15. Sits on top of step 2 (Sold 90).
   of all SKUs, its SKU count and units, and each opening its own list (Range's list layout). Step 2's box also shows its Overstocked
   count.
 
+## Drill-down from each box (agreed and built 2026-11-15 — membership `utils/stockLadderList.js`, list `/analytics/slow-sizes/step`, cards `/amz/step-cards`)
+
+Birkenstock and Shopify are left out of these decisions for now (owner: "too many variables and mixes"). Counted that day, Birkenstock
+was most of the stock on Overstocked (60 of 71), Unsold 90 (303 of 365) and Clearance (100 of 163), and nearly all of it local.
+
+- **Arrived, Sold 90:** a list only, perhaps with a link to Amazon Pricing. No step cards. The Buy Box already prices these sizes
+  (New, Raise, Cut), and a second door to the same sizes was rejected on 13 Nov.
+- **Overstocked, Unsold 90, Unsold 180, Clearance:** list first, then cards.
+  - The list shows every size on the step: days since the last sale, the review date, and pairs over for Overstocked.
+  - **Chips at the top, no separate summary screen:** Due n · Within a week n · Later n · All n. A chip narrows the list; it opens on
+    **Due**.
+  - **Price these (n)** opens the Amazon price cards (THE card layout, `components/AmzCardFrame.tsx`) for the sizes the list is
+    showing, with the step's aim on the reason line. A single size can be opened from its row.
+  - **Due = `utils/amzDue.js`, unchanged.** Pricing early from Within a week / Later is the owner's choice and sets a new review date
+    as normal. The step changes no rule (Season parks still hold on Due, e.g. a sandal in November).
+  - A Buy Box size on the step (sold on Amazon in 30 days) shows under All only, marked "Buy Box", and is never carded here.
+- Sizes that day (live at FBA, Birkenstock left out): Overstocked 10, Unsold 90 50, Unsold 180 6, Clearance 25. None were due.
+
 ## Still to decide
 - [ ] Worked examples for each move.
-- [ ] What each bucket does on Amazon, and whether any bucket goes to eBay.
+- [x] **What the step cards suggest: nothing (owner, 2026-11-15, option A).** The box starts at today's price, as the due cards do;
+      the step's aim is only the reason line (Overstocked = sell down to 4 months' worth, with pairs over; Unsold 90 = a gentle cut;
+      Unsold 180 = a firmer cut; Clearance = clear the lot, a loss is OK). No new pricing rule. Rejected for now: a set cut per step
+      (e.g. −5% / −10%) — revisit only if the presses show a steady habit.
+- [ ] Clearance: an option to send to eBay at 50% (owner). eBay's rules already start 9-month sizes at 50% of RRP and list FBA stock (MCF).
+- [ ] Birkenstock / Shopify on the steps.

@@ -3,7 +3,7 @@
 Util: stockLadder  (THE copy of the Stock ladder rules — docs/stock-ladder.md is the agreed design, owner 2026-11-15)
 =======================================================================================================================================
 Purpose: Every SKU we hold sits on exactly ONE of five steps, set by how long it has gone without a sale. Read by
-         GET /analytics-stock-ladder (Range's front screen, /analytics/slow-sizes). The pricing lists per step come later.
+         GET /analytics-stock-ladder (Range's front screen, /analytics/slow-sizes). The lists per step: utils/stockLadderList.js (GET /amz-all-list ?step=).
 
 THE FIVE STEPS (a sale on ANY channel counts, net of returns — utils/onShelf.js):
   1 Arrived     stock came in when we had none (first time ever, or after selling out) and it hasn't sold since — up to 90 days.

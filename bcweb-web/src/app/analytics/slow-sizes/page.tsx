@@ -15,10 +15,11 @@ THE LAYOUT, top to bottom: the total (SKUs held, units under it), then the five 
          2026-11-15): Daily's New stuff % (of SKUs first booked in within 90 days, the % sold since) — a success rate beside a
          share of the range, kept apart so the steps' own % still add up to 100%.
 
-NOTHING OPENS YET (owner, same day: "No lists or drill down yet"). The boxes and the Overstocked tag will each open their own list
-         later — Overstocked is a different list from step 2. The old size run, the four parts and their links (New Additions, Deep
-         sellers, the 3–9 months / Clearance lists) were removed from this screen on 2026-11-15; git history has them. The list
-         pages (/analytics/slow-sizes/list) still exist, unlinked from here.
+EACH BOX OPENS ITS LIST (owner, 2026-11-15 — docs/stock-ladder.md → "Drill-down from each box"): a step box, and the Overstocked
+         tag (a different list from step 2), open /analytics/slow-sizes/step?key=… (step/page.tsx — read its header): Arrived and
+         Sold 90 a list only, the other four a list first and then the Amazon price cards. The New stuff tag opens nothing. The old
+         size run, the four parts and their links (New Additions, Deep sellers, the 3–9 months / Clearance lists) were removed from
+         this screen on 2026-11-15; git history has them. The list pages (/analytics/slow-sizes/list) still exist, unlinked from here.
 
 THE LOOK follows the chart the owner approved: plain white boxes, STEP n as its own small line so the numbers don't read as quantities
          (owner: "it looks like they are QTYs"), step 2 (the sweet spot) in brand blue, Overstocked a small solid amber tag (colour
@@ -30,22 +31,16 @@ READ-ONLY.
 
 import { Fragment, Suspense, useEffect, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import { ChevronRightIcon, ChevronDownIcon, MapIcon } from '@heroicons/react/20/solid';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getProcessOverview, getStockLadder, type LadderStepKey } from '@/lib/api';
+import { getProcessOverview, getStockLadder } from '@/lib/api';
+import { LIST_TEXT, stepListHref } from '@/lib/stockLadder';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
-// Each step's name and its rule in a few words — the chart's wording.
-const STEP_TEXT: Record<LadderStepKey, { name: string; rule: string }> = {
-  arrived: { name: 'Arrived', rule: 'came in from 0 stock' },
-  sold: { name: 'Sold 90', rule: 'sold in 90 days' },
-  unsold90: { name: 'Unsold 90', rule: '91 to 180 days' },
-  unsold180: { name: 'Unsold 180', rule: 'to 9 months' },
-  clearance: { name: 'Clearance', rule: '9 months + · until sold out' },
-};
 
 export default function RangePage() {
   return (
@@ -96,7 +91,7 @@ function StockLadderFront() {
           {/* THE FIVE STEPS — one row on a wide screen with arrows between (the chart's direction of travel), stacked on a phone. */}
           <div className="mt-8 flex flex-col items-stretch gap-2 lg:flex-row lg:items-start">
             {d.steps.map((s, i) => {
-              const t = STEP_TEXT[s.key];
+              const t = LIST_TEXT[s.key];   // each step's name and its rule in a few words — the chart's wording
               const sweet = s.key === 'sold';
               const arrived = s.key === 'arrived';
               return (
@@ -108,8 +103,9 @@ function StockLadderFront() {
                     </div>
                   )}
                   <div className="flex min-w-0 flex-1 flex-col items-center">
-                    <div className={'w-full rounded-xl border-2 bg-white px-3 py-4 text-center '
-                      + (sweet ? 'border-blue-600' : 'border-slate-300')}>
+                    <Link href={stepListHref(s.key)} title={`Open the ${t.name} list`}
+                      className={'block w-full rounded-xl border-2 bg-white px-3 py-4 text-center transition hover:bg-slate-50 '
+                      + (sweet ? 'border-blue-600' : 'border-slate-300 hover:border-slate-400')}>
                       <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step {s.step}</div>
                       <div className="mt-0.5 text-base font-semibold text-slate-900">{t.name}</div>
                       <div className="text-xs text-slate-500">{t.rule}</div>
@@ -119,7 +115,7 @@ function StockLadderFront() {
                         <span className="mx-1.5 text-slate-300">·</span>
                         <span className="font-semibold text-slate-900">{n(s.units)}</span> in stock
                       </div>
-                    </div>
+                    </Link>
                     {/* NEW STUFF — hangs off step 1 like Overstocked off step 2: a different measure on the same subject (owner:
                         "both are different things but on the same subject"), the SUCCESS rate of first-ever arrivals, where the step's
                         own % is its share of the range. */}
@@ -140,14 +136,15 @@ function StockLadderFront() {
                     {sweet && (
                       <>
                         <div className="h-3 w-0.5 bg-amber-400" aria-hidden />
-                        <div className="rounded-full border-2 border-amber-400 bg-amber-400 px-4 py-1.5 text-center text-slate-900">
+                        <Link href={stepListHref('overstocked')} title="Open the Overstocked list"
+                          className="rounded-full border-2 border-amber-400 bg-amber-400 px-4 py-1.5 text-center text-slate-900 transition hover:border-amber-500 hover:bg-amber-500">
                           <div className="text-sm font-semibold">Overstocked</div>
                           <div className="text-xs tabular-nums">
                             <span className="font-semibold">{n(d.overstocked.skus)}</span> SKU{d.overstocked.skus === 1 ? '' : 's'}
                             <span className="mx-1">·</span>
                             <span className="font-semibold">{n(d.overstocked.over)}</span> pairs over
                           </div>
-                        </div>
+                        </Link>
                       </>
                     )}
                   </div>

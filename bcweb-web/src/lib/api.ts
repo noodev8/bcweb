@@ -574,6 +574,8 @@ export interface AmzPriceCard extends AmzWinnerRow {
   offers?: AmzBuyBoxOffer[]; featured?: AmzBuyBoxFeatured[];
   sales_rank?: number | null;   // Amazon Fashion Best Sellers Rank (the parent's — a family figure), latest Buy Box read
   last_change?: AmzLastChange | null;
+  // A Stock ladder list's sizes (?step=) also carry these (server utils/stockLadderList.js).
+  when?: LadderWhen; ladder_idle_days?: number; ladder_over?: number; ladder_units?: number;
 }
 export function getAmzDueCards() {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
@@ -1803,6 +1805,28 @@ export function getStockLadder() {
   return request<StockLadder>({ url: '/analytics-stock-ladder', method: 'GET' }, (b) => ({
     today: b.today, held: b.held, steps: b.steps || [], overstocked: b.overstocked,
   }));
+}
+
+// A STOCK LADDER LIST (owner, 2026-11-15; server /amz-all-list ?step=, membership utils/stockLadderList.js): the step's sizes live at
+// Amazon, Birkenstock left out, in the step's order. `when` = the list's chip (due · week · later · buybox). `stepSkus` = every SKU on
+// the step, any channel (the screen says how many the list shows).
+export type LadderListKey = LadderStepKey | 'overstocked';
+export type LadderWhen = 'due' | 'week' | 'later' | 'buybox';
+export interface LadderListRow extends AmzWinnerRow {
+  when: LadderWhen; ladder_idle_days: number; ladder_over: number; ladder_units: number;
+}
+export function getLadderList(step: LadderListKey) {
+  return request<{ total: number; truncated: boolean; stepSkus: number; rows: LadderListRow[] }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, step } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, stepSkus: Number(b.step_skus) || 0, rows: b.rows || [] })
+  );
+}
+// The STEP CARDS (/amz/step-cards): the price cards for what the list shows — one chip, or all; never a Buy Box size (server).
+export function getAmzStepCards(step: LadderListKey, when: LadderWhen | 'all') {
+  return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, step, when, cards: 1 } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
+  );
 }
 
 // DEEP SELLERS (server: routes/analytics-deep-sizes.js, rules in utils/deepSizes.js) — sizes that sell (Range's green card) but hold

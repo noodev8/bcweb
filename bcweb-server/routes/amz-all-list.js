@@ -32,7 +32,7 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
 
 Requires auth.
 =======================================================================================================================================
-Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=groupid][&cards=1]
+Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=groupid][&cards=1][&step=key[&when=w]]
   limit    safety cap only (utils/listLimit.js, default 100 / max 500).
   half     review = only the sizes the Buy Box doesn't answer (the review-date half).
   q        the search (owner, 2026-11-13 — "search for Caprice, see the count, press it and get the cards one by one"): only rows whose
@@ -41,6 +41,13 @@ Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=
   g        ONE STYLE, exactly (utils/amzBuyBoxDeck.js → matchesStyle): the product menu's Amazon Price card opens the search cards for
            the selected group id (owner, 2026-11-13, from New Additions). Works like q (incl. the Buy Box suggestion), without q's
            contains-match pulling in a longer group id.
+  step     a STOCK LADDER list (owner, 2026-11-15, docs/stock-ladder.md): only the sizes utils/stockLadderList.js → stepMembers puts
+           on it (arrived · sold · overstocked · unsold90 · unsold180 · clearance — live at Amazon, Birkenstock left out), in ITS order
+           (styles together, longest wait first), due or not (parked=include implied). Each row also carries `when` (due · week · later
+           · buybox — whenOf, the list's chips) and ladder_idle_days / ladder_over / ladder_units; the response carries step_skus
+           (every SKU on the step, any channel). With cards=1 the Buy Box sizes are left out — never carded from a step (they have
+           the Buy Box cards). Range's step lists and the step cards (/amz/step-cards).
+  when     with step: due | week | later | buybox | all (default all) — only that chip's rows.
   cards    1 = PRICE CARDS (components/AmzPriceCards — Due cards and search cards, owner 2026-11-13: "the usual price change screen but
            reduced to cards"): each row also carries what a card shows — imagename, u12 (Amazon pairs, 12 months), breakeven, walk
            (the £3 walk-away, amzPricingStandard SETTINGS.WALK_AWAY_PROFIT — the Buy Box cards' floor), profit_line (profit a pair =
@@ -65,6 +72,7 @@ Success Response:
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
+"INVALID_STEP"     ?step= is not a Stock ladder list
 "UNAUTHORIZED"
 "SERVER_ERROR"
 =======================================================================================================================================
@@ -81,6 +89,7 @@ const { readBuyBoxSide, dueBy, buyBoxMoves } = require('../utils/amzDue');
 const { matchesSearch, matchesStyle, profitLine, readDeck, lastChanges } = require('../utils/amzBuyBoxDeck');
 const { amzProfit, priceForProfit, breakevenPrice } = require('../utils/amzProfit');
 const { SETTINGS } = require('../utils/amzPricingStandard');
+const { stepMembers, whenOf, WHEN_KEYS } = require('../utils/stockLadderList');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -96,6 +105,10 @@ router.get('/', async (req, res) => {
     const g = typeof req.query.g === 'string' ? req.query.g.slice(0, 100).trim().toLowerCase() : '';
     const withCards = req.query.cards === '1';
     const mood = typeof req.query.mood === 'string' ? req.query.mood : undefined;   // readDeck normalises (anything else = chilled)
+    const stepKey = typeof req.query.step === 'string' && req.query.step ? req.query.step : null;
+    const when = WHEN_KEYS.includes(req.query.when) ? req.query.when : 'all';
+    const ladder = stepKey ? await stepMembers(stepKey) : null;
+    if (stepKey && !ladder) return res.json({ return_code: 'INVALID_STEP', message: 'Unknown Stock ladder list' });
 
     // Every member is read (no SQL limit, no Due filter) because "due" is decided below in JS by THE rule (utils/amzDue.js) — the
     // Buy Box half needs the stored reading's answers. ~700 rows; the safety cap is applied after.
@@ -148,15 +161,21 @@ router.get('/', async (req, res) => {
     const side = await readBuyBoxSide(pool);
     const judged = result.rows.map((r) => ({ r, d: dueBy(side, r.code, r.review_parked !== true, Number(r.fba) > 0) }))
       .filter((x) => !reviewHalf || x.d.by === 'review')
-      .filter((x) => includeParked || x.d.due)
-      .filter((x) => matchesSearch(x.r, q) && matchesStyle(x.r, g));
+      .filter((x) => includeParked || ladder || x.d.due)
+      .filter((x) => matchesSearch(x.r, q) && matchesStyle(x.r, g))
+      // STOCK LADDER (header, ?step=): the step's sizes only, each with its chip; ?when= narrows; cards never take a Buy Box size.
+      .filter((x) => !ladder || ladder.members.has(x.r.code))
+      .map((x) => (ladder ? { ...x, when: whenOf(x.d.due, x.d.by, x.r.next_review, ladder.today) } : x))
+      .filter((x) => !ladder || ((when === 'all' || x.when === when) && !(withCards && x.when === 'buybox')));
     // Due before not-due, so the safety cap can only ever trim not-due rows: with the status rows the list passed 500 (2026-10-28)
     // and the 0-stock due SKUs, sorting last, were cut — Daily counted them, the list didn't show them. Stable: stock order kept.
-    judged.sort((a, b) => Number(b.d.due) - Number(a.d.due));
+    // A Stock ladder list keeps the step's own order (utils/stockLadderList.js — a step holds far fewer than the cap).
+    if (ladder) judged.sort((a, b) => ladder.members.get(a.r.code).order - ladder.members.get(b.r.code).order);
+    else judged.sort((a, b) => Number(b.d.due) - Number(a.d.due));
     const total = judged.length;
     const outOfStock = judged.filter((x) => x.r.oos === true).length;
 
-    const rows = judged.slice(0, limit).map(({ r, d }, i) => ({
+    const rows = judged.slice(0, limit).map(({ r, d, when: w }, i) => ({
       rank: i + 1,
       code: r.code,
       amz_sku: r.amz_sku,
@@ -182,6 +201,12 @@ router.get('/', async (req, res) => {
       bb_rivals: r.bb_rivals === null || r.bb_rivals === undefined ? null : Number(r.bb_rivals),
       bb_holder: r.bb_holder || null,
       bb_read_at: r.bb_read_at || null,
+      ...(ladder ? {
+        when: w,
+        ladder_idle_days: ladder.members.get(r.code).idle_days,   // days without a sale (utils/stockLadder.js, Range's idle clock)
+        ladder_over: ladder.members.get(r.code).over,             // pairs over 4 months' worth (Overstocked only, else 0)
+        ladder_units: ladder.members.get(r.code).units,           // local + FBA, one number (the ladder's stock)
+      } : {}),
     }));
 
     // CARDS (header, ?cards=1): the card's economics and picture for the returned rows, in one query.
@@ -238,7 +263,8 @@ router.get('/', async (req, res) => {
                   AND COALESCE(notes, '') NOT LIKE 'Buy Box%')::int AS due`)).rows[0];
 
     return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: outOfStock,
-      buybox_moves: buyBoxMoves(side), done_today: { due: done.due, buybox: done.buybox }, rows });
+      buybox_moves: buyBoxMoves(side), done_today: { due: done.due, buybox: done.buybox },
+      ...(ladder ? { step_skus: ladder.step_skus } : {}), rows });
   } catch (err) {
     logger.error('[amz-all-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load the Amazon list' });

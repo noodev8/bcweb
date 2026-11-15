@@ -5,7 +5,7 @@ API Route: analytics_stock_ladder
 Method: GET
 Purpose: THE STOCK LADDER's front figures (owner, 2026-11-15; design docs/stock-ladder.md) — every SKU we hold on exactly one of five
          steps (Arrived · Sold 90 · Unsold 90 · Unsold 180 · Clearance), with the Overstocked label on step 2. Drawn on Range's front
-         screen (/analytics/slow-sizes). Counts only for now: the lists per step come later (owner: "No lists or drill down yet").
+         screen (/analytics/slow-sizes). Counts only: each box's list is GET /amz-all-list ?step= (utils/stockLadderList.js).
          Rules: utils/stockLadder.js (THE copy) — read its header.
 
          READ-ONLY. Requires auth.
