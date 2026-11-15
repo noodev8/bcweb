@@ -30,7 +30,7 @@ const { query } = require('../database');
 const config = require('../config/config');
 const logger = require('./logger');
 const { getAccessToken } = require('./googleAuth');
-const { ACTIVE_SQL } = require('./sizePrice');
+const { ACTIVE_SQL, excludesAds } = require('./sizePrice');
 
 // Merchant API (products bundle) base. productInputs.insert writes a productInput into a data source.
 // NOTE: the products sub-API is GA at v1 — v1beta was discontinued on 2026-02-28 (returns 409 "upgrade to v1"). Keep this on v1.
@@ -68,7 +68,7 @@ function resourceNames() {
 // size_price (2026-11-08): the size's own Shopify price when one is in force (utils/sizePrice.js → ACTIVE_SQL), else null.
 async function fetchTargets(groupid) {
   const r = await query(`
-    SELECT m.googleid, sm.shopifyprice, asp.price AS size_price
+    SELECT m.googleid, sm.shopifyprice, asp.price AS size_price, asp.kind AS size_price_kind
     FROM skusummary sm
     JOIN skumap m ON m.groupid = sm.groupid
     LEFT JOIN (${ACTIVE_SQL}) asp ON asp.code = m.code
@@ -87,8 +87,8 @@ async function fetchTargets(groupid) {
 // so the caller can count it. (An `insert` replaces the whole productInput for this key in the supplemental source, so a later
 // salePrice-only insert cleanly drops any `price` we might have written before.)
 //
-// excludeAds (2026-11-08): a size with its own Shopify price (utils/sizePrice.js) is also kept OUT of paid Shopping ads (owner: no ad
-// spend on clearance stock; free listings keep it) — the override carries excludedDestinations for it, matching the nightly feed's
+// excludeAds (2026-11-08): a size with a CLEARANCE size price (utils/sizePrice.js → excludesAds — an overstock one keeps its ads,
+// 2026-11-15) is also kept OUT of paid Shopping ads (owner: no ad spend on clearance stock; free listings keep it) — the override carries excludedDestinations for it, matching the nightly feed's
 // excluded_destination column. Because an insert replaces the whole override, the next salePrice-only insert (the size price ended)
 // drops the exclusion again.
 async function insertPriceOverride(token, parent, dataSource, offerId, amountMicros, excludeAds = false) {
@@ -166,7 +166,7 @@ async function pushIfLive(groupid) {
     // Each size at ITS price: its own Shopify price (out of paid ads) when one is in force, else the style price (2026-11-08).
     const results = await Promise.allSettled(
       targets.map((t) => (t.size_price !== null
-        ? insertPriceOverride(token, parent, dataSource, t.googleid, micros(t.size_price), true)
+        ? insertPriceOverride(token, parent, dataSource, t.googleid, micros(t.size_price), excludesAds(t.size_price_kind))
         : insertPriceOverride(token, parent, dataSource, t.googleid, micros(price))))
     );
     let updated = 0;

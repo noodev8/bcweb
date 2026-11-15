@@ -21,7 +21,7 @@ quote or a line break, with " doubled inside; lines end in \n (the VPS is Linux)
 =======================================================================================================================================
 */
 
-const { ACTIVE_SQL } = require('./sizePrice');
+const { ACTIVE_SQL, excludesAds } = require('./sizePrice');
 
 // Same query as merchant_feed.py (GROUP BY included), so the two read exactly the same rows — plus, since 2026-11-08, each size's own
 // Shopify price when one is in force (utils/sizePrice.js → ACTIVE_SQL: below the style price, in stock). One code per row, so the join
@@ -36,7 +36,7 @@ const FEED_SQL = `
       CASE WHEN COUNT(CASE WHEN ls.deleted = 0 THEN 1 END) > 0 THEN 0 ELSE 1 END as localstock_deleted,
       af.amzlive, uk.stock as ukdstock, sd.description,
       mpt.product_type, mpt.google_category,
-      asp.price AS size_price
+      asp.price AS size_price, asp.kind AS size_price_kind
   FROM skusummary sm
   JOIN skumap m ON sm.groupid = m.groupid
   LEFT JOIN attributes a ON a.groupid = sm.groupid
@@ -51,7 +51,7 @@ const FEED_SQL = `
   GROUP BY sm.groupid, sm.shopifyprice, sm.imagename, sm.brand, sm.colour,
            sm.material, sm.cost, sm.rrp, sm.handle, sm.googlecampaign,
            a.gender, t.shopifytitle, m.code, m.variantlink, m.uksize, m.ean, m.googleid,
-           af.amzlive, uk.stock, sd.description, mpt.product_type, mpt.google_category, asp.price
+           af.amzlive, uk.stock, sd.description, mpt.product_type, mpt.google_category, asp.price, asp.kind
 `;
 
 const COLUMNS = [
@@ -158,7 +158,8 @@ function buildItem(r) {
     item_group_id: r.groupid,
     custom_label_0: r.googlecampaign,                                       // the Google Ads campaign bucket (skusummary.googlecampaign)
     custom_label_1: r.groupid,                                              // our style id, so Google's reports come back keyed on it
-    excluded_destination: ownPrice ? EXCLUDE_ADS : '',                      // a size-priced (clearance) size: free listings only
+    // A CLEARANCE size price: free listings only; an OVERSTOCK one keeps its ads (utils/sizePrice.js → excludesAds, 2026-11-15).
+    excluded_destination: ownPrice && excludesAds(r.size_price_kind) ? EXCLUDE_ADS : '',
   };
 }
 

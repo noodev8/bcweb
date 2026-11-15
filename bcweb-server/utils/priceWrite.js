@@ -216,4 +216,33 @@ async function amzBasketItem(db, { code, written, price }) {
   };
 }
 
-module.exports = { writeShopifyPrice, writeAmzPrice, amzBasketItem };
+/*
+ * parkShopifyStyle(client, { groupid, reviewDays, note, changedBy })   — W2 (CLAUDE.md): "no change, just set review".
+ *   reviewDays  integer >= 1 (the caller validates)
+ * Returns { error: 'NOT_FOUND', message } or { nextReview (pg DATE), heldPrice (number | null), logged }.
+ * Stamps next_shopify_price_review and writes the HOLD audit row (new_price = old_price, docs/hold-logging-spec.md), born with
+ * google_pushed_at stamped — a hold has nothing to send to Google. The price is read in the SAME statement that stamps the date, so the
+ * logged price is the one held. An unreadable price (junk VARCHAR) gets the date but NO log row: a hold on a price we can't read is not
+ * a decision that can be scored, and must never be written as £0.00. Moved here from routes/pricing-park.js on 2026-11-15 so the
+ * overstock cards (routes/pricing-overstock-set.js) park inside their own transaction; pricing-park calls it unchanged.
+ */
+async function parkShopifyStyle(client, { groupid, reviewDays, note = null, changedBy }) {
+  const upd = await client.query(`
+    UPDATE skusummary
+       SET next_shopify_price_review = CURRENT_DATE + $2::int
+     WHERE groupid = $1
+     RETURNING next_shopify_price_review, ${safeNumeric('shopifyprice')} AS held_price
+  `, [groupid, reviewDays]);
+  if (upd.rows.length === 0) return { error: 'NOT_FOUND', message: 'Style not found' };
+  const heldPrice = upd.rows[0].held_price;
+  if (heldPrice !== null) {
+    await client.query(`
+      INSERT INTO price_change_log
+         (groupid, channel, old_price, new_price, reason_code, reason_notes, changed_by, google_pushed_at)
+      VALUES ($1, 'SHP', $2, $2, NULL, $3, $4, now())
+    `, [groupid, heldPrice, note, changedBy]);
+  }
+  return { nextReview: upd.rows[0].next_shopify_price_review, heldPrice: heldPrice === null ? null : Number(heldPrice), logged: heldPrice !== null };
+}
+
+module.exports = { writeShopifyPrice, writeAmzPrice, amzBasketItem, parkShopifyStyle };

@@ -11,6 +11,13 @@ Purpose: Shopify pricing in the Amazon cards' way (components/AmzPriceCards), wi
          ?step=<ladder step> (Range's Arrived choice, 2026-11-15): only the styles holding a SKU on that Stock ladder step (server
          pricing-all-list → step); everything else is the same cards. With a step the toolbar carries its own All | Due switch
          (owner, 2026-11-15: "allow us to filter by DUE as well") — it flips ?pending=1, nothing else; there is no list behind it.
+         OVERSTOCK CARDS (?step=overstocked — docs/overstock/PLAN.md, owner 2026-11-15): the styles holding an overstocked size. Under
+         the style price, one row per OVERSTOCKED size (decision 4): size · held (+ at Amazon) · pairs over · sold 90d · its own price
+         box (starts at its size price in force, else the style price — decision 3) · profit a pair. SET saves the style price and
+         every changed size together with the review date (POST /pricing-overstock-set — decision 5; below the style price = an
+         overstock size price, at or above it = back to the style price). Set is red when only sizes go down.
+         NO LONGER OVERSTOCKED (decision 6): on every card, a size whose OVERSTOCK size price is in force but which is no longer
+         overstocked gets a small tag and a Back to style price button (POST /pricing-size-price-clear) on its Size price line.
          And a REASON LINE (owner, same day: "will I know why it is there?") — lib/stockLadder → shopifyStepReason, from the row's
          step_skus / step_idle_days.
          Data: GET /pricing-all-list?cards=1 (getShopifyCards) — the list's own rows and order, each with its card. The Due system is
@@ -43,7 +50,7 @@ import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import ShopifyCardFrame from '@/components/ShopifyCardFrame';
 import { LastChangeLine, money } from '@/components/AmzCardFrame';
-import { applyPrice, getShopifyCards, parkStyle, type LadderStepKey, type ShopifyCardRow, type ShopifyCardSize, type SizePriceEnded } from '@/lib/api';
+import { applyPrice, clearSizePrice, getShopifyCards, parkStyle, setOverstockCard, type LadderListKey, type OverstockSize, type ShopifyCardRow, type ShopifyCardSize, type SizePriceEnded } from '@/lib/api';
 import { REVIEW_PERIODS, seasonPark } from '@/lib/reviewPeriods';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
@@ -58,9 +65,9 @@ const END = '__end__';                           // walking all: past the last c
 const STORE_PRODUCT_BASE = 'https://brookfieldcomfort.com/products/';
 const SEASON = seasonPark();
 // ?step= — the Stock ladder steps the cards can be narrowed to, by their screen name (lib/stockLadder → LIST_TEXT).
-const STEP_TITLE: Record<LadderStepKey, string> = {
+const STEP_TITLE: Record<LadderListKey, string> = {
   arrived: LIST_TEXT.arrived.name, sold: LIST_TEXT.sold.name, unsold90: LIST_TEXT.unsold90.name,
-  unsold180: LIST_TEXT.unsold180.name, clearance: LIST_TEXT.clearance.name,
+  unsold180: LIST_TEXT.unsold180.name, clearance: LIST_TEXT.clearance.name, overstocked: LIST_TEXT.overstocked.name,
 };
 
 const noSubscribe = () => () => {};
@@ -88,7 +95,7 @@ function sideOf(ours: number, benchmark: number): Side {
 }
 
 type Done =
-  | { kind: 'set'; price: number; pushed: boolean; message: string | null; ended: SizePriceEnded[]; warnings: string[] }
+  | { kind: 'set'; price: number; pushed: boolean; message: string | null; ended: SizePriceEnded[]; warnings: string[]; sizes?: string }
   | { kind: 'left' };
 
 export default function ShopifyPriceCards() {
@@ -97,7 +104,8 @@ export default function ShopifyPriceCards() {
   const all = useUrlParam('pending') === '1';    // the list's Due switch OFF: every style, walked
   const at = useUrlParam('at');                  // the card to open on (the style drill's Back)
   const stepRaw = useUrlParam('step');
-  const step: LadderStepKey | null = stepRaw && stepRaw in STEP_TITLE ? (stepRaw as LadderStepKey) : null;
+  const step: LadderListKey | null = stepRaw && stepRaw in STEP_TITLE ? (stepRaw as LadderListKey) : null;
+  const overMode = step === 'overstocked';
   const fromRaw = useUrlParam('from');
   const from = fromRaw && fromRaw.startsWith('/') && !fromRaw.startsWith('//') ? fromRaw : null;
   const backHref = from ?? `/pricing/all?by=all${all ? '&pending=1' : ''}`;
@@ -146,6 +154,25 @@ export default function ShopifyPriceCards() {
     const nextDone = new Map(done).set(row.groupid, {
       kind: 'set', price, pushed: !shop || shop.pushed, message: shop && !shop.pushed ? shop.message || shop.error || null : null,
       ended: res.data.size_prices_ended, warnings: res.data.warnings,
+    });
+    setDone(nextDone);
+    setCur(nextAfter(row.groupid, nextDone));
+  }
+
+  // OVERSTOCK SET (decision 5): the style price + the changed sizes + the review date, one request, one transaction.
+  async function setOverstock(row: ShopifyCardRow, price: number, sizes: { code: string; price: number | null }[]) {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    const res = await setOverstockCard(row.groupid, price, sizes, review);
+    setBusy(false);
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
+    if (!res.success || !res.data) { setMsg(`${row.groupid}: ${res.error || 'could not save the card'}`); return; }
+    const d = res.data;
+    const shop = d.shopify;
+    const parts = [...d.sizes_set.map((s) => `${s.size} at ${money(s.price)}`), ...d.sizes_ended.map((s) => `${s.size} back to style`)];
+    const nextDone = new Map(done).set(row.groupid, {
+      kind: 'set', price, pushed: !shop || shop.pushed, message: shop && !shop.pushed ? shop.message || shop.error || null : null,
+      ended: d.size_prices_ended, warnings: d.warnings, sizes: parts.join(', '),
     });
     setDone(nextDone);
     setCur(nextAfter(row.groupid, nextDone));
@@ -244,9 +271,11 @@ export default function ShopifyPriceCards() {
         {data && (current ? (
           <Card key={current.groupid} row={current} all={all} reason={step ? shopifyStepReason(step, {
             onStep: current.step_skus?.length ?? 0, held: current.step_held ?? 0,
-            heldIdle: current.step_idle_days ?? null, styleLastSale: current.style_last_sale_days ?? null }) : null} n={index + 1} of={cards.length} busy={busy} done={done.get(current.groupid) ?? null}
+            heldIdle: current.step_idle_days ?? null, styleLastSale: current.style_last_sale_days ?? null,
+            over: (current.over_sizes ?? []).reduce((t, z) => t + z.over, 0) }) : null} n={index + 1} of={cards.length} busy={busy} done={done.get(current.groupid) ?? null}
             review={review} onReview={setReview} showSizes={showSizes} onShowSizes={setShowSizes}
-            onSet={(p) => setPrice(current, p)} onLeave={() => leave(current)} onPrev={previous}
+            over={overMode ? current.over_sizes ?? [] : null}
+            onSet={(p, sz) => (overMode ? setOverstock(current, p, sz ?? []) : setPrice(current, p))} onLeave={() => leave(current)} onPrev={previous}
             onNext={() => setCur(nextAfter(current.groupid, done))}
             drillHref={`/pricing/style/${encodeURIComponent(current.groupid)}?from=${encodeURIComponent(`${selfPath}at=${encodeURIComponent(current.groupid)}`)}`} />
         ) : (
@@ -273,10 +302,11 @@ export default function ShopifyPriceCards() {
   );
 }
 
-function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes, onShowSizes, onSet, onLeave, onPrev, onNext, drillHref }: {
+function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes, onShowSizes, over, onSet, onLeave, onPrev, onNext, drillHref }: {
   row: ShopifyCardRow; all: boolean; reason: string | null; n: number; of: number; busy: boolean; done: Done | null;
   review: number; onReview: (d: number) => void; showSizes: boolean; onShowSizes: (v: boolean) => void;
-  onSet: (price: number) => void; onLeave: () => void; onPrev: () => void; onNext: () => void; drillHref: string;
+  over: OverstockSize[] | null;   // the overstock card's sizes (?step=overstocked), else null
+  onSet: (price: number, sizes?: { code: string; price: number | null }[]) => void; onLeave: () => void; onPrev: () => void; onNext: () => void; drillHref: string;
 }) {
   const now = row.price;
   const card = row.card;
@@ -289,6 +319,29 @@ function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes
   const forward = () => (done || lookOnly ? onNext() : onLeave());
 
   const sizes = card?.sizes ?? [];
+
+  // OVERSTOCK SIZES (decisions 3–5): each box starts at the size's price in force, else today's style price; a change is any box that
+  // moved from where it started. Sent with Set — below the style box = a size price, at or above it = back to the style price.
+  const ownOf = new Map(sizes.map((s) => [s.code, s.own_price]));
+  const startOf = (code: string) => ownOf.get(code) ?? now ?? 0;
+  const [sizeStr, setSizeStr] = useState<Record<string, string>>(() =>
+    Object.fromEntries((over ?? []).map((z) => [z.code, startOf(z.code).toFixed(2)])));
+  const sizeVal = (code: string) => Number.parseFloat(sizeStr[code] ?? '');
+  const sizeMoves = (over ?? []).filter((z) => {
+    const v = sizeVal(z.code);
+    return Number.isFinite(v) && v > 0 && Math.round(v * 100) !== Math.round(startOf(z.code) * 100);
+  });
+  const sizeBad = (over ?? []).some((z) => !(sizeVal(z.code) > 0));
+  const anyChange = changed || sizeMoves.length > 0;
+  // Which way Set goes when only sizes move: down if any size goes below where it started, else up (a size going back).
+  const sizeDirection: 'up' | 'down' | null = sizeMoves.length === 0 ? null
+    : sizeMoves.some((z) => sizeVal(z.code) < startOf(z.code)) ? 'down' : 'up';
+  const nudgeSize = (code: string, d: number) => setSizeStr((m) => {
+    const v = Number.parseFloat(m[code] ?? '');
+    const base = Number.isFinite(v) ? v : box;
+    return { ...m, [code]: Math.max(0.01, r2(base + d)).toFixed(2) };
+  });
+
   const benched = sizes.filter((s) => s.benchmark !== null);
   const bms = benched.map((s) => s.benchmark as number);
   const sides = benched.map((s) => sideOf(sellsAt(s, box), s.benchmark as number));
@@ -318,6 +371,51 @@ function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes
       priceStr={priceStr} setPriceStr={setPriceStr}
       now={now} profitAt={(p) => profitAt(row, p)} rrp={row.rrp}
       market={<>
+        {/* OVERSTOCKED SIZES (decision 4) — one row each: held · over · sold 90d · its own price box · profit a pair at it. */}
+        {over && over.length > 0 && (
+          <table className="mb-2 w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-slate-400">
+                <th className="py-0.5 pr-3 font-normal">Overstocked</th>
+                <th className="py-0.5 pr-3 text-right font-normal">Held</th>
+                <th className="py-0.5 pr-3 text-right font-normal" title="Pairs beyond 4 months' worth at its 12-month pace">Over</th>
+                <th className="py-0.5 pr-3 text-right font-normal">Sold 90d</th>
+                <th className="py-0.5 pr-3 font-normal">Size price</th>
+                <th className="py-0.5 text-right font-normal">Profit a pair</th>
+              </tr>
+            </thead>
+            <tbody>
+              {over.map((z) => {
+                const v = sizeVal(z.code);
+                const atStyle = Number.isFinite(v) && v >= box - 0.005;
+                const pr = Number.isFinite(v) ? profitAt(row, Math.min(v, box)) : null;
+                const step = 'inline-flex h-8 min-w-[2.5rem] items-center justify-center rounded-md border border-slate-200 bg-white px-1.5 text-xs font-medium tabular-nums text-slate-700 hover:bg-slate-50';
+                return (
+                  <tr key={z.code} className="text-slate-800">
+                    <td className="py-1 pr-3 font-medium tabular-nums">{z.size}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{z.held}{z.fba > 0 && <span className="text-xs text-slate-400"> · {z.fba} at Amazon</span>}</td>
+                    <td className="py-1 pr-3 text-right font-semibold tabular-nums">{z.over}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{z.sold90}</td>
+                    <td className="py-1 pr-3">
+                      <span className="inline-flex items-center gap-1">
+                        {[-5, -2, -1].map((d) => <button key={d} type="button" onClick={() => nudgeSize(z.code, d)} className={step}>−£{-d}</button>)}
+                        <span className="relative">
+                          <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">£</span>
+                          <input value={sizeStr[z.code] ?? ''} inputMode="decimal" aria-label={`Size ${z.size} price`}
+                            onChange={(e) => setSizeStr((m) => ({ ...m, [z.code]: e.target.value }))}
+                            className="h-8 w-24 rounded-md border border-slate-300 bg-white pl-5 pr-1.5 text-sm font-semibold tabular-nums text-slate-900 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                        </span>
+                        <button type="button" onClick={() => nudgeSize(z.code, 1)} className={step}>+£1</button>
+                        {atStyle && <span className="text-xs text-slate-400">style price</span>}
+                      </span>
+                    </td>
+                    <td className={'py-1 text-right tabular-nums ' + (pr !== null && pr < 0 ? 'text-red-600' : 'text-slate-900')}>{pr !== null ? money(pr) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
         {/* GOOGLE — the spread, and where our sizes sit at the box price; the size list opens under it. */}
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="w-16 shrink-0 text-slate-500">Google</span>
@@ -371,7 +469,14 @@ function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes
         {ownPrices.length > 0 && (
           <div className="flex flex-wrap items-baseline gap-x-2">
             <span className="w-16 shrink-0 text-slate-500">Size price</span>
-            <span>{ownPrices.map((s) => `${s.size} at ${money(s.own_price)} (${s.stock + s.fba} in stock)`).join(' · ')}</span>
+            <span className="inline-flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              {ownPrices.map((s) => (
+                <span key={s.code}>
+                  {s.size} at {money(s.own_price)} ({s.stock + s.fba} in stock)
+                  {s.own_kind === 'overstock' && s.overstocked === false && <BackToStyle code={s.code} />}
+                </span>
+              ))}
+            </span>
           </div>
         )}
       </>}
@@ -395,15 +500,27 @@ function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes
         label: done || lookOnly ? 'Next →' : 'Leave', onClick: forward, disabled: busy && !done && !lookOnly,
         title: done || lookOnly ? 'Next card — nothing written (→)' : 'Keep the price, set the review date (→ or L)',
       }}
-      primary={{
+      primary={over ? {
+        // OVERSTOCK (decision 5): one Set for the style box and every moved size box.
+        label: !anyChange ? `Already ${money(now)}`
+          : changed ? `Set ${valid ? money(price) : ''}${sizeMoves.length ? ` + ${sizeMoves.length} size${sizeMoves.length === 1 ? '' : 's'}` : ''}`
+            : `Set ${sizeMoves.length} size price${sizeMoves.length === 1 ? '' : 's'}`,
+        onClick: () => {
+          if (!anyChange || !valid || sizeBad || busy || done?.kind === 'set') return;
+          onSet(price, sizeMoves.map((z) => ({ code: z.code, price: r2(sizeVal(z.code)) })));
+        },
+        disabled: busy || !anyChange || !valid || sizeBad || done?.kind === 'set',
+        title: anyChange ? 'Save the style and size prices, send to Shopify and set the review date (Enter)' : 'Nothing moved — Leave keeps the prices',
+      } : {
         label: valid && !changed ? `Already ${money(price)}` : `Set ${valid ? money(price) : ''}`,
         onClick: () => { if (valid && changed && !busy && done?.kind !== 'set') onSet(price); },
         disabled: busy || !changed || done?.kind === 'set',
         title: changed ? 'Save, send to Shopify and set the review date (Enter)' : 'Already the price — Leave keeps it',
       }}
+      primaryDirection={over && !changed ? sizeDirection : undefined}
       note={done?.kind === 'set' ? (
         <span className={'truncate ' + (done.pushed ? 'text-emerald-700' : 'text-amber-700')}>
-          Set to {money(done.price)} — {done.pushed ? 'on Shopify' : `saved, Shopify NOT updated${done.message ? `: ${done.message}` : ''}`}
+          {done.sizes ? `Saved — style ${money(done.price)} · ${done.sizes}` : `Set to ${money(done.price)}`} — {done.pushed ? 'on Shopify' : `saved, Shopify NOT updated${done.message ? `: ${done.message}` : ''}`}
           {done.ended.length > 0 && <span className="text-slate-500"> · size price ended: {done.ended.map((e) => e.size).join(', ')}</span>}
           {done.warnings.length > 0 && <span className="text-amber-700"> · {done.warnings.join(' · ')}</span>}
         </span>
@@ -414,5 +531,27 @@ function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes
         <span className="text-slate-500">at this price the size {ending.map((s) => s.size).join(', ')} price ends</span>
       ) : null}
     />
+  );
+}
+
+// BACK TO STYLE PRICE (decision 6): an overstock markdown on a size that is no longer overstocked — a small tag and one button. Ends the
+// size price (POST /pricing-size-price-clear, which pushes to Shopify itself); the card's own Set / Leave still move the review date.
+function BackToStyle({ code }: { code: string }) {
+  const { logout } = useAuth();
+  const [state, setState] = useState<'idle' | 'busy' | 'done' | 'err'>('idle');
+  async function back() {
+    setState('busy');
+    const res = await clearSizePrice(code);
+    if (res.return_code === 'UNAUTHORIZED') { logout(); return; }
+    setState(res.success ? 'done' : 'err');
+  }
+  if (state === 'done') return <span className="ml-1.5 text-emerald-700">· back to the style price</span>;
+  return (
+    <span className="ml-1.5 inline-flex items-baseline gap-1.5">
+      <span className="rounded bg-slate-100 px-1.5 text-xs text-slate-600">no longer overstocked</span>
+      <button type="button" onClick={back} disabled={state === 'busy'}
+        className="text-sm text-brand-700 hover:underline disabled:opacity-50">Back to style price</button>
+      {state === 'err' && <span className="text-xs text-red-600">not saved</span>}
+    </span>
   );
 }

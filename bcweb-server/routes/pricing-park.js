@@ -41,7 +41,7 @@ Return Codes:
 const express = require('express');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
-const { safeNumeric } = require('../utils/sql');
+const { parkShopifyStyle } = require('../utils/priceWrite');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
 
@@ -65,47 +65,17 @@ router.post('/', async (req, res) => {
       return res.json({ return_code: 'INVALID_REVIEW_DAYS', message: 'reviewDays must be an integer >= 1' });
     }
 
-    // 3) W2 UPDATE (CLAUDE.md) — set the cooldown, and RETURN the price being held. Reading the price in the SAME statement that
-    //    stamps the review date is deliberate: fetching it separately would let the logged old_price drift from what was actually
-    //    held if anything moved between the two reads. safeNumeric because shopifyprice is a legacy VARCHAR that can hold junk.
+    // 3) W2 (CLAUDE.md) — set the cooldown and log the hold.
     const changedBy = req.user.display_name;
-    const result = await withTransaction(async (client) => {
-      const upd = await client.query(`
-        UPDATE skusummary
-           SET next_shopify_price_review = CURRENT_DATE + $2::int
-         WHERE groupid = $1
-         RETURNING next_shopify_price_review, ${safeNumeric('shopifyprice')} AS held_price
-      `, [groupid, reviewDays]);
-
-      if (upd.rows.length === 0) return upd;
-
-      // 4) The HOLD audit row: new_price = old_price is what makes it a hold rather than a move.
-      //
-      //    google_pushed_at is PRE-STAMPED to now(). scripts/google-jobs.js --prices pushes every SHP row it finds with a NULL
-      //    stamp, so an un-stamped hold would hand it a queue of no-op pushes — harmless in effect (it would push the price that
-      //    is already live) but wasteful and confusing. A hold has nothing to send, so it is born sent. The sweep also carries its
-      //    own old_price <> new_price guard as the safety net; this stamp means the fix does not depend on that script being
-      //    redeployed. See docs/hold-logging-spec.md §4.
-      //
-      //    NULL held_price => NO log row, while the review date still stands. A hold on a price we cannot read is not a decision
-      //    that can be scored, and safeNumeric returning NULL must never be written as a £0.00 hold.
-      const heldPrice = upd.rows[0].held_price;
-      if (heldPrice !== null) {
-        await client.query(`
-          INSERT INTO price_change_log
-             (groupid, channel, old_price, new_price, reason_code, reason_notes, changed_by, google_pushed_at)
-          VALUES ($1, 'SHP', $2, $2, NULL, $3, $4, now())
-        `, [groupid, heldPrice, note, changedBy]);
-      }
-      return upd;
-    });
-
-    if (result.rows.length === 0) {
+    // The W2 write itself is utils/priceWrite.js → parkShopifyStyle (one home since 2026-11-15 — the overstock cards park with it
+    // too): the review date and the HOLD audit row (new_price = old_price, born Google-sent; none when the price can't be read).
+    const result = await withTransaction((client) => parkShopifyStyle(client, { groupid, reviewDays, note, changedBy }));
+    if (result.error) {
       return res.json({ return_code: 'NOT_FOUND', message: 'Style not found' });
     }
 
-    const logged = result.rows[0].held_price !== null;
-    const nr = result.rows[0].next_shopify_price_review;
+    const logged = result.logged;
+    const nr = result.nextReview;
     const d = nr instanceof Date ? nr : new Date(nr);
     const nextReviewIso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 

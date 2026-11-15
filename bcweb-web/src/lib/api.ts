@@ -441,7 +441,7 @@ export function getSittingList() {
 // Shopify Pricing's home list (2026-10-26) — every in-stock Shopify style, parked included (the Due switch filters client-side).
 // `step` = a Stock ladder step key: only the styles holding a SKU on that step (Range's Arrived choice, 2026-11-15).
 // Each row then carries step_skus: the style's SKU codes on that step.
-export function getAllList(step?: LadderStepKey) {
+export function getAllList(step?: LadderListKey) {
   return request<{ total: number; truncated: boolean; outOfStock: number; rows: (LoserRow & { step_skus?: string[] })[] }>(
     { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include', ...(step ? { step } : {}) } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, outOfStock: Number(b.out_of_stock) || 0, rows: b.rows || [] })
@@ -456,7 +456,12 @@ export interface ShopifyCardSize {
   fba: number;                   // Amazon live
   benchmark: number | null;      // Google's price benchmark for this size (others' click-weighted average); null = none
   own_price: number | null;      // a size price in force (utils/sizePrice.js); null = sells at the style price
+  own_kind?: 'clearance' | 'overstock' | null;   // where that size price was set (docs/overstock/PLAN.md decision 2)
+  overstocked?: boolean;         // only on an overstock size price: is the size overstocked NOW (decision 6 — the reminder)
 }
+// One OVERSTOCKED size on an overstock card (server utils/overstockCards.js): pairs held (local + Amazon), of them at Amazon, pairs over
+// 4 months' worth, units sold in 90 days (any channel, net).
+export interface OverstockSize { code: string; size: string; held: number; fba: number; over: number; sold90: number }
 export interface ShopifyCard {
   imagename: string | null; handle: string | null;
   profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound * price + at_zero (server shopifyProfit)
@@ -469,8 +474,28 @@ export interface ShopifyCard {
 export type ShopifyCardRow = LoserRow & {
   card: ShopifyCard | null; step_skus?: string[]; step_idle_days?: number | null;
   step_held?: number; style_last_sale_days?: number | null;
+  over_sizes?: OverstockSize[];   // ?step=overstocked only
 };
-export function getShopifyCards(step?: LadderStepKey) {
+
+// SET on an OVERSTOCK card (docs/overstock/PLAN.md decision 5, server routes/pricing-overstock-set.js): the style price (W1 when moved,
+// else W2) and each size sent — below the style price = an overstock size price, else back to the style price — in ONE transaction,
+// with the review date; then one Shopify push.
+export interface OverstockSetData {
+  style: { old_price: number | null; new_price: string; moved: boolean };
+  sizes_set: { code: string; size: string; price: number; old_price: number | null }[];
+  sizes_ended: SizePriceEnded[]; size_prices_ended: SizePriceEnded[];
+  warnings: string[]; next_review: string | null; shopify: ShopifyPushResult | null;
+}
+export function setOverstockCard(groupid: string, price: number, sizes: { code: string; price: number | null }[], reviewDays: number) {
+  return request<OverstockSetData>(
+    { url: '/pricing-overstock-set', method: 'POST', data: { groupid, price, sizes, reviewDays, note: 'Overstock card' } },
+    (b) => ({
+      style: b.style, sizes_set: b.sizes_set || [], sizes_ended: b.sizes_ended || [], size_prices_ended: b.size_prices_ended || [],
+      warnings: b.warnings || [], next_review: b.next_review ?? null, shopify: b.shopify ?? null,
+    })
+  );
+}
+export function getShopifyCards(step?: LadderListKey) {
   return request<{ total: number; truncated: boolean; benchmarkDay: string | null; rows: ShopifyCardRow[] }>(
     { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include', cards: '1', ...(step ? { step } : {}) } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, benchmarkDay: b.benchmark_day ?? null, rows: b.rows || [] })

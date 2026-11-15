@@ -40,7 +40,7 @@ import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getProcessOverview, getStockLadder } from '@/lib/api';
-import { CHOICE_STEPS, LIST_TEXT, stepBoxHref, stepListHref } from '@/lib/stockLadder';
+import { CHOICE_STEPS, LIST_TEXT, stepBoxHref } from '@/lib/stockLadder';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
@@ -142,7 +142,7 @@ function StockLadderFront() {
                     {sweet && (
                       <>
                         <div className="h-3 w-0.5 bg-amber-400" aria-hidden />
-                        <Link href={stepListHref('overstocked')} title="Open the Overstocked list"
+                        <Link href={stepBoxHref('overstocked')} title="Price the Overstocked sizes — Amazon or Shopify"
                           className="rounded-full border-2 border-amber-400 bg-amber-400 px-4 py-1.5 text-center text-slate-900 transition hover:border-amber-500 hover:bg-amber-500">
                           <div className="text-sm font-semibold">Overstocked</div>
                           <div className="text-xs tabular-nums">

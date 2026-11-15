@@ -23,8 +23,15 @@ THE RULES (owner decisions, 2026-11-08):
       'tidy'    — a stale row the sold-out pass also clears (the size was deleted, or the style price can't be read).
   - No review date: a size price ends when the size sells out, and the style's review date would hide a selling style.
   - Google: the real size price is sent as the size's sale_price (Google rejects a feed price that doesn't match the page); `price`
-    stays the RRP like every other size (owner). A size with its own price is left OUT of paid Shopping ads (owner: no ad spend on
-    clearance stock) but stays in free listings. utils/merchantFeed.js (nightly) and utils/googleMerchant.js (the 2-hourly sweep).
+    stays the RRP like every other size (owner). A CLEARANCE size price is left OUT of paid Shopping ads (owner: no ad spend on
+    clearance stock) but stays in free listings; an OVERSTOCK one stays in (below). utils/merchantFeed.js (nightly) and
+    utils/googleMerchant.js (the 2-hourly sweep) both ask excludesAds(kind).
+  - KIND (owner, 2026-11-15 — docs/overstock/PLAN.md decision 2): every size price remembers where it was set —
+      'clearance'  a dead size (the drill's Size prices panel, the Clearance screen); the default, and every row before that day;
+      'overstock'  an overstock markdown from the overstock cards (POST /pricing-overstock-set) — a size still SELLING, so it keeps its
+                   paid Shopping ads. It never ends by itself when the size stops being overstocked (decision 6): the normal Shopify
+                   cards say "no longer overstocked" beside it, with Back to style price.
+    Setting a size price again sets its kind to the new one (the last press decides).
   - ITS OWN LOG (shopify_size_price_log), never price_change_log — ~10 screens read that as the STYLE's price history. Every row is
     born with google_pushed_at NULL and the sweep re-sends that style: an ENDED size price must reach Google too, or the supplemental
     sale-price override would keep the clearance price there.
@@ -36,6 +43,11 @@ const { safeNumeric } = require('./sql');
 
 const num = (v) => (v === null || v === undefined || v === '' ? null : Number(v));
 
+const KINDS = ['clearance', 'overstock'];
+// THE paid-Shopping rule (header, KIND): only a clearance size price is kept out of Shopping ads. An unknown kind counts as clearance —
+// the safe side, the behaviour before kinds existed.
+const excludesAds = (kind) => kind !== 'overstock';
+
 // A size's stock as Shopify sees it: local free + FBA live (the Shopify stock sync's rule, without its cap). `codeExpr` is a hard-coded
 // column expression only — never user input.
 function stockSql(codeExpr) {
@@ -45,9 +57,9 @@ function stockSql(codeExpr) {
 }
 
 // THE ACTIVE SET — every size price that is in force right now: below its style price, size not deleted, size in stock. Columns:
-// code, groupid, price (numeric). Filter it by groupid / join it by code; never re-derive the predicate elsewhere.
+// code, groupid, price (numeric), kind ('clearance' | 'overstock'). Filter it by groupid / join it by code; never re-derive the predicate elsewhere.
 const ACTIVE_SQL = `
-  SELECT sp.code, sp.groupid, sp.price
+  SELECT sp.code, sp.groupid, sp.price, sp.kind
   FROM shopify_size_price sp
   JOIN skusummary ss ON ss.groupid = sp.groupid
   JOIN skumap m      ON m.code = sp.code AND COALESCE(m.deleted, 0) = 0
@@ -67,11 +79,11 @@ function suggestedPrice(rrp) {
   return n !== null && n > 0 ? Math.round(n * 50) / 100 : null;
 }
 
-async function log(client, { code, groupid, oldPrice, newPrice, stylePrice, reason, note = null, by }) {
+async function log(client, { code, groupid, oldPrice, newPrice, stylePrice, reason, note = null, by, kind = null }) {
   await client.query(`
-    INSERT INTO shopify_size_price_log (code, groupid, old_price, new_price, style_price, reason, note, changed_by)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-  `, [code, groupid, oldPrice, newPrice, stylePrice, reason, note, by]);
+    INSERT INTO shopify_size_price_log (code, groupid, old_price, new_price, style_price, reason, note, changed_by, kind)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+  `, [code, groupid, oldPrice, newPrice, stylePrice, reason, note, by, kind]);
 }
 
 /*
@@ -82,14 +94,16 @@ async function log(client, { code, groupid, oldPrice, newPrice, stylePrice, reas
  * Flags, never blocks: BELOW_COST (as W1).
  * The style row is read FOR UPDATE so a style-price write can't slip in between the check and the write (it takes the same lock).
  */
-async function setSizePrice(client, { code, price, note = null, by }) {
+async function setSizePrice(client, { code, price, note = null, by, kind = 'clearance' }) {
+  if (!KINDS.includes(kind)) return { error: 'INVALID_KIND', message: `kind must be one of ${KINDS.join(', ')}` };
   const cur = await client.query(`
     SELECT m.groupid,
            SUBSTRING(m.code FROM '[^-]*$')   AS size,
            ${safeNumeric('ss.shopifyprice')} AS style_price,
            ${safeNumeric('ss.cost')}         AS cost,
            ${stockSql('m.code')}             AS stock,
-           sp.price                          AS own
+           sp.price                          AS own,
+           sp.kind                           AS own_kind
     FROM skumap m
     JOIN skusummary ss ON ss.groupid = m.groupid
     LEFT JOIN shopify_size_price sp ON sp.code = m.code
@@ -111,12 +125,13 @@ async function setSizePrice(client, { code, price, note = null, by }) {
   if (cost !== null && price < cost) warnings.push('BELOW_COST');
 
   await client.query(`
-    INSERT INTO shopify_size_price (code, groupid, price, set_at, set_by, note)
-    VALUES ($1, $2, $3, now(), $4, $5)
-    ON CONFLICT (code) DO UPDATE SET price = EXCLUDED.price, set_at = now(), set_by = EXCLUDED.set_by, note = EXCLUDED.note
-  `, [code, r.groupid, price, by, note]);
-  await log(client, { code, groupid: r.groupid, oldPrice, newPrice: price, stylePrice, reason: 'set', note, by });
-  return { groupid: r.groupid, size: r.size, oldPrice, newPrice: price, stylePrice, warnings };
+    INSERT INTO shopify_size_price (code, groupid, price, set_at, set_by, note, kind)
+    VALUES ($1, $2, $3, now(), $4, $5, $6)
+    ON CONFLICT (code) DO UPDATE SET price = EXCLUDED.price, set_at = now(), set_by = EXCLUDED.set_by, note = EXCLUDED.note,
+                                     kind = EXCLUDED.kind
+  `, [code, r.groupid, price, by, note, kind]);
+  await log(client, { code, groupid: r.groupid, oldPrice, newPrice: price, stylePrice, reason: 'set', note, by, kind });
+  return { groupid: r.groupid, size: r.size, oldPrice, oldKind: r.own_kind ?? null, newPrice: price, stylePrice, kind, warnings };
 }
 
 /*
@@ -125,7 +140,7 @@ async function setSizePrice(client, { code, price, note = null, by }) {
  */
 async function clearSizePrice(client, { code, by }) {
   const cur = await client.query(`
-    SELECT sp.groupid, sp.price, SUBSTRING(sp.code FROM '[^-]*$') AS size, ${safeNumeric('ss.shopifyprice')} AS style_price
+    SELECT sp.groupid, sp.price, sp.kind, SUBSTRING(sp.code FROM '[^-]*$') AS size, ${safeNumeric('ss.shopifyprice')} AS style_price
     FROM shopify_size_price sp
     LEFT JOIN skusummary ss ON ss.groupid = sp.groupid
     WHERE sp.code = $1
@@ -133,8 +148,8 @@ async function clearSizePrice(client, { code, by }) {
   if (!cur.rows.length) return { error: 'NOT_SET', message: 'This size has no price of its own' };
   const r = cur.rows[0];
   await client.query(`DELETE FROM shopify_size_price WHERE code = $1`, [code]);
-  await log(client, { code, groupid: r.groupid, oldPrice: Number(r.price), newPrice: null, stylePrice: num(r.style_price), reason: 'back', by });
-  return { groupid: r.groupid, size: r.size, oldPrice: Number(r.price) };
+  await log(client, { code, groupid: r.groupid, oldPrice: Number(r.price), newPrice: null, stylePrice: num(r.style_price), reason: 'back', by, kind: r.kind });
+  return { groupid: r.groupid, size: r.size, oldPrice: Number(r.price), kind: r.kind };
 }
 
 /*
@@ -146,10 +161,10 @@ async function styleDrop(client, { groupid, stylePrice, by }) {
   const del = await client.query(`
     DELETE FROM shopify_size_price
      WHERE groupid = $1 AND price >= $2
-    RETURNING code, price, SUBSTRING(code FROM '[^-]*$') AS size
+    RETURNING code, price, kind, SUBSTRING(code FROM '[^-]*$') AS size
   `, [groupid, stylePrice]);
   for (const r of del.rows) {
-    await log(client, { code: r.code, groupid, oldPrice: Number(r.price), newPrice: null, stylePrice, reason: 'style', by });
+    await log(client, { code: r.code, groupid, oldPrice: Number(r.price), newPrice: null, stylePrice, reason: 'style', by, kind: r.kind });
   }
   return del.rows.map((r) => ({ code: r.code, size: r.size, price: Number(r.price) }));
 }
@@ -162,7 +177,7 @@ async function styleDrop(client, { groupid, stylePrice, by }) {
  */
 async function endSoldOut(client, { by }) {
   const stale = await client.query(`
-    SELECT sp.code, sp.groupid, sp.price,
+    SELECT sp.code, sp.groupid, sp.price, sp.kind,
            ${safeNumeric('ss.shopifyprice')} AS style_price,
            CASE WHEN m.code IS NULL OR ss.groupid IS NULL OR ${safeNumeric('ss.shopifyprice')} IS NULL
                      OR sp.price >= ${safeNumeric('ss.shopifyprice')} THEN 'tidy'
@@ -178,7 +193,7 @@ async function endSoldOut(client, { by }) {
   if (!stale.rows.length) return { ended: [], groupids: [] };
   await client.query(`DELETE FROM shopify_size_price WHERE code = ANY($1::varchar[])`, [stale.rows.map((r) => r.code)]);
   for (const r of stale.rows) {
-    await log(client, { code: r.code, groupid: r.groupid, oldPrice: Number(r.price), newPrice: null, stylePrice: num(r.style_price), reason: r.reason, by });
+    await log(client, { code: r.code, groupid: r.groupid, oldPrice: Number(r.price), newPrice: null, stylePrice: num(r.style_price), reason: r.reason, by, kind: r.kind });
   }
   return {
     ended: stale.rows.map((r) => ({ code: r.code, groupid: r.groupid, price: Number(r.price), reason: r.reason })),
@@ -186,4 +201,4 @@ async function endSoldOut(client, { by }) {
   };
 }
 
-module.exports = { ACTIVE_SQL, stockSql, activeSizePrices, suggestedPrice, setSizePrice, clearSizePrice, styleDrop, endSoldOut };
+module.exports = { ACTIVE_SQL, KINDS, excludesAds, stockSql, activeSizePrices, suggestedPrice, setSizePrice, clearSizePrice, styleDrop, endSoldOut };

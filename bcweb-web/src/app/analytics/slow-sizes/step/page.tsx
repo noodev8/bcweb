@@ -46,7 +46,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { money } from '@/components/AmzCardFrame';
-import { getAllList, getAmzBuyBoxDeck, getLadderList, getStockLadder, type LadderListKey, type LadderListRow, type LadderStepKey } from '@/lib/api';
+import { getAllList, getAmzBuyBoxDeck, getLadderList, getStockLadder, type LadderListKey, type LadderListRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { CARD_LISTS, CHIPS, CHOICE_STEPS, LIST_TEXT, inChip, isChip, isLadderList, stepChoiceHref, stepListHref, type LadderChip } from '@/lib/stockLadder';
@@ -195,6 +195,9 @@ const CHOICE_TEXT: Partial<Record<LadderListKey, { lead: string; shopAll: boolea
   // Unsold 180 (2026-11-15): a style is carded on the step of its FRESHEST size, so here "neither" also holds styles with an Unsold 90
   // size (carded there) — said plainly as a size that sold more recently.
   unsold180: { lead: 'with no sale for 181 days to 9 months', shopAll: false, neither: 'in styles with a size that sold more recently' },
+  // Overstocked (docs/overstock/PLAN.md decision 7): selling sizes holding too much — the Shopify door is the OVERSTOCK cards (a size
+  // price per overstocked size beside the style price); "neither" = styles not on the Shopify list (not live there, or no shop stock).
+  overstocked: { lead: "selling, but holding more than 4 months' worth", shopAll: false, neither: 'not on the Shopify list' },
 };
 // THE TALLY (owner, 2026-11-15: "fine as long as we see numbers on the screen that add up"): the step's SKUs split three ways, so the
 // line under the doors sums to the step's total — at Amazon (live at FBA, Birkenstock left out: the step list's rows) + Shopify only
@@ -205,10 +208,13 @@ function StepChoice({ step, amzRows, amzLoaded }: { step: LadderListKey; amzRows
   const text = CHOICE_TEXT[step];
   const ladder = useApiQuery('analytics-stock-ladder', () => getStockLadder());
   const deck = useApiQuery(step === 'arrived' ? ['amz-buybox-deck', 'chilled'] : null, () => getAmzBuyBoxDeck('chilled'));
-  const shop = useApiQuery(['pricing-all-list', step], () => getAllList(step as LadderStepKey));
+  const shop = useApiQuery(['pricing-all-list', step], () => getAllList(step));
   if (!text) return null;
   const self = stepChoiceHref(step);
-  const onStep = ladder.data?.steps.find((s) => s.key === step);
+  // The SKUs this choice is about: a step's box, or (Overstocked, a label on step 2) the ladder's overstocked count.
+  const onStep = step === 'overstocked'
+    ? (ladder.data ? { skus: ladder.data.overstocked.skus } : undefined)
+    : ladder.data?.steps.find((s) => s.key === step);
   const shopDue = shop.data ? shop.data.rows.filter((r) => !r.parked).length : null;
   const amzDue = amzRows.filter((r) => r.when === 'due').length;
   const amzCardable = amzRows.filter((r) => r.when !== 'buybox').length;   // Buy Box sizes are never step-carded

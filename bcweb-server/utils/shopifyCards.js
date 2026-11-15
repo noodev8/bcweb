@@ -17,7 +17,8 @@ What it adds per style:
                                Amazon "Last change" line. changed_at is NULL on old rows: change_date stands in.
   sizes[]                      every live size (skumap, not deleted), size order: code, size, stock (local free), fba (Amazon live),
                                benchmark (Google's, utils/googleBenchmark.js → CURRENT_SQL; null = none), own_price (a size price in
-                               force — utils/sizePrice.js → ACTIVE_SQL; decision 4: always shown on the card).
+                               force — utils/sizePrice.js → ACTIVE_SQL; decision 4: always shown on the card), own_kind
+                               ('clearance' | 'overstock' — where it was set, docs/overstock/PLAN.md decision 2).
   benchmark_day                the day of the last benchmark read (google_benchmark_run) — one value, on the response, not per row.
 
 Units sold use the list's rule (pricing-all-list: SHP, qty > 0, soldprice > 0) so "sold since" and "sold in 30 days" agree.
@@ -56,7 +57,7 @@ async function cardDetails(db, groupids) {
        )
        SELECT m.groupid, m.code, SUBSTRING(m.code FROM '[^-]*$') AS size,
               COALESCE(l.stock, 0) AS stock, COALESCE(f.live, 0) AS fba,
-              b.benchmark, sp.price AS own_price
+              b.benchmark, sp.price AS own_price, sp.kind AS own_kind
        FROM skumap m
        LEFT JOIN loc l ON l.code = m.code
        LEFT JOIN fba f ON f.code = m.code
@@ -97,7 +98,7 @@ async function cardDetails(db, groupids) {
     if (!c) continue;
     c.sizes.push({
       code: z.code, size: z.size, stock: Number(z.stock), fba: Number(z.fba),
-      benchmark: num(z.benchmark), own_price: num(z.own_price),
+      benchmark: num(z.benchmark), own_price: num(z.own_price), own_kind: z.own_kind ?? null,
     });
   }
   for (const x of changes.rows) {

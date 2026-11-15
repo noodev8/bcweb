@@ -44,6 +44,13 @@ Request: GET /pricing-all-list[?parked=include][&limit=N][&cards=1][&step=<ladde
            size with its Google benchmark and any size price in force (utils/shopifyCards.js, THE copy) — and the response carries
            `benchmark_day`, the last Google read. Same rows, same order, so the cards walk exactly what the list shows.
 
+  step=overstocked   THE OVERSTOCK CARDS (owner, 2026-11-15, docs/overstock/PLAN.md): the styles holding an OVERSTOCKED size (the
+           ladder's label on step 2 — any other size may be selling, that's the point: the overstocked ones get a SIZE price, never the
+           style). step_skus = the overstocked codes; each row also carries `over_sizes` (utils/overstockCards.js — held, at Amazon,
+           pairs over, sold 90d per overstocked size, size order).
+  cards=1 also marks, on each size with a size price in force, `own_kind` (clearance | overstock) and — only when an overstock one is
+           on the page — `overstocked` (is the size overstocked NOW), for the "no longer overstocked" reminder (decision 6).
+
 Success Response:
 {
   "return_code": "SUCCESS",
@@ -70,6 +77,7 @@ const logger = require('../utils/logger');
 const { cardDetails } = require('../utils/shopifyCards');
 const { STEPS, readStockLadder } = require('../utils/stockLadder');
 const { lastNetSales } = require('../utils/onShelf');
+const { overstockSizes } = require('../utils/overstockCards');
 
 router.use(verifyToken);
 
@@ -79,8 +87,11 @@ router.get('/', async (req, res) => {
     const includeParked = req.query.parked === 'include';
     const withCards = req.query.cards === '1';
     // STEP (header): the styles with a SKU on that ladder step, or null = no narrowing.
-    const stepKey = STEPS.some((s) => s.key === req.query.step) ? req.query.step : null;
-    const stepOf = stepKey ? STEPS.find((s) => s.key === stepKey).step : null;
+    // 'overstocked' is the ladder's LABEL on step 2, not a step: its own membership (header).
+    const overMode = req.query.step === 'overstocked';
+    const stepKey = overMode ? 'overstocked' : STEPS.some((s) => s.key === req.query.step) ? req.query.step : null;
+    const stepOf = overMode ? 2 : stepKey ? STEPS.find((s) => s.key === stepKey).step : null;
+    let overOf = new Map();        // overstocked: groupid -> its overstocked sizes (utils/overstockCards.js)
     let stepGroups = null;
     const stepCodes = new Map();   // groupid -> its SKU codes on the step
     const freshest = new Map();    // groupid -> the lowest idle_days of any held SKU (the ladder's clock)
@@ -97,11 +108,12 @@ router.get('/', async (req, res) => {
       // On a stuck step: the styles holding a size on an earlier step (new, selling, or stuck for less time) are left out.
       const live = new Set(skus.filter((s) => s.step < stepOf).map((s) => s.groupid));
       for (const s of skus) {
-        if (s.step !== stepOf || (stepOf >= 3 && live.has(s.groupid))) continue;
+        if (overMode ? !s.overstocked : (s.step !== stepOf || (stepOf >= 3 && live.has(s.groupid)))) continue;
         if (!stepCodes.has(s.groupid)) stepCodes.set(s.groupid, []);
         stepCodes.get(s.groupid).push(s.code);
       }
       stepGroups = [...stepCodes.keys()];
+      if (overMode) overOf = await overstockSizes({ query }, skus);
     }
 
     // $1 limit, $2 includeParked, $3 statuses, $4 the step's styles (NULL = all). Stock and 30-day units as on pricing-status-list (the shared table).
@@ -154,6 +166,7 @@ router.get('/', async (req, res) => {
       next_review: r.next_review || null,
       parked: r.parked === true,
       ...(stepKey ? { step_skus: stepCodes.get(r.groupid) ?? [], step_idle_days: freshest.get(r.groupid) ?? null } : {}),
+      ...(overMode ? { over_sizes: overOf.get(r.groupid) ?? [] } : {}),
     }));
 
     // STYLE'S LAST SALE (header) — every size of the returned styles, held or sold out, in one read.
@@ -180,6 +193,12 @@ router.get('/', async (req, res) => {
       const details = await cardDetails({ query }, rows.map((r) => r.groupid));
       for (const r of rows) r.card = details.byGroup[r.groupid] ?? null;
       benchmarkDay = details.benchmarkDay;
+      // NO LONGER OVERSTOCKED (decision 6): only when an overstock markdown is on the page is the ladder read for it.
+      const marked = rows.flatMap((r) => (r.card?.sizes ?? []).filter((z) => z.own_kind === 'overstock'));
+      if (marked.length) {
+        const now = new Set((await readStockLadder()).skus.filter((s) => s.overstocked).map((s) => s.code));
+        for (const z of marked) z.overstocked = now.has(z.code);
+      }
     }
     return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: outOfStock, rows,
       ...(withCards ? { benchmark_day: benchmarkDay } : {}) });

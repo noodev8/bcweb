@@ -43,13 +43,15 @@ export function stepAim(key: LadderListKey, idleDays: number, over: number): str
 //     size that sold more recently is carded on that size's step, or not at all if it is selling — server pricing-all-list);
 //   the WHOLE STYLE — when a size now sold out sold more recently, so a selling style's leftovers read as leftovers:
 //     "Unsold 180 — 1 size left, unsold 263 days · the style's other sizes sold out, last sale 4 days ago · a firmer cut".
-export interface ShopifyStepFacts { onStep: number; held: number; heldIdle: number | null; styleLastSale: number | null }
+export interface ShopifyStepFacts { onStep: number; held: number; heldIdle: number | null; styleLastSale: number | null; over?: number }
 const STUCK_AIM: Partial<Record<LadderListKey, string>> = {
   unsold90: 'a gentle cut', unsold180: 'a firmer cut', clearance: 'clear the lot, a loss is OK',
 };
 export function shopifyStepReason(key: LadderListKey, f: ShopifyStepFacts): string {
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
   if (key === 'arrived') return `Arrived — ${plural(f.onStep, 'size')} waiting for a first sale`;
+  // Overstocked (docs/overstock/PLAN.md decision 4): the sizes and the pairs beyond 4 months' worth — what needs to sell.
+  if (key === 'overstocked') return `Overstocked — ${plural(f.onStep, 'size')}, ${plural(f.over ?? 0, 'pair')} over 4 months' worth`;
   const aim = STUCK_AIM[key];
   if (!aim) return `${LIST_TEXT[key].name} — ${plural(f.onStep, 'size')}`;
   const days = f.heldIdle ?? 0;
@@ -75,7 +77,7 @@ export const inChip = (when: LadderWhen, chip: LadderChip) => chip === 'all' || 
 export const CLEARANCE_HREF = '/analytics/slow-sizes/clearance';
 // THE CHOICE steps (owner, 2026-11-15): their Range box opens Amazon | Shopify (step/page.tsx → StepChoice), not the list. Arrived
 // has no Amazon list (its door is the Buy Box's New cards); Unsold 90 / 180 keep their step list at &side=amazon.
-export const CHOICE_STEPS: LadderListKey[] = ['arrived', 'unsold90', 'unsold180'];
+export const CHOICE_STEPS: LadderListKey[] = ['arrived', 'unsold90', 'unsold180', 'overstocked'];
 export const stepChoiceHref = (key: LadderListKey) => `/analytics/slow-sizes/step?key=${key}`;
 // Range's box: the choice, Clearance's own screen, or the list.
 export const stepBoxHref = (key: LadderListKey) => (CHOICE_STEPS.includes(key) ? stepChoiceHref(key) : stepListHref(key));

@@ -56,6 +56,8 @@ export interface ShopifyCardFrameProps {
   review: ReactNode;
   onPrev: () => void; prevDisabled?: boolean;
   secondary: CardButton; primary: CardButton;
+  // Which way Set goes, when the page knows better than the style box (the overstock card: only sizes may move). Unset = the box.
+  primaryDirection?: 'up' | 'down' | null;
   note?: ReactNode;
 }
 
@@ -68,7 +70,9 @@ export default function ShopifyCardFrame(p: ShopifyCardFrameProps) {
   const moved = valid ? p.now === null || changed : p.priceStr !== '';
   const profitNow = p.now !== null ? p.profitAt(p.now) : null;
   const profit = valid ? p.profitAt(price) : null;
-  const goingDown = changed && p.now !== null && price < p.now;
+  const boxDirection = changed && p.now !== null ? (price > p.now ? 'up' : 'down') : null;
+  const direction = p.primaryDirection !== undefined ? p.primaryDirection : boxDirection;
+  const goingDown = direction === 'down';
   const nudge = (d: number) => {
     const base = valid ? price : p.now ?? 0;
     p.setPriceStr(Math.max(0.01, r2(base + d)).toFixed(2));
@@ -175,7 +179,7 @@ export default function ShopifyCardFrame(p: ShopifyCardFrameProps) {
               className={'inline-flex h-11 items-center gap-1.5 rounded-lg px-6 text-sm font-semibold text-white disabled:bg-slate-200 disabled:text-slate-400 '
                 + (goingDown ? 'bg-red-600 hover:bg-red-700' : 'bg-emerald-600 hover:bg-emerald-700')}>
               {p.primary.label}
-              {changed && p.now !== null && <span aria-label={price > p.now ? 'up' : 'down'}>{price > p.now ? '↑' : '↓'}</span>}
+              {direction && <span aria-label={direction}>{direction === 'up' ? '↑' : '↓'}</span>}
             </button>
           </span>
         </div>
