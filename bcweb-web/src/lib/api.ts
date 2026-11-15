@@ -1827,11 +1827,13 @@ export function getLadderList(step: LadderListKey) {
 // listed, this size isn't on it) · could (List opens the eBay listing form for the style).
 export type ClearanceEbayState = 'never' | 'on' | 'style' | 'could';
 export interface ClearanceRow {
-  code: string; groupid: string; size: string; title: string; ean: string | null; brand: string | null;
+  code: string; groupid: string; size: string; title: string; brand: string | null;
   units: number; idle_days: number; last_sale: string | null; cost: number | null; rrp: number | null;
   shopify: { live: boolean; style_price: number | null; size_price: number | null; review: string | null };
   // listed = an amzfeed row; listable = not listed by us and not Birkenstock (List on Amazon / Look up / Could go on Amazon)
-  amazon: { open: boolean; listed: boolean; listable: boolean; fba: number; price: number | null; review: string | null };
+  // pick_free = free shelf pairs a pick may take (0 for Birkenstock); pick_pending = already picked, waiting on /pick's Amazon tab
+  amazon: { open: boolean; listed: boolean; listable: boolean; fba: number; price: number | null; review: string | null;
+            pick_free: number; pick_pending: number };
   ebay: { state: ClearanceEbayState; price: number | null; item_id: string | null };
 }
 export function getClearanceList() {

@@ -22,15 +22,19 @@ EACH CHANNEL (independent — changing one never touches another):
            Orders adds in-stock sizes by itself); else 'could' (List opens the eBay listing form for the whole style — Decision 4).
            No take-off here (Decision 5).
 
+PICK (owner, 2026-11-15, option A): a size's free shelf pairs can be picked for Amazon from its row — POST /amz-pick-allocate, the
+         Amazon Order screen's own pick write. `pick_free` = what a pick may take (0 for Birkenstock — never to Amazon); `pick_pending` =
+         already flagged, waiting on /pick's Amazon tab.
+
 ORDER (Decision 9): longest unsold first, as every Stock ladder list — a style ranks by its longest-waiting size, sizes in size order.
 
 READ ONLY.
 =======================================================================================================================================
 Exports:
-  loadClearanceList() -> { today, rows: [{ code, groupid, size, title, ean, brand, units, idle_days, last_sale,
+  loadClearanceList() -> { today, rows: [{ code, groupid, size, title, brand, units, idle_days, last_sale,
                                            cost, rrp,
                                            shopify: { live, style_price, size_price, review },
-                                           amazon:  { open, listed, listable, fba, price, review },
+                                           amazon:  { open, listed, listable, fba, price, review, pick_free, pick_pending },
                                            ebay:    { state: 'never'|'on'|'style'|'could', price, item_id } }] }
 =======================================================================================================================================
 */
@@ -39,6 +43,7 @@ const { query } = require('../database');
 const { readStockLadder } = require('./stockLadder');
 const { ACTIVE_SQL } = require('./sizePrice');
 const { safeNumeric } = require('./sql');
+const { AMAZON_SHELF, modeFilter } = require('./pick');
 
 const CLEARANCE_STEP = 5;
 
@@ -73,7 +78,8 @@ async function loadClearanceList() {
            af.amzprice                                                  AS amz_price,
            c.next_amz_price_review::text                                AS amz_review,
            af.listed                                                    AS amz_listed,
-           (SELECT MAX(NULLIF(regexp_replace(TRIM(COALESCE(z.ean, '')), 'B$', ''), '')) FROM skumap z WHERE z.code = c.code) AS ean,
+           pk.free                                                      AS pick_free,
+           pk.pending                                                   AS pick_pending,
            el.item_id                                                   AS ebay_item,
            COALESCE(els.price, el.price)                                AS ebay_price,
            els.code IS NOT NULL                                         AS on_ebay
@@ -84,6 +90,13 @@ async function loadClearanceList() {
       LEFT JOIN LATERAL (SELECT MAX(a.amzlive) FILTER (WHERE a.amzlive > 0) AS fba, MAX(${safeNumeric('a.amzprice')}) AS amzprice,
                                 COUNT(*) > 0 AS listed
                            FROM amzfeed a WHERE a.code = c.code) af ON true
+      -- PICK (owner, 2026-11-15): free shelf pairs a pick may take — routes/amz-pick-allocate.js's own candidate test (unallocated
+      -- #FREE, not already on the C3-Amazon shelf) — and pairs already flagged for Amazon awaiting gathering (utils/pick.js modeFilter,
+      -- the /pick list's own predicate).
+      LEFT JOIN LATERAL (SELECT
+             COALESCE(SUM(l.qty) FILTER (WHERE l.ordernum = '#FREE' AND l.allocated = 'unallocated' AND l.location <> '${AMAZON_SHELF}'), 0)::int AS free,
+             COALESCE(SUM(l.qty) FILTER (WHERE ${modeFilter('amazon', 'l')}), 0)::int AS pending
+           FROM localstock l WHERE l.code = c.code AND COALESCE(l.deleted, 0) = 0 AND l.qty > 0) pk ON true
       LEFT JOIN LATERAL (SELECT e.id, e.item_id, e.price FROM ebay_listing e
                           WHERE e.groupid = c.groupid AND e.ended_at IS NULL ORDER BY e.listed_at DESC LIMIT 1) el ON true
       LEFT JOIN ebay_listing_size els ON els.ebay_listing_id = el.id AND els.code = c.code`,
@@ -100,7 +113,6 @@ async function loadClearanceList() {
       groupid: x.groupid,
       size: x.size,
       title: x.title,
-      ean: x.ean || null,
       brand: x.brand || null,
       units: s.units,
       idle_days: s.idle_days,
@@ -110,7 +122,9 @@ async function loadClearanceList() {
       shopify: { live: x.shopify_live, style_price: num(x.style_price), size_price: num(x.size_price), review: x.shopify_review },
       // listable: not listed by us yet and not Birkenstock — List on Amazon / Look up / Could go on Amazon (owner, 2026-11-15:
       // "exclude Birkenstock", as AMZ loaded).
-      amazon: { open: fba > 0, listed: !!x.amz_listed, listable: !x.amz_listed && !x.birk, fba, price: num(x.amz_price), review: x.amz_review },
+      amazon: { open: fba > 0, listed: !!x.amz_listed, listable: !x.amz_listed && !x.birk, fba, price: num(x.amz_price), review: x.amz_review,
+                // PICK to Amazon: free shelf pairs, and pairs already picked awaiting gathering. Birkenstock never goes to Amazon.
+                pick_free: x.birk ? 0 : Number(x.pick_free) || 0, pick_pending: Number(x.pick_pending) || 0 },
       ebay: {
         state: x.birk ? 'never' : x.on_ebay ? 'on' : x.ebay_item ? 'style' : 'could',
         price: x.on_ebay ? num(x.ebay_price) : null,

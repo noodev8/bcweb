@@ -152,7 +152,7 @@ was most of the stock on Overstocked (60 of 71), Unsold 90 (303 of 365) and Clea
         show their own; a Shopify size price below cost gets a small red "below cost" flag, never a block), sales history.
   - [x] **After the build (owner, 2026-11-15):** column headings stick to the window (one scroll bar, no inner box); − / + in 5% of RRP
         steps with the % shown on every price box here and on the eBay listing form (`components/RrpStepper.tsx`); the eBay box shows
-        today's eBay price; a brand eBay never carries = a greyed-out List, no words; barcode under each size; the Amazon cell says why
+        today's eBay price; a brand eBay never carries = a greyed-out List, no words; the whole code per size (the barcode shown under it was dropped the same day — the look-up reads it); the Amazon cell says why
         a size can't sell there (listed · none at FBA / not listed by us); **Look up on Amazon** (a button, never on load — owner: "at my
         request rather than slowing the screen down") finds those sizes in Amazon's catalogue BY BARCODE: ASIN + rank, whoever sells it,
         nothing stored (`utils/amzBarcodeLookup.js`, POST /clearance-amz-lookup; rank = the Buy Box's `fashionRank`). Our ASIN isn't
@@ -169,7 +169,12 @@ was most of the stock on Overstocked (60 of 71), Unsold 90 (303 of 365) and Clea
         the Buy Box's NEW when it lands (utils/amzBuyBoxDeck.js), so it's carded on Amazon Pricing only if a rival is cheaper, and
         joins the Clearance cards after 30 days with no Amazon sale. **price → (owner, same day, option A)** on the size's Amazon cell
         opens its own Amazon price screen at ANY stage (listed, on its way in, New, selling) — price it ahead of arrival and it is live
-        at that price when the pairs land. Rejected: B (Clearance skips New — would change the one due rule), C (leave it). That day: 32 listable sizes — 23 on
+        at that price when the pairs land. Rejected: B (Clearance skips New — would change the one due rule), C (leave it).
+        **PICK on the row (owner, same day, option A):** a size's free shelf pairs are picked for Amazon from its Amazon cell — `− n +
+        Pick`, starting at every free pair — through POST /amz-pick-allocate (Amazon Order's own pick write, idempotent); they then wait
+        on /pick's Amazon tab ("n picked →"); undo is /pick's Unallocate. Not Birkenstock; not for a size Amazon hasn't got at all.
+        Rejected: B (send to Amazon Order with the basket pre-loaded — a hand-over into its most complex part). Flow: List → Pick →
+        price → → send. That day 41 sizes / 58 pairs could be picked (32 of them not listed by us yet). That day: 32 listable sizes — 23 on
         Amazon's catalogue (20 ranked) in 10 styles, 9 not on Amazon at all.
         **Rank decides nothing on screen (owner, 2026-11-15, option B):** the owner's own bar is under 200k, sometimes under 500k, no
         rank = don't send — but it's applied BY HAND, size by size. The rank is shown on every looked-up size; no filter, no colour

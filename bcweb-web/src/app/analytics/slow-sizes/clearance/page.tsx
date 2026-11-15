@@ -17,7 +17,9 @@ THE CHANNELS:
            utils/sizePrice.js: below the style price, in stock, no review date; ends by itself on sell-out; left out of paid Shopping).
            A box on each row, and one on the style line that sets every Clearance size of the style in turn. Below cost is flagged
            red, never blocked. KEPT SIMPLE (Decision 7): Shopify price cards may replace this later.
-  Amazon   a size we can't sell there says why (listed · none at FBA / not listed by us); LOOK UP ON AMAZON (a button, owner's request
+  Amazon   PICK on the row (owner, 2026-11-15): a size's free shelf pairs flagged for Amazon (POST /amz-pick-allocate, Amazon
+           Order's own pick write) — then gathered from /pick's Amazon tab. Not Birkenstock.
+           a size we can't sell there says why (listed · none at FBA / not listed by us); LOOK UP ON AMAZON (a button, owner's request
            only) finds those sizes in Amazon's catalogue by barcode — ASIN + rank, whoever sells it (server utils/amzBarcodeLookup.js).
            READ ONLY here (Decision 6, owner: "I don't want to be going back and forth"): price + review date, or "no FBA stock". ONE
            button, Price on Amazon (n), sends the lot to the step cards (/amz/step-cards?step=clearance&when=all) — the count is the
@@ -26,7 +28,8 @@ THE CHANNELS:
            screen · List → opens the eBay listing form for the WHOLE style (Decision 4, /ebay?view=not&q=) · no take-off here — ending
            a listing stays on the eBay screen, where every size it holds is in view (Decision 5).
 
-ROW (Decision 8): size · pairs (local + FBA) · last sold (or never) · the three channels. Style line: name, brand, cost, RRP.
+ROW (Decision 8): size · pairs (local + FBA) · last sold (or never) · the three channels. Style line: GROUPID first (owner, 2026-11-15),
+         then name, brand, cost, RRP.
 ORDER (Decision 9): longest unsold first, the server's order.
 =======================================================================================================================================
 */
@@ -38,7 +41,7 @@ import { useRouter } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { money } from '@/components/AmzCardFrame';
 import RrpStepper from '@/components/RrpStepper';
-import { amazonList, getClearanceList, getLadderList, lookupOnAmazon, setEbaySizePrice, setSizePrice, type AmzBarcodeHit, type ClearanceRow } from '@/lib/api';
+import { allocateAmazonPick, amazonList, getClearanceList, getLadderList, lookupOnAmazon, setEbaySizePrice, setSizePrice, type AmzBarcodeHit, type ClearanceRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { CLEARANCE_HREF, LIST_TEXT } from '@/lib/stockLadder';
@@ -159,7 +162,7 @@ export default function ClearancePage() {
             ) : (
               <Link href="/amz/step-cards?step=clearance&when=all"
                 title="Every Clearance size at FBA, one Amazon price card at a time (Buy Box sizes are never carded)"
-                className="inline-flex h-9 items-center rounded-md bg-brand-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-brand-700">
+                className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
                 Price on Amazon ({amz.data ? n(toCard) : '…'}) →
               </Link>
             )}
@@ -190,7 +193,7 @@ export default function ClearancePage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10 bg-slate-50 text-left text-xs font-medium uppercase tracking-wide text-slate-500 shadow-[inset_0_-1px_0_rgb(226_232_240)]">
                 <tr>
-                  <th className="px-3 py-2">Size</th>
+                  <th className="px-3 py-2">SKU</th>
                   <th className="px-3 py-2 text-right" title="Local + at Amazon, one number">Pairs</th>
                   <th className="px-3 py-2">Last sold</th>
                   <th className="px-3 py-2">Shopify <span className="normal-case tracking-normal text-slate-400">size price</span></th>
@@ -207,9 +210,8 @@ export default function ClearancePage() {
                       {g.rows.map((r) => (
                         <tr key={r.code} className="border-t border-slate-100 align-top">
                           <td className="whitespace-nowrap px-3 py-1.5">
-                            <span className="inline-block min-w-[2.75rem] rounded bg-slate-100 px-2 py-0.5 text-center font-mono text-xs font-medium text-slate-700" title={r.code}>{r.size}</span>
-                            {/* BARCODE per size (owner, 2026-11-15 — to look a size up on Amazon by hand). Selectable in one click. */}
-                            {r.ean && <div className="mt-0.5 select-all font-mono text-[11px] tabular-nums text-slate-400" title="Barcode — click to select">{r.ean}</div>}
+                            {/* The WHOLE CODE, not just the size (owner, 2026-11-15). */}
+                            <span className="inline-block whitespace-nowrap rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-medium text-slate-700">{r.code}</span>
                           </td>
                           <td className="px-3 py-1.5 text-right tabular-nums text-slate-900">{n(r.units)}</td>
                           <td className="whitespace-nowrap px-3 py-1.5 text-slate-600" title={`${n(r.idle_days)} days without a sale`}>
@@ -217,7 +219,8 @@ export default function ClearancePage() {
                           </td>
                           <td className="px-3 py-1.5"><ShopifyCell row={r} today={today}
                             onSet={(price) => patch(r.code, (x) => ({ ...x, shopify: { ...x.shopify, size_price: price } }))} /></td>
-                          <td className="px-3 py-1.5"><AmazonCell row={r} today={today} buyBox={buyBox.has(r.code)} hit={hits.get(r.code)} /></td>
+                          <td className="px-3 py-1.5"><AmazonCell row={r} today={today} buyBox={buyBox.has(r.code)} hit={hits.get(r.code)}
+                            onPicked={(pending, taken) => patch(r.code, (x) => ({ ...x, amazon: { ...x.amazon, pick_pending: pending, pick_free: Math.max(0, x.amazon.pick_free - taken) } }))} /></td>
                           <td className="px-3 py-1.5"><EbayCell row={r}
                             onSet={(price) => patch(r.code, (x) => ({ ...x, ebay: { ...x.ebay, price } }))} /></td>
                         </tr>
@@ -241,9 +244,10 @@ function StyleLine({ row: h, rows, onSet }: { row: ClearanceRow; rows: Clearance
   return (
     <tr className="border-t-2 border-slate-200">
       <td colSpan={3} className="px-3 pb-1 pt-3">
-        <Link href={`/pricing/style/${encodeURIComponent(h.groupid)}?from=${encodeURIComponent(SELF)}`} className="font-medium text-slate-900 hover:underline" title={h.groupid}>{h.title}</Link>
-        <div className="text-xs text-slate-500">
-          {h.groupid}{h.brand ? ` · ${h.brand}` : ''} · cost {money(h.cost)} · RRP {money(h.rrp)}
+        {/* GROUPID LEADS, the title second (owner, 2026-11-15). */}
+        <Link href={`/pricing/style/${encodeURIComponent(h.groupid)}?from=${encodeURIComponent(SELF)}`} className="font-mono text-base font-semibold text-slate-900 hover:underline" title={h.title}>{h.groupid}</Link>
+        <div className="max-w-[28rem] truncate text-xs text-slate-500" title={h.title}>
+          {h.title}{h.brand ? ` · ${h.brand}` : ''} · cost {money(h.cost)} · RRP {money(h.rrp)}
         </div>
       </td>
       <td className="px-3 pb-1 pt-3 align-bottom">
@@ -297,7 +301,11 @@ const PriceLink = ({ code }: { code: string }) => (
   <Link href={amzPriceHref(code)} className="ml-1.5 text-xs font-medium text-brand-700 hover:underline">price →</Link>
 );
 
-function AmazonCell({ row: r, today, buyBox, hit }: { row: ClearanceRow; today: string; buyBox: boolean; hit?: AmzBarcodeHit }) {
+function AmazonCell({ row: r, today, buyBox, hit, onPicked }: {
+  row: ClearanceRow; today: string; buyBox: boolean; hit?: AmzBarcodeHit; onPicked: (pending: number, taken: number) => void;
+}) {
+  // A size Amazon hasn't got at all (the look-up said so) can't be listed, so there's nothing to pick it for.
+  const pick = hit?.found === false ? null : <PickToAmazon row={r} onPicked={onPicked} />;
   // Why we can't sell it there: listed by us with nothing at FBA, or never listed by us (no amzfeed row). Under it, once looked up:
   // what Amazon's catalogue says about the barcode, whoever sells it.
   if (!r.amazon.open) {
@@ -317,6 +325,7 @@ function AmazonCell({ row: r, today, buyBox, hit }: { row: ClearanceRow; today: 
           </div>
         )}
         {r.amazon.listable && hit?.found !== false && <ListSizeOnAmazon row={r} />}
+        {pick}
       </div>
     );
   }
@@ -327,6 +336,7 @@ function AmazonCell({ row: r, today, buyBox, hit }: { row: ClearanceRow; today: 
       {buyBox && <span className="ml-1.5 text-xs text-emerald-700" title="Sold on Amazon in 30 days — the Buy Box prices it, never a step card">Buy Box</span>}
       {ahead(r.amazon.review, today) && <span className="ml-1.5 text-xs text-slate-500">· review {dateLabel(r.amazon.review!, today)}</span>}
       <div className="text-xs text-slate-400">{n(r.amazon.fba)} at FBA</div>
+      {pick}
     </div>
   );
 }
@@ -395,6 +405,52 @@ function ListSizeOnAmazon({ row: r }: { row: ClearanceRow }) {
         {busy ? 'Listing…' : 'List on Amazon'}
       </button>
       {msg && <span className="whitespace-normal text-xs text-red-700">{msg.text}</span>}
+    </div>
+  );
+}
+
+// PICK TO AMAZON (owner, 2026-11-15, option A — "pick on the row"): flag this size's free shelf pairs for Amazon. The Amazon Order
+// screen's own pick write (POST /amz-pick-allocate — one size per call, idempotent: it takes the asked TOTAL pending, so a double press
+// adds nothing). The pairs then wait on /pick's Amazon tab to be gathered onto C3-Amazon for the shipment; undo is /pick's Unallocate.
+// Starts at every free pair (Clearance = clear the lot). A picked pair can't go to a Shopify customer order — but once at FBA, Shopify
+// and eBay still sell it (MCF). Birkenstock never: the server gives it no free pairs to pick.
+function PickToAmazon({ row: r, onPicked }: { row: ClearanceRow; onPicked: (pending: number, taken: number) => void }) {
+  const free = r.amazon.pick_free;
+  const pending = r.amazon.pick_pending;
+  const [qty, setQty] = useState(free);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const want = Math.min(Math.max(qty, 1), free);
+  async function go() {
+    setBusy(true);
+    setErr(null);
+    const res = await allocateAmazonPick(r.code, pending + want);
+    setBusy(false);
+    if (!res.success || !res.data) { setErr(res.error || 'Not picked'); return; }
+    onPicked(res.data.pending_total, res.data.allocated);
+    setQty(Math.max(0, free - res.data.allocated));
+    if (res.data.short > 0) setErr(`${res.data.short} not on the shelf any more`);
+  }
+  const step = 'h-6 w-6 rounded border border-slate-300 bg-white text-xs font-semibold leading-none text-slate-700 hover:bg-slate-50 disabled:opacity-40';
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+      {pending > 0 && (
+        <Link href={`/pick?from=${encodeURIComponent(CLEARANCE_HREF)}&back=Clearance`} className="font-medium text-emerald-700 hover:underline"
+          title="Waiting on /pick's Amazon tab to be gathered for the shipment">{n(pending)} picked →</Link>
+      )}
+      {free > 0 && (
+        <>
+          <button type="button" className={step} disabled={busy || want <= 1} onClick={() => setQty(want - 1)} aria-label="One fewer">−</button>
+          <span className="w-5 text-center tabular-nums text-slate-900">{want}</span>
+          <button type="button" className={step} disabled={busy || want >= free} onClick={() => setQty(want + 1)} aria-label="One more">+</button>
+          <button type="button" onClick={go} disabled={busy} title={`Pick ${want} of the ${free} free on the shelf for Amazon`}
+            className="inline-flex h-6 items-center rounded-md border border-slate-300 bg-white px-2 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            {busy ? 'Picking…' : 'Pick'}
+          </button>
+          <span className="text-slate-400">of {n(free)} on the shelf</span>
+        </>
+      )}
+      {err && <span className="whitespace-normal text-red-700">{err}</span>}
     </div>
   );
 }

@@ -18,7 +18,7 @@ Success Response:
   "return_code": "SUCCESS",
   "today": "2026-11-15",
   "rows": [
-    { "code": "B710AP-08", "groupid": "B710AP", "size": "08", "title": "…", "ean": "4061…", "brand": "Goor", "units": 1, "idle_days": 307,
+    { "code": "B710AP-08", "groupid": "B710AP", "size": "08", "title": "…", "brand": "Goor", "units": 1, "idle_days": 307,
       "last_sale": "2026-01-12", "cost": 13.98, "rrp": 30,
       "shopify": { "live": true, "style_price": 30, "size_price": null, "review": "2026-12-06" },
       "amazon":  { "open": true, "listed": true, "listable": false, "fba": 1, "price": 30, "review": "2026-12-11" },
