@@ -90,5 +90,15 @@ was most of the stock on Overstocked (60 of 71), Unsold 90 (303 of 365) and Clea
       the step's aim is only the reason line (Overstocked = sell down to 4 months' worth, with pairs over; Unsold 90 = a gentle cut;
       Unsold 180 = a firmer cut; Clearance = clear the lot, a loss is OK). No new pricing rule. Rejected for now: a set cut per step
       (e.g. −5% / −10%) — revisit only if the presses show a steady habit.
-- [ ] Clearance: an option to send to eBay at 50% (owner). eBay's rules already start 9-month sizes at 50% of RRP and list FBA stock (MCF).
+- [x] **Season parks and the clock (owner, 2026-11-15: "yes leave it").** The ladder ignores price and review dates, so a season-parked
+      summer sandal keeps climbing over winter and can reach Clearance (one-way) as its season starts (e.g. Strive WAVE-BLACK-2-37,
+      parked to 1 Mar 2027 at RRP, reaches 9 months about 21 Apr). Left as is: nothing prices itself, and the review date still
+      decides Due.
+- [ ] Clearance: an option to send to eBay at 50% (owner). **Human touch, not rules** (owner, 2026-11-15) — no bulk send; a size
+      with a review date still to come (a season park) must not be swept to eBay. **eBay is a tag, never its own bucket** (owner,
+      same day): a size stays on its step. Shop + FBA stock on one eBay listing is fine (Update Orders lines the counts up).
+      Birkenstock never on eBay.
+- [ ] **The Clearance screen as a whole** (owner, 2026-11-15: "I just want the Clearance screen to be easy … more thought needed"):
+      the choices under it are drop the Shopify price, drop the Amazon price, add / remove eBay, adjust the eBay price. Not built
+      until agreed — including the "List on eBay →" mark. eBay's rules already start 9-month sizes at 50% of RRP and list FBA stock (MCF).
 - [ ] Birkenstock / Shopify on the steps.

@@ -4,7 +4,7 @@ Status: **agreed target, not yet built**, 2026-09-20. The owner's decision to pa
 run CM3 as a real sales channel rather than a room that happens to have shoes in it.
 Nothing built. This is the reference sheet for the floor, the pricing rule and the BCWEB work that follows.
 
-Supersedes the CM3 half of `dawns-concession.md`. The DAWNS concession is **not** being run in parallel —
+Supersedes the CM3 half of `other-shop-concession.md`. The other shop concession is **not** being run in parallel —
 the owner dropped it on 2026-09-20. Keep that note for its channel economics, which still hold.
 
 ---
@@ -58,7 +58,7 @@ to find customers. **It is a channel that ran out of things to sell.**
 
 ### 2.3 Displaying stock costs nothing in online availability
 
-This is the point that separates CM3 from the DAWNS concession and from any off-site option. The shop is in
+This is the point that separates CM3 from the other shop concession and from any off-site option. The shop is in
 the same building as the stock and draws on the same `localstock` pool. **A pair on a display rack is still
 pickable for an Amazon or Shopify order tomorrow.** Putting 400 units on the floor is not an allocation
 decision and consumes no online availability — the only costs are racking, display and a slightly longer
@@ -334,8 +334,8 @@ Treat this as **phase 2**. It is what lifts £25 to £30+ a pair. Phase 1 is get
 - **Till screen showing RRP**, with the online price hidden or explicitly labelled as the website's. See §4.3.
 - **Sale writes `localstock` and the sale row in one transaction.** The hourly Shopify stock sync is the push,
   never the source of truth. Same discipline as the Pick module.
-- **Channel stays `CM3`** — it is the owner's own shop and the existing history is continuous. (`DWN` was the
-  proposed code for the DAWNS concession and is now unused.)
+- **Channel stays `CM3`** — it is the owner's own shop and the existing history is continuous. (`OTH` was the
+  proposed code for the other shop concession and is now unused.)
 - **Add-on prompt at the point of sale** — socks and care items, since §7 is the whole reason the average
   transaction can move.
 - **Accessories need to exist as sellable lines** with shop stock, not just Shopify listings.

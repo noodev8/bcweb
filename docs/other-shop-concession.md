@@ -1,11 +1,11 @@
-# DAWNS concession — decision note
+# Other shop concession — decision note
 
 > **SUPERSEDED 2026-09-20 — not proceeding.** The owner dropped the concession and is instead running
 > his own shop (CM3) as a real channel: see `cm3-shop-plan.md`. The two were NOT run in parallel.
 > Kept for the channel economics in §2–§4, which still hold.
 
 Status: **pre-approach**, 2026-09-19. Owner's plan, with the numbers behind it.
-Nothing built. This is the reference sheet for the conversation with Dawn and for the BCWEB work that follows.
+Nothing built. This is the reference sheet for the conversation with the other shop and for the BCWEB work that follows.
 
 ---
 
@@ -52,7 +52,7 @@ Rieker/Remonte is a known name in the town and it is the brand Shopify has never
 the whole thesis in one line.
 
 **Caprice is the sleeper**: 53 units, 6 styles, £1,607 of cash, £4,305 at retail, and not one sale on
-any channel in 12 months. A brand-new range with no online track record to cannibalise — her shop is a
+any channel in 12 months. A brand-new range with no online track record to cannibalise — their shop is a
 far cheaper way to find out if it sells than buying traffic for it.
 
 Side benefit: none of these brands carries Birkenstock's selective-distribution question. The brand
@@ -60,7 +60,7 @@ choice sidesteps it entirely.
 
 ---
 
-## 4. Do NOT give her the online prices
+## 4. Do NOT give them the online prices
 
 | Brand | Avg realised price online | Avg realised price in shop |
 |---|---|---|
@@ -73,25 +73,25 @@ The online price is not "the price" — it is a **competed-down** price, set by 
 sellers who will always undercut on a commodity brand. Putting it on a high-street rack imports that
 price war into the one place it does not exist.
 
-**Shop prices on the rack.** If she asks for parity, the honest answer is that the online price exists
-because of a fight she is not in.
+**Shop prices on the rack.** If they ask for parity, the honest answer is that the online price exists
+because of a fight they are not in.
 
 ---
 
 ## 5. The deal (owner's terms)
 
-- **Her stock position:** none. My stock, my title, my risk.
-- **Pricing:** I set the prices. She may flex **±10%** where a customer negotiates.
+- **Their stock position:** none. My stock, my title, my risk.
+- **Pricing:** I set the prices. They may flex **±10%** where a customer negotiates.
 - **Commission:** **10% of the till up to £1,000/month, 15% on anything above.**
 - **Stock control:** I manage what goes over and what comes back.
 - **Rent:** none. **Wages:** none. **Minimum:** none.
 - **Trial:** 3 months. **Survival bar: 15 units/month.**
 - **Till:** BCWEB screen (see §7). SumUp on our account, so the money is our turnover.
-- **Dual use:** DAWNS doubles as a pick location for online orders.
+- **Dual use:** the other shop doubles as a pick location for online orders.
 
 ### What 10% actually leaves (Rieker, at its real shop average of £60.06 / £17.52 net)
 
-| Her cut | To her | **You keep** | vs Rieker on Shopify (£3.52) |
+| Their cut | To them | **You keep** | vs Rieker on Shopify (£3.52) |
 |---|---|---|---|
 | **10%** | £6.01 | **£11.51** | **3.3x** |
 | 15% | £9.01 | £8.51 | 2.4x |
@@ -101,7 +101,7 @@ because of a fight she is not in.
 ### The tier and the survival bar are the same number — by accident, usefully
 
 15 units at ~£60 is **~£900/month**, just under the £1,000 tier threshold. So in practice the 15% band
-only opens at roughly **17+ units/month** — i.e. only once she has comfortably cleared the bar that keeps
+only opens at roughly **17+ units/month** — i.e. only once they have comfortably cleared the bar that keeps
 the arrangement alive. The tier is mostly a **motivator, not a cost**.
 
 ---
@@ -112,37 +112,37 @@ These are the things that quietly cost money later. None is a reason not to do i
 
 ### 6.1 Make the 15% band MARGINAL, and say so in the agreement
 
-15% on **the excess over £1,000**, not on everything once she crosses it. Otherwise there is a cliff:
-£999 of sales pays her £99.90, and £1,001 would pay her £150.15 — £50 earned from £1 of trade. Marginal
+15% on **the excess over £1,000**, not on everything once they cross it. Otherwise there is a cliff:
+£999 of sales pays them £99.90, and £1,001 would pay them £150.15 — £50 earned from £1 of trade. Marginal
 removes the cliff and removes any incentive to push a sale into next month or this one.
 
 ### 6.2 The ±10% leeway is the biggest quiet leak
 
 A 10% discount on a £60.06 Rieker takes £6.01 off the till but **£5.00 off the ex-VAT profit** — net
-falls from £17.52 to £12.52. After her commission you keep **£7.11 instead of £11.51**.
+falls from £17.52 to £12.52. After their commission you keep **£7.11 instead of £11.51**.
 
 **A 10% discount costs you 38% of your margin on that pair.**
 
-It self-corrects a little (her cut falls with the price too, so she is not incentivised to discount), but
+It self-corrects a little (their cut falls with the price too, so they are not incentivised to discount), but
 it is not a small lever. Options: allow it freely only on the **dead/seasonal stock** in §8, hold a hard
 floor price per style, or allow the full 10% only above a price threshold. Decide which, don't leave it open.
 
 ### 6.3 Double-sell is the real technical risk
 
-If her till decrements and Shopify syncs hourly, the same pair can sell in the shop and online inside the
+If their till decrements and Shopify syncs hourly, the same pair can sell in the shop and online inside the
 same hour. **The till screen must write `localstock` immediately** — the hourly cron is only the push to
 Shopify, never the source of truth. Same discipline as the Pick module.
 
-### 6.4 VAT and her position
+### 6.4 VAT and their position
 
-Keeping it off her books is the right instinct and the concession structure supports it: **the sale is our
-turnover, not hers** — her income is the 10% commission only. That is exactly the protection you are
-after. SumUp on our account rather than her till is what makes it true in practice, so do it that way.
-Worth one confirming line from the accountant, since her commission is still her taxable income.
+Keeping it off their books is the right instinct and the concession structure supports it: **the sale is our
+turnover, not theirs** — their income is the 10% commission only. That is exactly the protection you are
+after. SumUp on our account rather than their till is what makes it true in practice, so do it that way.
+Worth one confirming line from the accountant, since their commission is still their taxable income.
 
 ### 6.5 Insurance and shrinkage
 
-Whose policy covers our stock while it sits in her shop, and who carries a loss if a pair walks? Agree it
+Whose policy covers our stock while it sits in their shop, and who carries a loss if a pair walks? Agree it
 up front. It is an awkward conversation at month two and a non-conversation now.
 
 ### 6.6 Plan the exit, not just the entry
@@ -152,9 +152,9 @@ change is handled, so it is a routine, not a renegotiation.
 
 ### 6.7 On sending customers over
 
-Sending CM3 walk-ins to DAWNS is right **because CM3 will not be staffed** — 90% of a sale beats 100% of a
+Sending CM3 walk-ins to the other shop is right **because CM3 will not be staffed** — 90% of a sale beats 100% of a
 customer who leaves. That logic does not extend to online or phone customers you already own; routing
-those through her rack just pays 10% for a customer you already had. The rack's job is people who would
+those through their rack just pays 10% for a customer you already had. The rack's job is people who would
 never have found you.
 
 ### 6.8 Seasonality on the 15-unit bar
@@ -169,18 +169,18 @@ lower than the autumn one.
 
 Sketch only, not a spec.
 
-- **New sales channel code.** Do **not** book her sales as `CM3`. A separate code (`DWN`) keeps
+- **New sales channel code.** Do **not** book their sales as `CM3`. A separate code (`OTH`) keeps
   `brand-overview` and Analytics honest and makes the 3-month trial measurable on its own terms.
-- **DAWNS as a location.** The `location` table already supports this, and a name only `localstock` knows is
-  allowed, so DAWNS can be a rack like any other. `pickorder` sorts it last, which is right — it is the
+- **The other shop as a location.** The `location` table already supports this, and a name only `localstock` knows is
+  allowed, so the other shop can be a rack like any other. `pickorder` sorts it last, which is right — it is the
   location you walk to only when nothing else has the pair.
 - **Till screen:** scan or search, show the set price, allow the ±10% flex within a server-side bound,
   take payment on SumUp, write the sale and decrement `localstock` **in one transaction**.
 - **Commission is derived, never typed.** Compute the 10%/15% marginal split from the logged sales for the
   month. Do not store a per-sale commission figure that can drift out of step with the rule.
 - **Hourly cron:** push stock to Shopify. Source of truth stays `localstock`. See 6.3.
-- **Statement screen:** what she sold, what she earned this month, marginal tier shown. She should be able
-  to see her own number without asking — it removes every argument before it starts.
+- **Statement screen:** what they sold, what they earned this month, marginal tier shown. They should be able
+  to see their own number without asking — it removes every argument before it starts.
 - **Prices are VAT-inclusive** and profit is ex-VAT, consistent with `utils/shopifyProfit.js`. Commission is
   a percentage of the **gross till**, so it is ~18% of net revenue at a 15% rate — priced in above.
 
@@ -229,7 +229,7 @@ the scale. What makes it a good trade is not the size of the prize:
 - it liquidates **£9,222 of seasonal retail at full price** instead of at a markdown
 - it opens a channel that nets **1.7x Shopify and 3.6x Amazon**, with **zero returns**
 - it tests **Caprice** for free
-- it gives DAWNS footfall a reason to convert, and gives Dawn a cut of a category she does not stock
+- it gives the other shop's footfall a reason to convert, and gives them a cut of a category they do not stock
 
 **The bar, agreed in advance:**
 
