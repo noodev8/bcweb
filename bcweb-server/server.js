@@ -256,7 +256,8 @@ app.use('/google-ads-styles', require('./routes/google-ads-styles'));
 app.use('/google-ads-campaigns', require('./routes/google-ads-campaigns'));
 app.use('/google-ads-drill', require('./routes/google-ads-drill'));
 // The Google allowance — Google spend per Shopify unit over 90 days, fixed, re-measured quarterly by button (utils/googleAllowance.js).
-// Moved here from the Today screen when it was removed (2026-10-26).
+// Moved here from the Today screen when it was removed (2026-10-26). RETIRED 2026-11-15: off the screen, routes kept unused — see
+// routes/google-allowance.js.
 app.use('/google-allowance', require('./routes/google-allowance'));                   // GET: the figure in force — READ ONLY
 app.use('/google-allowance-measure', require('./routes/google-allowance-measure'));   // GET: what a re-measure would give — READ ONLY
 app.use('/google-allowance-accept', require('./routes/google-allowance-accept'));     // POST: make the shown figure the one in force — WRITES google_allowance

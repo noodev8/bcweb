@@ -66,6 +66,7 @@ import AppShell from '@/components/AppShell';
 import UpdateOrdersButton from '@/components/UpdateOrdersButton';
 import ProductNavCards from '@/components/ProductNavCards';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useAdCost } from '@/lib/useAdCost';
 import {
   getSalesReport,
   SalesFilterStep, SalesReportData, SalesReportRow, SalesReportSummary, SalesSort, SalesSortDir, SalesWindow,
@@ -329,7 +330,11 @@ function SalesPageContent() {
   // read of that header explains why it's in both places. This page keeps only the two things that are ITS business: where a failure
   // is displayed, and what goes stale after a run (new orders mean new sale rows, so the ledger below reloads).
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const onUpdated = useCallback(async () => { await refresh(); }, [refresh]);
+  // ADS (owner, 2026-11-15): the profit TOTAL on screen has an estimated Google cost taken off — rule in lib/useAdCost.ts.
+  const { cost: adCost, orders: shpOrders, perSale: adPerSale, rateDays: adRateDays, refresh: refreshShp } =
+    useAdCost({ channel, window: win, searchActive, summary });
+
+  const onUpdated = useCallback(async () => { await Promise.all([refresh(), refreshShp()]); }, [refresh, refreshShp]);
 
   // A failed sync must not blank out a ledger that loaded perfectly well, so it takes precedence in the existing banner rather than
   // getting a banner of its own.
@@ -559,12 +564,15 @@ function SalesPageContent() {
                 Central and the bank. */}
             <div className="mt-0.5 text-xs text-slate-400">{money(summary.netRevenue)} ex VAT</div>
           </div>
-          <Stat label="Net profit" value={money(summary.profit)}
-            valueClassName={summary.profit < 0 ? 'text-rose-600' : 'text-emerald-600'}
+          {/* Profit less the estimated ad cost (see ADS above); return on cost stays before ads. */}
+          <Stat label="Net profit" value={money(summary.profit - (adCost ?? 0))}
+            valueClassName={summary.profit - (adCost ?? 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}
             // RETURN ON COST replaced margin here (owner, 2026-10-27): pence kept per £1 spent on stock — the figure Prospects shows
             // for a find, so the two can be compared. Margin flattered dear shoes.
-            sub={`${pct(summary.onCostPct)} on cost`}
-            subTitle="Return on cost: pence kept per £1 spent on stock" />
+            sub={`${adCost !== null ? `after ${money(adCost)} ads · ` : ''}${pct(summary.onCostPct)} on cost`}
+            subTitle={adCost !== null
+              ? `Ads estimated: ${shpOrders} Shopify orders × £${adPerSale?.toFixed(2)} cost per sale (last ${adRateDays} days)`
+              : 'Return on cost: pence kept per £1 spent on stock'} />
           {/* Units lead with NET (owner, 2026-07-30) — the gross figure was the headline until the returns badge went on, and with a
               45%-returned style the big number was then the one that hadn't happened. Net is what the money tiles beside it are already
               netted to, so the row now reads on one basis throughout. The gross is spelled out underneath as the equation it came from,

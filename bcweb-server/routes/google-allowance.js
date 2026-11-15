@@ -5,6 +5,11 @@ API Route: google_allowance
 Method: GET
 Purpose: The Google allowance IN FORCE — the newest accepted google_allowance row — for the Google Ads screen's allowance line, with
          when it falls due for its quarterly re-measure. Rules: utils/googleAllowance.js. READ ONLY. Requires auth.
+
+         !! RETIRED 2026-11-15 (owner) — not deleted. Nothing calculated from it, and the Sales screen / dashboard now take a ROLLING
+         Google cost per sale off profit (bcweb-web/src/lib/useAdCost.ts: Ad Daily's last 30 days), which needs no re-measuring. The
+         allowance bar is off the Google Ads screen (components/GoogleAllowanceBar left, unused); this route, -measure, -accept and the
+         google_allowance table (the accepted history) are kept. Don't bring it back as a second cost-per-sale figure.
 =======================================================================================================================================
 Success Response:
 {

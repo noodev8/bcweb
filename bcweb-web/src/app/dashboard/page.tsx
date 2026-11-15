@@ -57,6 +57,7 @@ import Link from 'next/link';
 import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useAdCost } from '@/lib/useAdCost';
 import { SKU_HEALTH } from '@/lib/features';
 import { getAmzImportLast, getAmzLoadedList, getBackupLast, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getStockLadder } from '@/lib/api';
 import ModuleTile from '@/components/ModuleTile';
@@ -244,6 +245,9 @@ function Daily() {
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
   const sales = useApiQuery('dashboard-sales-today', () => getSalesReport({ window: 'today', limit: 1 }));
   const today = sales.data?.summary ?? null;
+  // Less the estimated Google ad cost, as on the Sales screen (lib/useAdCost.ts).
+  const ads = useAdCost({ channel: 'all', window: 'today', searchActive: false, summary: today });
+  const todayProfit = today ? today.profit - (ads.cost ?? 0) : null;
   // Shared with the AMZ loaded screen (same key) — its due count is the styles not looked at yet (or whose date has come round).
   const amzLoaded = useApiQuery('amz-loaded-list', () => getAmzLoadedList());
   const amzLoadedDue = amzLoaded.data ? amzLoaded.data.filter((r) => !r.parked).length : null;
@@ -265,7 +269,7 @@ function Daily() {
           className="group inline-flex items-baseline gap-2 rounded-full bg-slate-50 px-4 py-1.5 text-sm text-slate-500 outline-none ring-1 ring-inset ring-slate-200 transition hover:bg-white hover:ring-brand-500 focus-visible:ring-2 focus-visible:ring-brand-500"
         >
           <span className="font-medium text-slate-700">Sales today</span>
-          <span className="text-base font-semibold tabular-nums text-slate-900">{today ? gbp(today.profit) : '–'}</span>
+          <span className="text-base font-semibold tabular-nums text-slate-900">{todayProfit !== null ? gbp(todayProfit) : '–'}</span>
           <span>profit{today ? ` on ${today.unitsNet} units` : ''}</span>
           <ChevronRightIcon className="h-4 w-4 self-center text-slate-400 transition group-hover:translate-x-0.5 group-hover:text-brand-600" />
         </Link>
