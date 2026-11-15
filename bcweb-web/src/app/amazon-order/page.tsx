@@ -245,8 +245,8 @@ import AmazonExport from '@/components/AmazonExport';
 import AmazonListFba from '@/components/AmazonListFba';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupplySizes, clearNoSupply, applyAmzPrice,
-  AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder,
+  getAmazonOrderList, addOrderLine, allocateAmazonPick, setNoSupplySizes, clearNoSupply, applyAmzPrice, lookupOnAmazon,
+  AmazonOrderRow, AmazonOrderToPlace, AmazonOrderOnOrder, type AmzBarcodeHit,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useListCursor } from '@/lib/useListCursor';
@@ -269,6 +269,43 @@ function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string
     <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-white">
       <Image src={IMAGE_BASE + imagename} alt={alt} fill sizes="64px" onError={() => setFailed(true)} className="object-contain" />
     </div>
+  );
+}
+
+// AMAZON RANK for a No AMZ size (owner, 2026-11-15: "tap and get the Amazon rank for that SKU — saves getting all of them while I'm
+// checking"). One size per tap, by its barcode, in Amazon's catalogue whoever sells it — the Clearance screen's own look-up (POST
+// /clearance-amz-lookup, server utils/amzBarcodeLookup.js, THE copy). Stores nothing; the answer is held by the page for the visit
+// (`hit`), so closing and re-opening the row doesn't ask again.
+function AmazonRankLookup({ code, hit, onHit }: { code: string; hit?: AmzBarcodeHit; onHit: (h: AmzBarcodeHit) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  async function go() {
+    setBusy(true);
+    setErr(null);
+    const res = await lookupOnAmazon([code]);
+    setBusy(false);
+    const h = res.data?.results.find((x) => x.code === code);
+    if (!res.success || !h || h.found === null) { setErr(res.error || 'Amazon didn’t answer — tap again'); return; }
+    onHit(h);
+  }
+  if (hit) {
+    return hit.found ? (
+      <span className="flex items-center gap-1.5 text-slate-900">
+        <span className="tabular-nums">{hit.rank ? `rank ${hit.rank.toLocaleString('en-GB')}` : 'on Amazon · no rank'}</span>
+        <a href={`https://www.amazon.co.uk/dp/${hit.asin}`} target="_blank" rel="noopener noreferrer" title={hit.title ?? undefined}
+          className="font-mono text-xs text-brand-700 hover:underline">{hit.asin} ↗</a>
+      </span>
+    ) : <span className="text-slate-500">not on Amazon at all</span>;
+  }
+  return (
+    <span className="flex items-center gap-1.5">
+      <button type="button" onClick={go} disabled={busy}
+        title="Find this barcode in Amazon's catalogue — the ASIN and sales rank, whoever sells it"
+        className="inline-flex h-6 items-center rounded border border-slate-300 bg-white px-2 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+        {busy ? <><ArrowPathIcon className="mr-1 h-3 w-3 animate-spin" />Looking…</> : 'Get rank'}
+      </button>
+      {err && <span className="text-xs text-red-700">{err}</span>}
+    </span>
   );
 }
 
@@ -1881,6 +1918,8 @@ function AmazonOrderContent() {
   // table needed side-scrolling); the caret beside a SKU reveals them inline instead (owner request, 2026-08-13), with the style's
   // Can't get line. ONE row at a time since 2026-09-27 (see CLICK, SELECT, EXPAND in the header): opening another closes the first.
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
+  // Amazon rank answers for No AMZ sizes, by code — see AmazonRankLookup. For the visit only, nothing stored.
+  const [rankHits, setRankHits] = useState<Map<string, AmzBarcodeHit>>(() => new Map());
   // The Amazon price screen for one SKU, reached from either Profit figure. ?from= is this screen's own URL (its ?q/?from kept) so
   // the price screen's Back and Apply land back here — the basket survives (localStorage draft), the search steps don't.
   const selfHref = '/amazon-order' + (searchParams.toString() ? '?' + searchParams.toString() : '');
@@ -2830,6 +2869,16 @@ function AmazonOrderContent() {
                             {r.barcode || '—'}
                             {r.barcode && <CopyButton value={r.barcode} label="barcode" />}
                           </dd>
+                          {/* No AMZ only: tap for this size's Amazon rank by its barcode (see AmazonRankLookup). */}
+                          {!r.on_amazon && r.barcode && (
+                            <>
+                              <dt className="text-slate-500">Amazon rank</dt>
+                              <dd className="text-sm">
+                                <AmazonRankLookup code={r.code} hit={rankHits.get(r.code)}
+                                  onHit={(h) => setRankHits((prev) => new Map(prev).set(h.code, h))} />
+                              </dd>
+                            </>
+                          )}
                           <dt className="text-slate-500">Amazon SKU</dt>
                           <dd className="flex items-center gap-0.5 font-mono text-slate-900">
                             {r.amz_sku || '—'}

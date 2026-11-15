@@ -6,6 +6,7 @@ Method: POST (a read — POST only to carry the list of codes)
 Purpose: The Clearance screen's "Look up on Amazon" button (owner, 2026-11-15): for sizes not selling on Amazon, find each one in
          Amazon's catalogue by its BARCODE and return the ASIN and sales rank — whether or not we have ever listed it. Pressed by the
          owner, never on page load. Rules: utils/amzBarcodeLookup.js (THE copy). STORES NOTHING; writes nothing.
+         Also the Amazon Order screen's "Get rank" on a No AMZ size's detail row — one code per tap (owner, 2026-11-15).
 
          Requires auth.
 =======================================================================================================================================
