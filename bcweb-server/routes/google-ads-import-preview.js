@@ -3,7 +3,7 @@
 API Route: google_ads_import_preview
 =======================================================================================================================================
 Method: POST  (multipart/form-data)
-UNUSED SINCE 2026-11-15: the screen's upload panel was removed when the nightly API sweep (scripts/google-ads-sweep.js) took over.
+UNUSED SINCE 2026-11-15: the screen's upload panel was removed when the nightly API sweep (scripts/google-jobs.js (ads)) took over.
 Left in place on purpose (like the old Amazon upload routes); the sweep shares this route's plan + writes via utils/googleAdsImport.js.
 Purpose: Google Ads module, import stage 1 — READ-ONLY. Take the operator's uploaded Google Ads report(s), work out exactly what a
          commit would do, and hand back a full account of it. WRITES NOTHING.

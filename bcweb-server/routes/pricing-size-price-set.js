@@ -15,7 +15,7 @@ Purpose: Give ONE size of a style its own Shopify price (owner, 2026-11-08) — 
            price history) + a bclog row (section 'Shopify Pricing').
          - AFTER the commit, the style is pushed to Shopify (utils/shopify.js → pushIfLive, best-effort, never undoes the save — on
            failure `shopify.pushed:false` and the operator presses Apply again; productSet is idempotent). Google is NOT pushed here:
-           the log row is un-sent, so the 2-hourly sweep (scripts/google-price-sweep.js) sends it.
+           the log row is un-sent, so the 2-hourly sweep (scripts/google-jobs.js --prices) sends it.
          - changed_by = req.user.display_name (server-side).
 =======================================================================================================================================
 Request Payload:

@@ -2,7 +2,7 @@
 =======================================================================================================================================
 Module: utils/merchantFeed.js
 =======================================================================================================================================
-Purpose: THE rules for the Google Merchant Center product feed — which sizes go in, and what each line says. scripts/merchant-feed.js
+Purpose: THE rules for the Google Merchant Center product feed — which sizes go in, and what each line says. scripts/google-jobs.js (feed)
          builds the file from these; nothing else should build feed lines.
 
 MOVED FROM PYTHON (2026-11-08, owner: move the Python into BCWEB, one script at a time). This is a FAITHFUL copy of the scripts repo's

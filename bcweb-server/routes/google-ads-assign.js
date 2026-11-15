@@ -12,7 +12,7 @@ Purpose: Google Ads module — put one or more styles into a campaign bucket. TH
          the `pause` bucket (owner's call, spec §1) — reversible, one lever, and it leaves the product itself alone.
 
 WHAT ACTUALLY REACHES GOOGLE, AND WHEN — SAY THIS ON SCREEN
-Nothing here touches Google. The chain is: this write -> the nightly feed (scripts/merchant-feed.js) -> SFTP to Merchant Center -> Google recrawls ->
+Nothing here touches Google. The chain is: this write -> the nightly feed (scripts/google-jobs.js (feed)) -> SFTP to Merchant Center -> Google recrawls ->
 `custom_label_0` updates -> only then can the Ads UI scope a campaign to it. **Tomorrow at the earliest.** The Merchant API
 supplemental datasource used for instant price pushes is declared salePrice-only and cannot carry a label, so there is no fast path.
 The screen shows "pending" until an import comes back agreeing.

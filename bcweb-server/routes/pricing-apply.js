@@ -21,9 +21,9 @@ Rules enforced here:
     would double-push (once now, once overnight). The push is best-effort and runs AFTER the DB write commits (owner decision:
     "pure direct push" — on failure we surface it in the response and the operator re-Applies; there is no nightly fallback).
   - Google is DECOUPLED (2026-07-24): this route does NOT push to Google. The change is logged to price_change_log; a periodic sweep
-    (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) sends un-sent SHP changes to Google Merchant Center in one
+    (scripts/google-jobs.js --prices, run every ~2h by the VPS scheduler) sends un-sent SHP changes to Google Merchant Center in one
     deduped pass and stamps price_change_log.google_pushed_at. Keeps Apply fast when thrashing through many changes; nightly
-    scripts/merchant-feed.js --upload is the backstop. (Add/Modify's product-price still pushes Google inline — it doesn't log to price_change_log.)
+    scripts/google-jobs.js --nightly is the backstop. (Add/Modify's product-price still pushes Google inline — it doesn't log to price_change_log.)
   - changed_by = req.user.display_name, resolved by verifyToken from the token's id — NEVER sent by the client (CLAUDE.md).
   - The UPDATE + INSERT run inside withTransaction so they both land or neither does (audit can't drift from the price).
   - The write itself (the bounds, the hold rule, the UPDATE + INSERT) lives in utils/priceWrite.js → writeShopifyPrice since
@@ -52,7 +52,7 @@ Success Response:
 Shopify push outcome (`shopify` field): null = product not live (skusummary.shopify != 1) or Shopify not configured — nothing pushed;
 { pushed:true, ... } = the new price reached Shopify; { pushed:false, error, message } = DB save stands but the push failed (retry Apply).
 Google: NOT in this response — Google is decoupled. The change is logged to price_change_log and sent to Google by the periodic sweep
-(scripts/google-price-sweep.js); the nightly scripts/merchant-feed.js --upload is the backstop.
+(scripts/google-jobs.js --prices); the nightly scripts/google-jobs.js --nightly is the backstop.
 =======================================================================================================================================
 Return Codes:
 "SUCCESS"
@@ -73,7 +73,7 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { writeShopifyPrice } = require('../utils/priceWrite');
 const logger = require('../utils/logger');
 const shopify = require('../utils/shopify');
-// Google is NOT pushed here — it's decoupled to the periodic sweep (scripts/google-price-sweep.js). See the push section below.
+// Google is NOT pushed here — it's decoupled to the periodic sweep (scripts/google-jobs.js --prices). See the push section below.
 
 router.use(verifyToken);
 
@@ -142,9 +142,9 @@ router.post('/', async (req, res) => {
       : await shopify.pushIfLive(groupid);
 
     // Google is DECOUPLED (2026-07-24): this route no longer pushes to Google Merchant Center. The change is already recorded in
-    // price_change_log above; the periodic sweep (scripts/google-price-sweep.js, run every ~2h by the VPS scheduler) picks up un-sent
+    // price_change_log above; the periodic sweep (scripts/google-jobs.js --prices, run every ~2h by the VPS scheduler) picks up un-sent
     // SHP changes, pushes each Google-live style's CURRENT price ONCE (dedup), and stamps price_change_log.google_pushed_at. This keeps
-    // Apply fast when thrashing through many changes; the nightly scripts/merchant-feed.js --upload remains the ultimate backstop.
+    // Apply fast when thrashing through many changes; the nightly scripts/google-jobs.js --nightly remains the ultimate backstop.
 
     return res.json({
       return_code: 'SUCCESS',

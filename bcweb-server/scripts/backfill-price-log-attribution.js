@@ -38,7 +38,7 @@ Idempotent: re-running after a successful apply matches 0 rows on every statemen
 =======================================================================================================================================
 */
 
-// Load .env by absolute path (not cwd-relative) so the script runs from anywhere — same pattern as google-price-sweep.js.
+// Load .env by absolute path (not cwd-relative) so the script runs from anywhere — same pattern as google-jobs.js.
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 
 const { withTransaction } = require('../utils/transaction');

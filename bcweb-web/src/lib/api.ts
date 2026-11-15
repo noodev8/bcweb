@@ -307,7 +307,7 @@ export interface ProductDetail {
 }
 export interface LoginData { token: string; display_name: string; }
 // No `google` field: pricing-apply is decoupled from Google (a periodic server sweep pushes SHP changes to Google Merchant — see
-// scripts/google-price-sweep.js). Only the Shopify push happens inline. (Add/Modify's updateProductPrice still returns a google result.)
+// scripts/google-jobs.js --prices). Only the Shopify push happens inline. (Add/Modify's updateProductPrice still returns a google result.)
 // A size price a style-price write ended (the style price went to or below it — server utils/sizePrice.js → styleDrop).
 export interface SizePriceEnded { code: string; size: string; price: number; }
 export interface ApplyData { groupid: string; new_price: string; old_price: number | null; next_review: string | null; warnings: string[]; size_prices_ended: SizePriceEnded[]; shopify?: ShopifyPushResult | null; }
@@ -1330,7 +1330,7 @@ export interface ShopifyPushResult { pushed: boolean; isNew?: boolean; variantCo
 // Outcome of the automatic "re-push price to Google Merchant Center on save" that pricing-apply and product-price run when a product
 // is live on Google. null/absent means "not live on Google, Google not configured, or no googleid yet — nothing pushed"; pushed=false
 // means the DB save stands but the whole push failed (updated/failed/total cover PARTIAL success — a groupid can have several
-// googleids, one per size). Unlike Shopify, a failed Google push isn't urgent to retry — the nightly scripts/merchant-feed.js --upload cron
+// googleids, one per size). Unlike Shopify, a failed Google push isn't urgent to retry — the nightly scripts/google-jobs.js --nightly cron
 // is still an eventual fallback.
 export interface GooglePushResult { pushed: boolean; updated?: number; failed?: number; total?: number; error?: string; message?: string; }
 export function setProductShopify(groupid: string, shopify: boolean, status?: 'ACTIVE' | 'DRAFT') {
@@ -3948,7 +3948,7 @@ export function getAdDaily(days?: number) {
 // ---- Google Ads module (campaign assignment — docs/google-ads-spec.md) -----------------------------------------------------------
 // The screen decides which STYLES sit in which Google Ads campaign bucket, writing skusummary.googlecampaign, which the nightly
 // merchant feed ships as Google's custom_label_0. Ad performance arrives nightly from the Google Ads API
-// (scripts/google-ads-sweep.js).
+// (scripts/google-jobs.js (ads)).
 //
 // TWO KINDS OF NUMBER LIVE ON THIS SCREEN AND THE TYPES KEEP THEM APART:
 //   OURS     units / revenue / profit — from `sales`, Shopify channel only, profit NET (after fees, postage, returns).

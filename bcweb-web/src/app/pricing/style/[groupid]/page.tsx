@@ -120,7 +120,7 @@ function DrillContent() {
         setNotice({ kind: 'err', text: `Saved £${res.data.new_price}.${reviewMsg}${warn} But it did NOT reach Shopify${push.message ? `: ${push.message}` : ''}. Press Apply again to retry.` });
         return;
       }
-      // Google is decoupled — a periodic server sweep (scripts/google-price-sweep.js) pushes this change to Google Merchant later, so
+      // Google is decoupled — a periodic server sweep (scripts/google-jobs.js --prices) pushes this change to Google Merchant later, so
       // there's nothing to report here (and no per-Google failure to surface). The plain "Saved" covers the DB + live Shopify push.
       // A size price the new style price went to or below is gone (back to the style price — server utils/sizePrice.js). Say so: it
       // is the one side effect of a style price the operator can't see in the box they typed in.

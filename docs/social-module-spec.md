@@ -46,7 +46,7 @@ scheduler now**, sweep-driven, and hand FB a post at its due minute like any oth
 platform. One code path, and the queue in bcweb is the truth rather than a mirror
 of something living inside Meta.
 
-Pattern to copy: `scripts/google-price-sweep.js` (cron → find due rows → act →
+Pattern to copy: `scripts/google-jobs.js --prices` (cron → find due rows → act →
 stamp). Same shape, same crontab file.
 
 ## Phase 0 — Meta access — **DONE 2026-08-01**

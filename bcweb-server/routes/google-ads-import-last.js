@@ -8,7 +8,7 @@ Purpose: Google Ads module — how fresh is the ad data, and where are the holes
          Requires auth. Read-only.
 
 WHY THIS IS MORE THAN "WHEN DID IT LAST RUN"
-Since 2026-11-15 the nightly sweep (scripts/google-ads-sweep.js) imports the last 30 days from the Google Ads API, so the data should
+Since 2026-11-15 the nightly sweep (scripts/google-jobs.js (ads)) imports the last 30 days from the Google Ads API, so the data should
 be at most a day or two old; a range is back-filled with the sweep's --from/--to (docs/google-ads-spec.md §8). Staleness now means the sweep has
 stopped — its bclog row says why. Either way the SHAPE of what we hold is the thing worth reporting:
 
@@ -129,7 +129,7 @@ router.get('/', async (req, res) => {
         FROM bclog
        WHERE section = 'Google Ads'
          -- Imports only: the screen's Assign / Campaign rows share this section and are not imports. 'Import:' is the upload,
-         -- 'Import (API):' the nightly sweep (scripts/google-ads-sweep.js). A failed sweep ('Import (API) FAILED') wrote nothing, so it
+         -- 'Import (API):' the nightly sweep (scripts/google-jobs.js (ads)). A failed sweep ('Import (API) FAILED') wrote nothing, so it
          -- is not the last import; a broken sweep shows as the freshness line ageing (coverage below), and its reason is in bclog.
          AND log LIKE 'Import%' AND log NOT LIKE '%FAILED%'
        ORDER BY created_at DESC

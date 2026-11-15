@@ -5,7 +5,7 @@ Util: googleAdsApi   (THE copy — the one place BCWEB calls the Google Ads API)
 Purpose: Read the two Google Ads reports straight from the Google Ads API, so nobody has to download them from the Report editor.
          Hands back EXACTLY the shape utils/googleAdsReports.js → parseReport() gives for an uploaded CSV, so the same plan and the
          same writes (utils/googleAdsImport.js → buildPlan / applyProduct / applyCampaign) serve both the file upload and the nightly
-         sweep (scripts/google-ads-sweep.js). One set of rules for what lands in google_product_daily / google_campaign_daily.
+         sweep (scripts/google-jobs.js (ads)). One set of rules for what lands in google_product_daily / google_campaign_daily.
 
 AUTH — NO NEW CREDENTIAL
 The merchant-feed service account (GOOGLE_MERCHANT_CREDENTIALS_JSON, utils/googleAuth.js) asks for the `adwords` scope. It works

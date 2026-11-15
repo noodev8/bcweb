@@ -4,7 +4,7 @@ Module: utils/googleMerchant.js
 =======================================================================================================================================
 Purpose: Keep Google Merchant Center's price in step with a Shopify Pricing apply (W1), the same way utils/shopify.js keeps Shopify in
          step. Without this, Google Shopping/ads would keep showing the OLD price after an Apply until the next nightly
-         C:\scripts\merchant-feed\scripts/merchant-feed.js --upload cron run (3:30am BST) — that script is the only thing that regenerates and
+         scripts/google-jobs.js --nightly cron run (3:30am BST) — that script is the only thing that regenerates and
          re-uploads the full feed to Google.
 
          DONE IN NODE (2026-07-24): the price push now runs in-process with the built-in fetch + a service-account token from
@@ -189,7 +189,7 @@ async function pushIfLive(groupid) {
 
     return { pushed: true, updated, absent: absent.length, failed: errors.length, total: targets.length };
   } catch (err) {
-    // Wholesale failure (token mint / DB read) — the DB write still stands; nightly scripts/merchant-feed.js --upload is the backstop.
+    // Wholesale failure (token mint / DB read) — the DB write still stands; nightly scripts/google-jobs.js --nightly is the backstop.
     logger.error(`[googleMerchant] pushIfLive failed for ${groupid}: ${err.message}`);
     return { pushed: false, error: 'GOOGLE_PUSH_FAILED', message: err.message };
   }

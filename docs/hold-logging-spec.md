@@ -69,7 +69,7 @@ same, `log_date`/`changed_at`, `notes`, `changed_by`. Same NULL rule. `uploaded_
 
 ## 4. Google sweep — belt and braces
 
-`scripts/google-price-sweep.js` finds SHP rows with `google_pushed_at IS NULL` and pushes that style's current price. Hold rows
+`scripts/google-jobs.js --prices` finds SHP rows with `google_pushed_at IS NULL` and pushes that style's current price. Hold rows
 would give it a queue of no-op pushes: harmless in effect (it would push the price already live) but wasteful and confusing.
 
 Two guards, both cheap, and we want both:

@@ -7,7 +7,7 @@ Purpose: Say how old the Google Ads numbers on the screen are. Every figure Goog
          this line is the caveat on everything else on the page and is always visible.
 
 WHERE THE DATA COMES FROM (since 2026-11-15)
-The nightly sweep (scripts/google-ads-sweep.js, 04:30 UTC) reads the last 30 days from the Google Ads API — docs/google-ads-spec.md §8.
+The nightly sweep (scripts/google-jobs.js --nightly, 02:30 UTC) reads the last 30 days from the Google Ads API — docs/google-ads-spec.md §8.
 It replaced the upload panel this component used to be (GoogleAdsImport: download two Report editor CSVs, preview, commit). The
 upload routes (/google-ads-import-preview, -commit) stay on the server, unused; a range is back-filled with the sweep's --from/--to.
 
@@ -23,7 +23,7 @@ flagged intended behaviour as a hole. The gaps are still on the API response if 
 import { getGoogleAdsImportLast, GoogleAdsCoverage } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 
-// The sweep imports up to yesterday at 04:30 UTC, so 1 is normal and 2 is the early hours before it runs. 3 = a night was missed.
+// The sweep imports up to yesterday at 02:30 UTC, so 1 is normal and 2 is the early hours before it runs. 3 = a night was missed.
 const STALE_DAYS = 3;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

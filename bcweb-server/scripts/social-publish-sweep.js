@@ -13,13 +13,13 @@ Purpose: Social module — the scheduler. Finds targets whose post is due, publi
          MUST match the crontab; if one changes, change the other in the same commit or the screen starts promising times nothing will
          honour.
 
-         Same shape as scripts/google-price-sweep.js: cron -> find due rows -> act -> stamp.
+         Same shape as scripts/google-jobs.js --prices: cron -> find due rows -> act -> stamp.
 
 NO OUTPUT REDIRECTION, ON PURPOSE
          The cron entry has no `>>` — matching every other entry on the box. That is deliberate here rather than an oversight: this
          script's durable record is in the DATABASE. Every publish and every permanent failure writes a `bclog` row, the target row
          keeps Meta's exact error text, and the Queue shows failures in red. docs/maintenance-notes.md flags "every sweep failure so
-         far has been invisible" as an open gap for google-price-sweep.js and says the fix is scripts self-logging rather than bolting
+         far has been invisible" as an open gap for the price sweep (now scripts/google-jobs.js --prices, which self-logs failures to bclog since 2026-11-15) and says the fix is scripts self-logging rather than bolting
          a redirect onto the schedule file — this script is built that way from the start.
 
 WHY WE SCHEDULE AT ALL, GIVEN FACEBOOK CAN

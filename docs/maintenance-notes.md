@@ -168,17 +168,17 @@ changed a minute earlier, and pushed fine. The leading zero is irrelevant.
 
 ### There is no sweep log file — don't go looking for one
 
-No entry in `docs/crontab.txt` redirects output (none of the 16 use `>>`). The other files in `/apps/scripts/logs/` exist because the
-Python jobs self-log via `logging_utils`; `google-price-sweep.js` only writes `console.log`/`console.error`, so under cron its
-output goes to stdout/stderr and is mailed to root or dropped. To see it, run the cron line by hand:
+No entry in `docs/crontab.txt` redirects output (none use `>>`). The other files in `/apps/scripts/logs/` exist because the Python
+jobs self-log via `logging_utils`. The price sweep (`scripts/google-jobs.js --prices`) prints to stdout/stderr, which cron mails to
+root or drops. To see a run, do it by hand:
 
 ```
-cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-price-sweep.js
+cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-jobs.js --prices
 ```
 
-**This is still an open gap.** Every sweep failure so far has been invisible — which is precisely why the above sat unnoticed for
-a day. Worth fixing by having the script self-log the way the Python jobs do, rather than bolting a `>>` onto the crontab; the
-schedule file shouldn't have to know about logging.
+**Closed 2026-11-15.** Sweep failures used to be invisible (why the above sat unnoticed for a day). Since the move into
+`scripts/google-jobs.js` the price part writes a bclog row (section 'Google Prices') when it fails or leaves a style unsent. A clean
+run writes none, so every 2 hours of "all fine" doesn't bury the log.
 
 ---
 

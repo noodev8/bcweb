@@ -90,7 +90,7 @@ module.exports = {
     fulfilClientSecret: process.env.SHOPIFY_FULFIL_CLIENT_SECRET || ''
   },
 
-  // Google Merchant Center PRIMARY feed upload — the nightly product file (scripts/merchant-feed.js --upload), sent to Merchant Center's
+  // Google Merchant Center PRIMARY feed upload — the nightly product file (scripts/google-jobs.js --nightly), sent to Merchant Center's
   // SFTP drop. Moved here from the Python merchant_feed.py on 2026-11-08 with the same MERCHANT_SFTP_* variables (port default 19321 as
   // the Python had). Optional: not validated at boot; the script refuses to upload with a clear message if any is missing.
   // QUOTE MERCHANT_SFTP_PASSWORD in .env (single quotes): it contains '#', which Node's dotenv reads as the start of a comment — the
@@ -104,7 +104,7 @@ module.exports = {
   },
 
   // Google Merchant Center Merchant API — real-time price push after a Shopify Pricing apply (utils/googleMerchant.js). Without this,
-  // Google Shopping/ads would show the old price until the next nightly feed upload (scripts/merchant-feed.js --upload).
+  // Google Shopping/ads would show the old price until the next nightly feed upload (scripts/google-jobs.js --nightly).
   // Same service-account credential the retired Python price scripts used. Optional
   // feature like onecom/shopify above: not validated at boot; utils/googleMerchant.js checks these are present before it does anything.
   //
@@ -121,7 +121,7 @@ module.exports = {
     feedLabel: process.env.GOOGLE_FEED_LABEL || 'GB'
   },
 
-  // Google Ads API — the nightly report sweep (scripts/google-ads-sweep.js via utils/googleAdsApi.js). Reuses the SAME service account
+  // Google Ads API — the nightly report sweep (scripts/google-jobs.js (ads) via utils/googleAdsApi.js). Reuses the SAME service account
   // as `google` above (added as a read-only user in the Ads account), so the only value here is which Ads account to read: the 10-digit
   // customer ID from the top of the Google Ads screen. Optional: unset, the sweep says NOT CONFIGURED and the CSV upload still works.
   googleAds: {

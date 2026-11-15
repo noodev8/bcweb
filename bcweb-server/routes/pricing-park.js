@@ -81,7 +81,7 @@ router.post('/', async (req, res) => {
 
       // 4) The HOLD audit row: new_price = old_price is what makes it a hold rather than a move.
       //
-      //    google_pushed_at is PRE-STAMPED to now(). scripts/google-price-sweep.js pushes every SHP row it finds with a NULL
+      //    google_pushed_at is PRE-STAMPED to now(). scripts/google-jobs.js --prices pushes every SHP row it finds with a NULL
       //    stamp, so an un-stamped hold would hand it a queue of no-op pushes — harmless in effect (it would push the price that
       //    is already live) but wasteful and confusing. A hold has nothing to send, so it is born sent. The sweep also carries its
       //    own old_price <> new_price guard as the safety net; this stamp means the fix does not depend on that script being

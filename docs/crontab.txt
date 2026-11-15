@@ -29,21 +29,23 @@
 # 2:00 AM - Database backup (first, when DB is stable)
 0 1 * * * /apps/scripts/db-maint/pg_backup.sh
 
-# 2:15 AM - Amazon FBA Inventory report via SP-API (prices, Seller Central price changes, new SKUs, full stock check) - before the stock count
+# 2:15 AM - Amazon FBA Inventory report via SP-API and full Shopify price sync
 15 1 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/amz-inventory-nightly.js --commit
 
 # 2:45 AM - Count the stock for the BCWEB stock position screen
 45 1 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/stock-daily.js
 
 # 3:30 AM - Google Merchant feed (after prices/inventory updated)
-30 2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/merchant-feed.js --upload
+# 30 2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/merchant-feed.js --upload
+
+# 3:30 AM - Google nightly: Merchant feed (after prices/inventory updated), then Google Ads reports (last 30 days)
+30 2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-jobs.js --nightly
 
 # 4:00 AM - Weekly sales cleanup (Mondays only) - purge >900 days, fix return prices
 0 3 * * 1 /apps/scripts/venv/bin/python /apps/scripts/db-maint/clean_sales.py
 
 # 5:30 AM - Google Ads reports from the API (last 30 days) into the Google Ads screen
-30 4 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-ads-sweep.js --commit
-
+# 30 4 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-ads-sweep.js --commit
 
 # ===== DAYTIME PROCESSING =====
 
@@ -58,7 +60,8 @@
 30 21 * * * /apps/scripts/venv/bin/python /apps/scripts/returns/sync_returns.py
 
 # Every 2h, 9am-11pm BST (08-22 GMT) - sends un-sent Shopify price changes to Google
-0 8-22/2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-price-sweep.js
+0 8-22/2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-jobs.js --prices
+# 0 8-22/2 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-price-sweep.js
 
 # Hourly at :20, 9:20am-7:20pm BST - Amazon Buy Box read (read only, ~5 min)
 20 8-18 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/amz-buybox-read.js

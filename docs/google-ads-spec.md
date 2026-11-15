@@ -635,13 +635,14 @@ someone forgets:
 **Phase 1** was the manual download + upload (§7.8), with the parser written as a pure
 function over parsed rows so the API could be a swap and not a rewrite. It was.
 
-**Phase 2 — `scripts/google-ads-sweep.js`, nightly on the VPS cron.** Reads both reports
+**Phase 2 — the nightly API sweep**, built as `scripts/google-ads-sweep.js` and since 2026-11-15 the `ads` part of
+`scripts/google-jobs.js` (every scheduled Google job in one script; `--nightly` runs it after the feed). Reads both reports
 from the Google Ads API (`utils/googleAdsApi.js`, THE one place BCWEB calls it) for the
 last 30 days to yesterday, and hands rows in `parseReport()`'s shape to the same
-`buildPlan` / `applyProduct` / `applyCampaign` as the upload. Dry run by default;
-`--commit` writes in one transaction with a bclog row (`Import (API): …`, who
+`buildPlan` / `applyProduct` / `applyCampaign` as the upload. `--dry` prints
+the plan; otherwise it writes in one transaction with a bclog row (`Import (API): …`, who
 `Scheduler`); a failure writes `Import (API) FAILED …` and nothing else.
-`--days N` or `--from/--to` widen the window for a back-fill.
+`--only ads` with `--days N` or `--from/--to` widens the window for a back-fill.
 
 What it needed — less than this section first said (the original plan assumed an MCC,
 a developer token and an OAuth refresh token; Google changed the rules):

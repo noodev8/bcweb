@@ -46,7 +46,7 @@ When you deploy this the first time, ask Claude to help wire up the Python env +
 No Python, no venv, no google-price-push folder anymore. utils/googleMerchant.js pushes a salePrice-only supplemental override
 to the Merchant API (products/v1) in-process; auth is utils/googleAuth.js (service-account JWT signed with Node's built-in crypto,
 access token cached ~1h). Google is DECOUPLED from the apply: POST /pricing-apply just logs the change to price_change_log; the
-sweep (scripts/google-price-sweep.js) sends the un-sent ones.
+sweep (scripts/google-jobs.js --prices) sends the un-sent ones.
 
 SCHEDULING IS NOT DOCUMENTED HERE. docs/crontab.txt is the definitive source for when the sweep runs -- full stop. Do not restate the
 schedule in this file; the copy that used to live here had drifted from the real one.
@@ -56,8 +56,8 @@ Env (unchanged -- already in prod .env; NO new vars to add):
   (optional GOOGLE_CONTENT_LANGUAGE=en / GOOGLE_FEED_LABEL=GB default to en/GB to match the feed -- leave unset)
 
 SMOKE TEST after a deploy -- make a pricing change in the UI, then run the sweep by hand on the box:
-  node /apps/production/bcweb-server/scripts/google-price-sweep.js
-  Expect:  [google-sweep] pending=1 pushed=1 noop=0 failed=0 stamped=1   -- run it again -> "nothing pending" (proves dedup/stamp).
+  node /apps/production/bcweb-server/scripts/google-jobs.js --prices
+  Expect:  [prices] pending=1 pushed=1 noop=0 failed=0 stamped=1   -- run it again -> "nothing pending" (proves dedup/stamp).
 
 ONE-TIME ACCOUNT SETUP -- ALREADY DONE, DO NOT REPEAT and do NOT run per-machine:
   - GCP project registered with merchant account 124941872; "Merchant API" enabled in the Cloud project.
