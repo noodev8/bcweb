@@ -41,6 +41,9 @@
 # 4:00 AM - Weekly sales cleanup (Mondays only) - purge >900 days, fix return prices
 0 3 * * 1 /apps/scripts/venv/bin/python /apps/scripts/db-maint/clean_sales.py
 
+# 5:30 AM - Google Ads reports from the API (last 30 days) into the Google Ads screen
+30 4 * * * cd /apps/production/bcweb-server && /root/.nvm/versions/node/v22.17.0/bin/node scripts/google-ads-sweep.js --commit
+
 
 # ===== DAYTIME PROCESSING =====
 
