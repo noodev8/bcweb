@@ -143,4 +143,19 @@ function costFromProfitSql(soldExpr, profitExpr) {
   return `(${soldExpr} * ${priceCoefficient} - ${flatCosts} - ${RETURNS_DIVISOR} * ${profitExpr})`;
 }
 
-module.exports = { shopifyProfit, priceForProfit, costFromProfitSql, toNumber };
+/*
+ * profitLine(cost) -> { per_pound, at_zero } | null
+ * The same formula as a straight line in the price, for a screen that re-prices as you type (the Shopify price cards, 2026-11-15):
+ *     profit = per_pound * price + at_zero        (round to 2dp, as shopifyProfit does)
+ * so the browser never holds a second copy of VAT, the payment fee or the returns haircut — the coefficients come from here.
+ * Matches shopifyProfit(price, cost) to the penny. null when the cost is unusable (the card then shows "—").
+ */
+function profitLine(cost) {
+  const c = toNumber(cost);
+  if (c === null) return null;
+  const priceCoefficient = 1 - 1 / VAT_DIVISOR - PAYMENT_RATE;
+  const flatCosts = PAYMENT_FIXED + PACKING + ROYAL_MAIL;
+  return { per_pound: priceCoefficient / RETURNS_DIVISOR, at_zero: -(c + flatCosts) / RETURNS_DIVISOR };
+}
+
+module.exports = { shopifyProfit, priceForProfit, costFromProfitSql, profitLine, toNumber };

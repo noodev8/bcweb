@@ -20,8 +20,12 @@ Purpose: Shopify Pricing's home list — EVERY in-stock Shopify style, not one s
 
 Requires auth.
 =======================================================================================================================================
-Request: GET /pricing-all-list[?parked=include][&limit=N]
+Request: GET /pricing-all-list[?parked=include][&limit=N][&cards=1]
   limit    safety cap only (utils/listLimit.js, default 100 / max 500).
+  cards    1 = the SHOPIFY PRICE CARDS (owner, 2026-11-15, docs/shopify-cards/PLAN.md; components/ShopifyPriceCards): each returned
+           row also carries `card` — picture, Shopify handle, profit line, Amazon's dearest live size, the last price change and every
+           size with its Google benchmark and any size price in force (utils/shopifyCards.js, THE copy) — and the response carries
+           `benchmark_day`, the last Google read. Same rows, same order, so the cards walk exactly what the list shows.
 
 Success Response:
 {
@@ -46,6 +50,7 @@ const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
 const logger = require('../utils/logger');
+const { cardDetails } = require('../utils/shopifyCards');
 
 router.use(verifyToken);
 
@@ -53,6 +58,7 @@ router.get('/', async (req, res) => {
   try {
     const limit = parseListLimit(req.query.limit);
     const includeParked = req.query.parked === 'include';
+    const withCards = req.query.cards === '1';
 
     // $1 limit, $2 includeParked, $3 statuses. Stock and 30-day units as on pricing-status-list (the shared table).
     const result = await query(`
@@ -106,7 +112,15 @@ router.get('/', async (req, res) => {
 
     const total = result.rows.length > 0 ? Number(result.rows[0].total_rows) : 0;
     const outOfStock = result.rows.length > 0 ? Number(result.rows[0].oos_rows) : 0;
-    return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: outOfStock, rows });
+    // CARDS (header, ?cards=1): the rest of each card, for the returned rows, in a fixed number of queries.
+    let benchmarkDay;
+    if (withCards) {
+      const details = await cardDetails({ query }, rows.map((r) => r.groupid));
+      for (const r of rows) r.card = details.byGroup[r.groupid] ?? null;
+      benchmarkDay = details.benchmarkDay;
+    }
+    return res.json({ return_code: 'SUCCESS', total, truncated: rows.length < total, out_of_stock: outOfStock, rows,
+      ...(withCards ? { benchmark_day: benchmarkDay } : {}) });
   } catch (err) {
     logger.error('[pricing-all-list] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Failed to load the Shopify list' });

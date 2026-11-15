@@ -57,6 +57,13 @@ Each view insists on certain fields in the SELECT (the error names them).
 benchmark now, for the cards), read nightly as the `benchmark` part of `scripts/google-jobs.js --nightly` (bclog 'Google Benchmark').
 Keyed by our code, matched from Google's offer id through `skumap.googleid` (all 1,445 matched on the first dry run).
 
+**Built 2026-11-15 — the basic card (decisions 1–4):** `/pricing/cards` (`components/ShopifyPriceCards.tsx`, layout
+`components/ShopifyCardFrame.tsx`), opened by "Price cards" on the list, which passes its Due switch (`?pending=1`) and its URL (Back).
+Data = `GET /pricing-all-list?cards=1` — the list's own rows and order plus each card (`utils/shopifyCards.js`); profit from
+`utils/shopifyProfit.js → profitLine`. Set = W1 (note "Shopify card"), Leave = W2, review chips preselected 7 as on Amazon. Due on =
+worked to zero; Due off = walked, a not-due style's Leave is "Next". Google line: spread over the sizes that have a benchmark and how
+many are under / level (±3%) / over AT THE BOX PRICE; "sizes" opens the size list.
+
 ## Open
 - How the size benchmarks roll up to one style price (needed before any "Match Google" button).
 - Benchmark storage and history (with a limit).

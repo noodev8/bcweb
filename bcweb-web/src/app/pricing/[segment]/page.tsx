@@ -51,7 +51,7 @@ import { Suspense, useMemo, useState } from 'react';
 import { SortableTh, useTableSort } from '@/components/SortableTh';
 import { useRouter, useParams, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { MagnifyingGlassIcon, ScaleIcon } from '@heroicons/react/24/outline';
+import { MagnifyingGlassIcon, RectangleStackIcon, ScaleIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import BulkActionBar, { Nudge, BulkTone } from '@/components/BulkActionBar';
 import ListViewControls, { ListView, parseListView, fmtReviewDate } from '@/components/ListViewControls';
@@ -419,9 +419,14 @@ function SegmentContent() {
       backHref={isAll && !searchParams.get('from') ? undefined : backHref}
       backLabel={backLabel}
       crumb={<PricingCrumb name={isAll ? 'All' : isSitting ? SITTING_LABEL : segment} channel="shopify" note={bar ? `status · ${barLabel(bar)}` : GROUP_SUBTITLE[by]} />}
-      // The old home's two entries (Find, Shopify vs Amazon), now on the home list itself.
+      // The old home's two entries (Find, Shopify vs Amazon), now on the home list itself — and the PRICE CARDS (owner, 2026-11-15,
+      // docs/shopify-cards/PLAN.md decision 1): the same styles one card at a time, carrying the Due switch and this list's URL for Back.
       headerRight={isAll ? (
         <div className="flex gap-2">
+          <Link href={`/pricing/cards?${showPending ? 'pending=1&' : ''}from=${encodeURIComponent(listHref())}`}
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-brand-500">
+            <RectangleStackIcon className="h-4 w-4 text-slate-400" /> Price cards
+          </Link>
           <Link href="/pricing/find" className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-brand-500">
             <MagnifyingGlassIcon className="h-4 w-4 text-slate-400" /> Find
           </Link>

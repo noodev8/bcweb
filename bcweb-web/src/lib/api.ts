@@ -446,6 +446,30 @@ export function getAllList() {
   );
 }
 
+// SHOPIFY PRICE CARDS (2026-11-15, docs/shopify-cards/PLAN.md) — the same list as getAllList (GET /pricing-all-list, parked included,
+// the same order), each row with its card (server utils/shopifyCards.js). The cards page applies the list's Due switch itself.
+export interface ShopifyCardSize {
+  code: string; size: string;
+  stock: number;                 // local free stock
+  fba: number;                   // Amazon live
+  benchmark: number | null;      // Google's price benchmark for this size (others' click-weighted average); null = none
+  own_price: number | null;      // a size price in force (utils/sizePrice.js); null = sells at the style price
+}
+export interface ShopifyCard {
+  imagename: string | null; handle: string | null;
+  profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound * price + at_zero (server shopifyProfit)
+  amazon_highest: number | null;                               // Amazon's dearest live size — shown, never obeyed
+  last_change: AmzLastChange | null;
+  sizes: ShopifyCardSize[];
+}
+export type ShopifyCardRow = LoserRow & { card: ShopifyCard | null };
+export function getShopifyCards() {
+  return request<{ total: number; truncated: boolean; benchmarkDay: string | null; rows: ShopifyCardRow[] }>(
+    { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include', cards: '1' } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, benchmarkDay: b.benchmark_day ?? null, rows: b.rows || [] })
+  );
+}
+
 // AMZ LOADED (2026-10-26) — styles held locally with no size on Amazon (no amzfeed row), Birkenstock left out, each with a "looked
 // at" review date (skusummary.next_amz_load_review). Server: routes/amz-loaded-list.js / amz-loaded-review.js.
 export interface AmzLoadedRow {
