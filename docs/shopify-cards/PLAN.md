@@ -50,8 +50,12 @@ Each view insists on certain fields in the SELECT (the error names them).
 
 6. **All scheduled Google work in one script, done first as its own step (owner, 2026-11-15):** `scripts/google-jobs.js` replaced
    merchant-feed.js, google-ads-sweep.js and google-price-sweep.js. `--nightly` = feed then ads (02:30 UTC); `--prices` = the 2-hourly
-   sweep; `--only <part>`, `--dry`. Each part stands alone and keeps its bclog section. The benchmark read goes in as a third nightly
-   part once this move is live.
+   sweep; `--only <part>`, `--dry`. Each part stands alone and keeps its bclog section.
+
+**Built 2026-11-15 — the benchmark history (decision 5):** tables `google_benchmark_history` / `google_benchmark_run`
+(`migrations/20261115_google_benchmark.sql`, applied), rules `utils/googleBenchmark.js` (THE copy — `CURRENT_SQL` is each size's
+benchmark now, for the cards), read nightly as the `benchmark` part of `scripts/google-jobs.js --nightly` (bclog 'Google Benchmark').
+Keyed by our code, matched from Google's offer id through `skumap.googleid` (all 1,445 matched on the first dry run).
 
 ## Open
 - How the size benchmarks roll up to one style price (needed before any "Match Google" button).

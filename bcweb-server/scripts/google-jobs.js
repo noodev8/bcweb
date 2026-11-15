@@ -7,25 +7,30 @@ Purpose: Owner: "Ideally we would have all google work in one script and split i
          The rules are NOT here — each part only calls its util, so this file is the schedule's way in and nothing more:
            feed     the Merchant Center product feed — utils/merchantFeed.js (THE rules), put on Merchant Center's SFTP drop.
            ads      the Google Ads reports, last 30 days — utils/googleAdsApi.js + utils/googleAdsImport.js (the upload's own plan).
+           benchmark  Google's per-size price benchmark → its 12-month change-only history — utils/googleBenchmark.js (THE rules;
+                    docs/shopify-cards/PLAN.md decision 5). Added 2026-11-15 for the Shopify price cards.
            prices   un-sent Shopify price changes → Google — utils/googleMerchant.js → pushIfLive.
 
-TWO CRON LINES (docs/crontab.txt is the schedule — don't restate it here): --nightly runs feed then ads; --prices runs through the day.
+TWO CRON LINES (docs/crontab.txt is the schedule — don't restate it here): --nightly runs feed, ads, then benchmark; --prices runs
+         through the day.
          A cron line can't be both nightly and every two hours, hence two.
 
 EACH PART STANDS ALONE. A part that fails is logged and the next part still runs; the run exits 1 if any part failed. Each keeps the
          bclog section it had as its own script, so the screens reading them don't change: 'Merchant Feed' (the feed, success and
          failure) and 'Google Ads' (google-ads-import-last reads its latest 'Import…' row for the screen's freshness line).
+         'Google Benchmark' writes a row each night, success or failure, like the feed.
          'Google Prices' is new: the old price sweep only wrote to the console, which cron drops, so a failing sweep went unseen
          (docs/maintenance-notes.md, "There is no sweep log file"). It writes a bclog row on FAILURE only — every 2 hours of "all
          fine" would bury the log.
 
---dry: nothing leaves the machine and nothing is written — feed builds the file only, ads prints its plan, prices lists what's pending.
+--dry: nothing leaves the machine and nothing is written — feed builds the file only, ads prints its plan, benchmark reads Google and
+         says what it would write (rolled back), prices lists what's pending.
 
 Usage (from bcweb-server/):
-    node scripts/google-jobs.js --nightly                    the nightly cron: feed (upload) then ads (write)
+    node scripts/google-jobs.js --nightly                    the nightly cron: feed (upload), ads (write), benchmark (write)
     node scripts/google-jobs.js --prices                     the daytime cron: send un-sent Shopify prices to Google
-    node scripts/google-jobs.js --nightly --dry              both nightly parts, nothing sent or written
-    node scripts/google-jobs.js --only feed|ads|prices [--dry]    one part by hand
+    node scripts/google-jobs.js --nightly --dry              every nightly part, nothing sent or written
+    node scripts/google-jobs.js --only feed|ads|benchmark|prices [--dry]    one part by hand
   feed:  --out <path>                 build the file somewhere else
   ads:   --days N | --from YYYY-MM-DD --to YYYY-MM-DD      a wider window or a back-fill (default: 30 days to yesterday, UK)
 =======================================================================================================================================
@@ -43,6 +48,7 @@ const { FEED_SQL, buildItems, toTsv } = require('../utils/merchantFeed');
 const { fetchReports } = require('../utils/googleAdsApi');
 const { buildPlan, applyProduct, applyCampaign } = require('../utils/googleAdsImport');
 const googleMerchant = require('../utils/googleMerchant');
+const { readBenchmarks, recordBenchmarks } = require('../utils/googleBenchmark');
 
 const WHO = 'Scheduler';
 const DRY = process.argv.includes('--dry');
@@ -167,6 +173,42 @@ async function ads() {
 }
 
 // ===================================================================================================================================
+// BENCHMARK — Google's per-size price benchmark into its change-only, 12-month history. The rules are utils/googleBenchmark.js; this
+// only reads, writes in ONE transaction with its bclog row inside it, and logs a failure on its own. --dry does the same work and
+// rolls it back, so the counts it prints are exactly what a real run would write.
+// ===================================================================================================================================
+const BENCHMARK_SECTION = 'Google Benchmark';
+
+class DryRunRollback extends Error {
+  constructor(result) { super('dry run — rolled back'); this.result = result; }
+}
+
+async function benchmark() {
+  try {
+    const benchmarks = await readBenchmarks();
+    const describeRun = (r) => `${r.offers} benchmarks, ${r.sizes} of our sizes, ${r.changed} changed, ${r.trimmed} trimmed (${r.day})`;
+    if (DRY) {
+      try {
+        await withTransaction(async (client) => { throw new DryRunRollback(await recordBenchmarks(client, benchmarks)); });
+      } catch (e) {
+        if (!(e instanceof DryRunRollback)) throw e;
+        console.log(`[benchmark] DRY RUN — would write: ${describeRun(e.result)}; rolled back.`);
+      }
+      return;
+    }
+    const msg = await withTransaction(async (client) => {
+      const log = `Read: ${describeRun(await recordBenchmarks(client, benchmarks))}`;
+      await writeBcLog(client, { who: WHO, section: BENCHMARK_SECTION, log });
+      return log;
+    });
+    console.log(`[benchmark] ${msg}`);
+  } catch (err) {
+    if (!DRY) await logActivity({ who: WHO, section: BENCHMARK_SECTION, log: `FAILED — nothing written: ${err.message}` });
+    throw err;
+  }
+}
+
+// ===================================================================================================================================
 // PRICES — push recent Shopify price changes to Google as the supplemental salePrice override, in one deduped pass. pricing-apply (W1)
 // doesn't touch Google; it logs to price_change_log and this sends the un-sent ones. The nightly feed is the backstop.
 //   1. DISTINCT Google-live styles with an un-sent change = automatic dedup: a style repriced 10x since the last run is pushed ONCE,
@@ -254,7 +296,7 @@ async function prices() {
 // ===================================================================================================================================
 // RUN
 // ===================================================================================================================================
-const PARTS = { feed, ads, prices };
+const PARTS = { feed, ads, benchmark, prices };
 
 function partsToRun() {
   const only = arg('--only');
@@ -262,7 +304,7 @@ function partsToRun() {
     if (!PARTS[only]) throw new Error(`--only takes ${Object.keys(PARTS).join(' | ')}, not "${only}"`);
     return [only];
   }
-  if (process.argv.includes('--nightly')) return ['feed', 'ads'];
+  if (process.argv.includes('--nightly')) return ['feed', 'ads', 'benchmark'];
   if (process.argv.includes('--prices')) return ['prices'];
   throw new Error('say what to run: --nightly, --prices or --only <part> (see the header)');
 }
