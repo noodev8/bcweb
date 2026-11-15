@@ -11,7 +11,9 @@ Purpose: THE STOCK LADDER (owner, 2026-11-15 — "adapt Range" rather than build
 
 THE LAYOUT, top to bottom: the total (SKUs held, units under it), then the five step boxes with arrows between them (each: STEP n, its
          name, its rule in a few words, its % of every SKU held as the big number, then SKUs · units), Overstocked under step 2 with
-         its SKUs and the pairs over 4 months' worth (the number to sell off).
+         its SKUs and the pairs over 4 months' worth (the number to sell off). NEW STUFF hangs under step 1 the same way (owner,
+         2026-11-15): Daily's New stuff % (of SKUs first booked in within 90 days, the % sold since) — a success rate beside a
+         share of the range, kept apart so the steps' own % still add up to 100%.
 
 NOTHING OPENS YET (owner, same day: "No lists or drill down yet"). The boxes and the Overstocked tag will each open their own list
          later — Overstocked is a different list from step 2. The old size run, the four parts and their links (New Additions, Deep
@@ -26,12 +28,13 @@ READ-ONLY.
 =======================================================================================================================================
 */
 
-import { Fragment, Suspense } from 'react';
-import { ChevronRightIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
+import { Fragment, Suspense, useEffect, useState } from 'react';
+import Image from 'next/image';
+import { ChevronRightIcon, ChevronDownIcon, MapIcon } from '@heroicons/react/20/solid';
 import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getStockLadder, type LadderStepKey } from '@/lib/api';
+import { getProcessOverview, getStockLadder, type LadderStepKey } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
@@ -60,6 +63,20 @@ function StockLadderFront() {
   const back = from ? sp.get('back') || 'Back' : null;
 
   const q = useApiQuery('analytics-stock-ladder', () => getStockLadder());
+  // NEW STUFF's % (owner, 2026-11-15) — Daily's own figure, same request and key (GET /process-overview, rules utils/processMap.js):
+  // of the SKUs first booked in within 90 days, the % sold since. A TAG under Arrived, never in the step's own %, which stays a
+  // share of every SKU held so the five add up to 100%.
+  const nq = useApiQuery('process-overview', () => getProcessOverview());
+  // THE LADDER PICTURE (owner, 2026-11-15: "a small image of the step ladder … clicking it makes it bigger"): the agreed chart
+  // (public/stock-ladder.svg, the same drawing as the PDF) behind a small button; a click opens it full size, Esc or a click closes it.
+  const [bigChart, setBigChart] = useState(false);
+  useEffect(() => {
+    if (!bigChart) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setBigChart(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [bigChart]);
+  const newSkus = nq.data ? nq.data.newSkus : null;
   const d = q.data;
   const pctOf = (v: number) => (d && d.held.skus > 0 ? Math.round((v / d.held.skus) * 100) : 0);
 
@@ -68,7 +85,7 @@ function StockLadderFront() {
       {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
       {!d && !q.error && <p className="text-sm text-slate-400">Loading…</p>}
       {d && (
-        <section className="rounded-lg border border-slate-200 bg-white px-5 py-6">
+        <section className="relative rounded-lg border border-slate-200 bg-white px-5 py-6">
           {/* THE TOTAL — what the five steps add up to. */}
           <div className="text-center">
             <span className="text-5xl font-semibold text-slate-900">{n(d.held.skus)}</span>
@@ -81,6 +98,7 @@ function StockLadderFront() {
             {d.steps.map((s, i) => {
               const t = STEP_TEXT[s.key];
               const sweet = s.key === 'sold';
+              const arrived = s.key === 'arrived';
               return (
                 <Fragment key={s.key}>
                   {i > 0 && (
@@ -102,6 +120,22 @@ function StockLadderFront() {
                         <span className="font-semibold text-slate-900">{n(s.units)}</span> in stock
                       </div>
                     </div>
+                    {/* NEW STUFF — hangs off step 1 like Overstocked off step 2: a different measure on the same subject (owner:
+                        "both are different things but on the same subject"), the SUCCESS rate of first-ever arrivals, where the step's
+                        own % is its share of the range. */}
+                    {arrived && newSkus && (
+                      <>
+                        <div className="h-3 w-0.5 bg-emerald-600" aria-hidden />
+                        <div className="rounded-full border-2 border-emerald-600 bg-emerald-600 px-4 py-1.5 text-center text-white">
+                          <div className="text-sm font-semibold">
+                            New stuff {newSkus.total > 0 ? Math.round((newSkus.sold / newSkus.total) * 100) : 0}% sold
+                          </div>
+                          <div className="text-xs tabular-nums">
+                            <span className="font-semibold">{n(newSkus.sold)}</span> of {n(newSkus.total)} new SKUs
+                          </div>
+                        </div>
+                      </>
+                    )}
                     {/* OVERSTOCKED — hangs off step 2 like the chart's tag: a label on step 2, not a sixth step. */}
                     {sweet && (
                       <>
@@ -121,7 +155,24 @@ function StockLadderFront() {
               );
             })}
           </div>
+          {/* THE LADDER PICTURE — a small button in the empty corner under steps 4–5 (owner's screenshot, 2026-11-15: a thumbnail
+              top right sat on Step 5 and was too small to read); on a phone, under the steps. */}
+          <div className="mt-6 flex justify-center lg:absolute lg:bottom-5 lg:right-5 lg:mt-0">
+            <button type="button" onClick={() => setBigChart(true)}
+              className="inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400">
+              <MapIcon className="h-4 w-4 text-slate-500" aria-hidden />
+              How the steps work
+            </button>
+          </div>
         </section>
+      )}
+      {bigChart && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4" onClick={() => setBigChart(false)}>
+          <div role="dialog" aria-modal="true" aria-label="The stock ladder" className="w-full max-w-5xl rounded-xl bg-white p-3 shadow-xl">
+            <Image src="/stock-ladder.svg" alt="The stock ladder: five steps and the Overstocked label" width={760} height={440} unoptimized
+              className="h-auto w-full" />
+          </div>
+        </div>
       )}
     </AppShell>
   );
