@@ -98,7 +98,84 @@ was most of the stock on Overstocked (60 of 71), Unsold 90 (303 of 365) and Clea
       with a review date still to come (a season park) must not be swept to eBay. **eBay is a tag, never its own bucket** (owner,
       same day): a size stays on its step. Shop + FBA stock on one eBay listing is fine (Update Orders lines the counts up).
       Birkenstock never on eBay.
-- [ ] **The Clearance screen as a whole** (owner, 2026-11-15: "I just want the Clearance screen to be easy … more thought needed"):
+- [x] **The Clearance screen as a whole — BUILT 2026-11-15** (`/analytics/slow-sizes/clearance`, read `GET /clearance-list`, rules
+      `utils/clearanceList.js`; Range's step 5 box and the Clearance step cards' Back go there via `lib/stockLadder → stepListHref`;
+      the eBay screen takes `?q=<groupid>` to start on a style). Decisions below. (Owner, 2026-11-15: "I just want the Clearance screen to be easy … more thought needed"):
       the choices under it are drop the Shopify price, drop the Amazon price, add / remove eBay, adjust the eBay price. Not built
       until agreed — including the "List on eBay →" mark. eBay's rules already start 9-month sizes at 50% of RRP and list FBA stock (MCF).
+  - [x] **Decision 1 — ONE list, one row per SKU, Shopify | Amazon | eBay side by side (owner, 2026-11-15: "yes, one list with the
+        three channels").** A NEW Clearance screen, opened from Range's step 5 box in place of the step list (the other steps keep the
+        step list + Amazon cards). Every Clearance SKU, any brand. Rows grouped under their style (the eBay listing is per style).
+        Each channel cell = its price + its own button, or a grey reason why that channel can't sell it — never hidden:
+        Shopify always (Shopify button = a SIZE price, `utils/sizePrice.js`; whether a style with every size on Clearance cuts the style
+        price instead is still to decide) · Amazon only with pairs at FBA (else "no FBA stock") · eBay any brand but Birkenstock (else
+        "not for Birkenstock"; the rule stays in `utils/ebayListingRules.js`). Channels are independent — changing one never touches
+        another. Chips are filters, not parts: All · Could go on eBay · At Amazon. Job lot and the other shop deal kept off for now.
+        The row shows the review date (a park must be seen before a price change or an eBay listing).
+        Rejected on the way, same day: parts by where the stock sits (only Amazon depends on location — Shopify and eBay sell local
+        + FBA via MCF), then parts by where it could sell with a lead tool per part, then a Birkenstock part.
+        That day: 163 SKUs, all live on Shopify (1 with a size price); 25 at FBA, 138 none; eBay 25 on, 38 could list, 100
+        Birkenstock; 151 with a review date still to come (Shopify or Amazon).
+  - [x] **Decision 2 — opens on All (owner, 2026-11-15, option A).** Every Clearance SKU shows, parked or not. Each channel cell shows
+        its own review date under its price (Shopify per style, Amazon per size; eBay has none). A parked price can still be changed and
+        sets a new date as usual. No Due chip. Rejected: open on Due (would have shown ~12 of 163, the rest behind a chip).
+  - [x] **Decision 3 — the Shopify button is ALWAYS a size price (owner, 2026-11-15, option A)**, even when every held size of the
+        style is on Clearance; a style with several Clearance sizes gets one "all sizes of this style" entry. Why: it ends by itself
+        on sell-out (a later delivery or return never sells at the clearance price), it goes as `sale_price` and is left out of paid
+        Shopping (no ad spend on clearance), and it never moves the style price, its log or its review date. The size price's own
+        rules stand (`utils/sizePrice.js`: below the style price, in stock, no review date). Rejected: B, style price when every size
+        is on Clearance. That day 85 styles had a Clearance size: 44 (84 SKUs) all sizes on Clearance, 41 (79 SKUs) only some.
+  - [x] **Decision 4 — eBay "List" opens the existing listing form for the WHOLE style (owner, 2026-11-15, option A)** — the eBay
+        screen's Not on eBay form, nothing new: Clearance sizes start at 50% of RRP, the others at their Amazon price (else Shopify +
+        £4.50), every price editable before List. The style's other sizes go on too, at a normal price (Update Orders already adds new
+        in-stock sizes by itself). Rejected: B, list only the Clearance sizes (a new keep-off-the-listing rule + a stock-sync change,
+        for 8 sizes). That day the 38 listable SKUs came from 16 styles: 12 all on Clearance, 4 also holding 8 other sizes.
+  - [x] **Decision 5 — no take-off on the Clearance screen (owner, 2026-11-15, option C).** A size on eBay shows its eBay price with
+        [change] (POST /ebay-size-price, built) and a "listing →" link to the eBay screen; ending a listing stays there, where every
+        size it holds is in view. Why: eBay ends per style, and that day 7 of the 8 live listings holding Clearance sizes also held
+        non-Clearance sizes, so a row's "take off" would pull selling sizes. Rejected: A (row button ending the whole listing), B (take
+        off one size — the build passed on in Decision 4).
+  - [x] **Decision 6 — Amazon: ONE button for the lot, no per-row Amazon change (owner, 2026-11-15: "I don't want to be going back and
+        forth … I go through them as normal on the price card section, not here").** A single "Price on Amazon (n)" at the top sends
+        every Clearance size at FBA to the Amazon step cards (`/amz/step-cards`, step clearance, All — parked included, each card
+        shows its review date; Buy Box sizes left out as always). The row's Amazon cell is read only: price + review date, or "no FBA
+        stock". The cards are as built (reason line "clear the lot, a loss is OK", no suggested price). Rejected: a [change] per row
+        opening one card (back and forth), a plain price box on the row (second way to set an Amazon price, no cost/fee in view).
+  - [x] **Decision 7 — Shopify size price set on the row, kept SIMPLE (owner, 2026-11-15, option A: "I'm expecting Shopify cards to be
+        designed later and may come back here").** A price box + Set on each row; a style with several Clearance sizes gets one box
+        on its style line that sets them all. Same save as the drill's Size prices panel (`utils/sizePrice.js`, W-S1, pushIfLive),
+        live on Shopify at once. Interim: when Shopify price cards exist, this may move to a "Price on Shopify (n)" button like
+        Amazon's — so build nothing here that a card screen would have to undo.
+  - [x] **Decision 8 — what a row shows, kept short (owner, 2026-11-15: "start with that").** Style line: name (`title.shopifytitle`),
+        brand, cost, RRP, the "all sizes" Shopify box. Size row: size · pairs · last sold (date, or "never") · Shopify / Amazon / eBay.
+        Left out: where the pairs sit (local / FBA — decides nothing here), profit per channel (the Amazon card and the eBay price
+        show their own; a Shopify size price below cost gets a small red "below cost" flag, never a block), sales history.
+  - [x] **After the build (owner, 2026-11-15):** column headings stick to the window (one scroll bar, no inner box); − / + in 5% of RRP
+        steps with the % shown on every price box here and on the eBay listing form (`components/RrpStepper.tsx`); the eBay box shows
+        today's eBay price; a brand eBay never carries = a greyed-out List, no words; barcode under each size; the Amazon cell says why
+        a size can't sell there (listed · none at FBA / not listed by us); **Look up on Amazon** (a button, never on load — owner: "at my
+        request rather than slowing the screen down") finds those sizes in Amazon's catalogue BY BARCODE: ASIN + rank, whoever sells it,
+        nothing stored (`utils/amzBarcodeLookup.js`, POST /clearance-amz-lookup; rank = the Buy Box's `fashionRank`). Our ASIN isn't
+        needed — the barcode finds Amazon's. First run: 138 sizes in 7s — 81 ranked, 33 no rank, 24 not on Amazon at all.
+  - [x] **Amazon on Clearance, after the build (owner, 2026-11-15):** only sizes NOT listed by us and NOT Birkenstock (`listable`) are
+        looked up; chip **Could go on Amazon** = those Amazon's catalogue has (pressing it runs the look-up). Amazon's own price: not
+        wanted ("these are clearance … I will price low or RRP"). **List on Amazon is PER SIZE** (owner, same day: "it sends the whole
+        size range? Some have rank 43k while other sizes are much more") — a button in the size's Amazon cell, one size per press, at
+        RRP, FBA (POST /amz-list now takes optional `codes`; without them it still lists the whole style, as on the other screens). Shown
+        for a listable size, hidden once the look-up says Amazon hasn't the product. No bulk. (First tried: the style-wide button on
+        the style line — dropped for this.) Amazon's VALIDATION_PREVIEW (check mode) answers INVALID for SHOES even when its only issue
+        is the harmless Dangerous Goods WARNING, so it can't vouch for a size — real presses read ACCEPTED. A listed size reaches
+        the Amazon cards only once pairs are at FBA, and even then not for its first 30 days: a size that has never sold on Amazon is
+        the Buy Box's NEW when it lands (utils/amzBuyBoxDeck.js), so it's carded on Amazon Pricing only if a rival is cheaper, and
+        joins the Clearance cards after 30 days with no Amazon sale. **price → (owner, same day, option A)** on the size's Amazon cell
+        opens its own Amazon price screen at ANY stage (listed, on its way in, New, selling) — price it ahead of arrival and it is live
+        at that price when the pairs land. Rejected: B (Clearance skips New — would change the one due rule), C (leave it). That day: 32 listable sizes — 23 on
+        Amazon's catalogue (20 ranked) in 10 styles, 9 not on Amazon at all.
+        **Rank decides nothing on screen (owner, 2026-11-15, option B):** the owner's own bar is under 200k, sometimes under 500k, no
+        rank = don't send — but it's applied BY HAND, size by size. The rank is shown on every looked-up size; no filter, no colour
+        band, no button hidden. Rejected: A (chip only under 500k + green / amber dots), C (List shown only under a set rank). That
+        day: under 200k 5 sizes / 1 style · 200–500k 5 / 4 · over 500k 10 / 5 · no rank 3 / 2.
+  - [x] **Decision 9 — order: longest unsold first (owner, 2026-11-15, option A)**, as every other Stock ladder list: a style ranks
+        by its longest-waiting size, sizes in size order under it. Rejected: most money tied up first (cost × pairs — ranks by qty,
+        and qty is shown, never a rule).
 - [ ] Birkenstock / Shopify on the steps.

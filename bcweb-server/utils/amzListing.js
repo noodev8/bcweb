@@ -151,9 +151,14 @@ async function putSize(s, price, preview) {
   }
 }
 
-async function run(groupid, { commit, who }) {
+async function run(groupid, { commit, who, codes = null }) {
   sp.sellerId(); // throws "not configured" before anything is sent
-  const { price, sizes } = await loadStyle(groupid);
+  const style = await loadStyle(groupid);
+  const { price } = style;
+  // ONE SIZE AT A TIME when asked (owner, 2026-11-15, the Clearance screen: "it sends the whole size range? Some have rank 43k while
+  // other sizes are much more") — `codes` narrows the press to those sizes; without it, every size of the style as before.
+  const sizes = codes ? style.sizes.filter((s) => codes.includes(s.code)) : style.sizes;
+  if (!sizes.length) throw new ListingError('NO_SIZES', `None of those sizes belong to ${groupid}`);
   await findAsins(sizes);
 
   // In batches of 5 at once (putListingsItem allows ~5 a second): one at a time took ~3 s a size, past the screen's wait (2026-11-10).
@@ -195,8 +200,8 @@ async function run(groupid, { commit, who }) {
 }
 
 /** Check: Amazon validates each size, nothing is created or written. */
-const checkStyle = (groupid) => run(groupid, { commit: false });
+const checkStyle = (groupid, codes = null) => run(groupid, { commit: false, codes });
 /** List: real listings, then skumap stamped for the accepted sizes + a bclog row. */
-const listStyle = (groupid, who) => run(groupid, { commit: true, who });
+const listStyle = (groupid, who, codes = null) => run(groupid, { commit: true, who, codes });
 
 module.exports = { checkStyle, listStyle, ListingError };

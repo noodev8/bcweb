@@ -36,7 +36,7 @@ STOCK = local #FREE not deleted + amzfeed.amztotal, one number (utils/slowSizes.
 Exports:
   STEPS                                  [{ step: 1, key: 'arrived' }, … { step: 5, key: 'clearance' }]
   OVER_COVER_DAYS                        days of cover before Overstocked (4 months)
-  readStockLadder() -> { today, skus: [{ code, groupid, units, step, idle_days, overstocked, over }] }
+  readStockLadder() -> { today, skus: [{ code, groupid, units, step, idle_days, last_sale, overstocked, over }] }
 =======================================================================================================================================
 */
 
@@ -106,7 +106,7 @@ async function readStockLadder() {
       const daysHere = firstSeen ? t - day(firstSeen) : null;   // null = before the log, i.e. old
       if (daysHere === null || daysHere > NEW_DAYS) over = Math.max(0, s.units - keepFor(sold12.get(s.code) || 0, daysHere, OVER_COVER_DAYS));
     }
-    return { code: s.code, groupid: s.groupid, units: s.units, step, idle_days: s.idle_days, overstocked: over > 0, over };
+    return { code: s.code, groupid: s.groupid, units: s.units, step, idle_days: s.idle_days, last_sale: s.last_sale, overstocked: over > 0, over };
   });
 
   return { today, skus };

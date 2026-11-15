@@ -48,4 +48,8 @@ export const CHIPS: { key: LadderChip; label: string }[] = [
 export const isChip = (v: string | null): v is LadderChip => v === 'due' || v === 'week' || v === 'later' || v === 'all';
 export const inChip = (when: LadderWhen, chip: LadderChip) => chip === 'all' || when === chip;
 
-export const stepListHref = (key: LadderListKey, chip?: LadderChip) => `/analytics/slow-sizes/step?key=${key}${chip && chip !== 'due' ? `&when=${chip}` : ''}`;
+// Clearance has its own screen (owner, 2026-11-15 — every SKU, the three channels side by side; docs/stock-ladder.md), so Range's step 5
+// box and the Clearance step cards' Back both go there, not to the Amazon-only step list.
+export const CLEARANCE_HREF = '/analytics/slow-sizes/clearance';
+export const stepListHref = (key: LadderListKey, chip?: LadderChip) => (key === 'clearance' ? CLEARANCE_HREF
+  : `/analytics/slow-sizes/step?key=${key}${chip && chip !== 'due' ? `&when=${chip}` : ''}`);

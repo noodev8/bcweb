@@ -263,6 +263,14 @@ async function readAmazon(sizes, onProgress = () => {}) {
   return sizes.map((s) => ({ ...summarise(s, offersByAsin.get(s.asin), summaryByAsin.get(s.asin), me), sales_rank: rankByAsin.get(s.asin) ?? null }));
 }
 
+/** THE one reading of a catalogue item's rank: the Fashion Best Sellers Rank (else the first group's), or null when Amazon gives none.
+ *  Shared with the Clearance screen's barcode look-up (utils/amzBarcodeLookup.js). */
+function fashionRank(item, mkt) {
+  const ranks = ((item.salesRanks || []).find((r) => r.marketplaceId === mkt) || (item.salesRanks || [])[0] || {}).displayGroupRanks || [];
+  const r = ranks.find((d) => /fashion/i.test(d.websiteDisplayGroup || d.title || '')) || ranks[0];
+  return r && Number.isFinite(Number(r.rank)) ? Number(r.rank) : null;
+}
+
 /** Fashion Best Sellers Rank per ASIN (header: SALES RANK). Best-effort — a failed call leaves those ranks blank. */
 async function readRanks(asins, mkt) {
   const out = new Map();
@@ -274,9 +282,8 @@ async function readRanks(asins, mkt) {
       });
       parts[i].forEach((asin) => out.set(asin, 0));   // read fine: 0 = Amazon gave no rank ("Rank: none" — usually not selling)
       for (const item of res.items || []) {
-        const ranks = ((item.salesRanks || []).find((r) => r.marketplaceId === mkt) || (item.salesRanks || [])[0] || {}).displayGroupRanks || [];
-        const r = ranks.find((d) => /fashion/i.test(d.websiteDisplayGroup || d.title || '')) || ranks[0];
-        if (r && Number.isFinite(Number(r.rank))) out.set(item.asin, Number(r.rank));
+        const r = fashionRank(item, mkt);
+        if (r !== null) out.set(item.asin, r);
       }
     } catch (e) {
       logger.error(`amzBuyBox: sales rank batch failed: ${e.message}`);
@@ -451,4 +458,4 @@ async function readScreen(db) {
   return { rows: out, counts, headline, last_all: lastAll.rows[0] || null, last_run: lastAny.rows[0] || null, running: running.rows[0] || null };
 }
 
-module.exports = { GROUPS, KEEP_MONTHS, sizesToRead, startRun, executeRun, readAmazon, summarise, saveReadings, classify, readScreen };
+module.exports = { GROUPS, KEEP_MONTHS, sizesToRead, startRun, executeRun, readAmazon, summarise, saveReadings, classify, readScreen, fashionRank };

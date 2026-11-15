@@ -1366,10 +1366,11 @@ export interface AmzListSize {
   state: AmzListState; message: string | null;
 }
 export interface AmzListData { groupid: string; committed: boolean; price: number; sizes: AmzListSize[]; counts: Partial<Record<AmzListState, number>> }
-export function amazonList(groupid: string, commit: boolean) {
+// codes = only those sizes of the style (the Clearance screen lists ONE size per press — owner, 2026-11-15); omitted = every size.
+export function amazonList(groupid: string, commit: boolean, codes?: string[]) {
   return request<AmzListData>(
     // Amazon validates each size (~3 s each, 5 at a time) — past the shared 15s timeout.
-    { url: '/amz-list', method: 'POST', data: { groupid, commit }, timeout: 120000 },
+    { url: '/amz-list', method: 'POST', data: { groupid, commit, ...(codes ? { codes } : {}) }, timeout: 120000 },
     (b) => ({ groupid: b.groupid, committed: b.committed, price: b.price, sizes: b.sizes || [], counts: b.counts || {} })
   );
 }
@@ -1821,6 +1822,36 @@ export function getLadderList(step: LadderListKey) {
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, stepSkus: Number(b.step_skus) || 0, rows: b.rows || [] })
   );
 }
+// THE CLEARANCE SCREEN (owner, 2026-11-15; server /clearance-list, rules utils/clearanceList.js): every SKU on step 5, any brand, with
+// Shopify | Amazon | eBay side by side. eBay state: never (Birkenstock) · on (this size on a live BCWEB listing) · style (the style is
+// listed, this size isn't on it) · could (List opens the eBay listing form for the style).
+export type ClearanceEbayState = 'never' | 'on' | 'style' | 'could';
+export interface ClearanceRow {
+  code: string; groupid: string; size: string; title: string; ean: string | null; brand: string | null;
+  units: number; idle_days: number; last_sale: string | null; cost: number | null; rrp: number | null;
+  shopify: { live: boolean; style_price: number | null; size_price: number | null; review: string | null };
+  // listed = an amzfeed row; listable = not listed by us and not Birkenstock (List on Amazon / Look up / Could go on Amazon)
+  amazon: { open: boolean; listed: boolean; listable: boolean; fba: number; price: number | null; review: string | null };
+  ebay: { state: ClearanceEbayState; price: number | null; item_id: string | null };
+}
+export function getClearanceList() {
+  return request<{ today: string; rows: ClearanceRow[] }>(
+    { url: '/clearance-list', method: 'GET' },
+    (b) => ({ today: b.today, rows: b.rows || [] })
+  );
+}
+
+// LOOK UP ON AMAZON (owner, 2026-11-15; server /clearance-amz-lookup, utils/amzBarcodeLookup.js): each size found in Amazon's catalogue
+// by its barcode — whoever sells it. found: true (asin + rank; rank 0 = Amazon gives none) · false = not on Amazon at all · null =
+// couldn't ask (no barcode, or Amazon refused the call). At the owner's request only; nothing stored.
+export interface AmzBarcodeHit { code: string; ean: string | null; found: boolean | null; asin: string | null; title: string | null; rank: number | null }
+export function lookupOnAmazon(codes: string[]) {
+  return request<{ results: AmzBarcodeHit[]; failed: number }>(
+    { url: '/clearance-amz-lookup', method: 'POST', data: { codes }, timeout: 120000 },
+    (b) => ({ results: b.results || [], failed: Number(b.failed) || 0 })
+  );
+}
+
 // The STEP CARDS (/amz/step-cards): the price cards for what the list shows — one chip, or all; never a Buy Box size (server).
 export function getAmzStepCards(step: LadderListKey, when: LadderWhen | 'all') {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(

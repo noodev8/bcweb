@@ -14,7 +14,8 @@ Purpose: "List on Amazon (FBA)" on Add / Modify (2026-11-10) — ONE style's siz
 Request Payload:
 {
   "groupid": "72581-00",   // string, required
-  "commit": false           // false/omitted = check only; true = list
+  "commit": false,          // false/omitted = check only; true = list
+  "codes": ["72581-00-37"]   // optional — only these sizes of the style (the Clearance screen, one size per press); omitted = all
 }
 
 Success Response:
@@ -36,7 +37,7 @@ Return Codes:
 "MISSING_FIELDS"   // no groupid
 "NOT_FOUND"        // groupid not in skusummary
 "INVALID_RRP"      // RRP blank / not a price
-"NO_SIZES"         // no live sizes
+"NO_SIZES"         // no live sizes (or none of `codes` belongs to the style)
 "NOT_CONFIGURED"   // SP-API keys or AMZ_SP_SELLER_ID missing from .env
 "AMAZON_ERROR"     // Amazon couldn't be reached / the catalogue search failed (per-size refusals are NOT this — they're in sizes[])
 "UNAUTHORIZED"
@@ -55,10 +56,13 @@ router.use(verifyToken);
 router.post('/', async (req, res) => {
   const groupid = String((req.body || {}).groupid || '').trim().toUpperCase();
   const commit = (req.body || {}).commit === true;
+  // Optional: only these sizes of the style (the Clearance screen lists one size at a time). Omitted = every size, as before.
+  const rawCodes = (req.body || {}).codes;
+  const codes = Array.isArray(rawCodes) && rawCodes.length ? rawCodes.map((c) => String(c || '').trim()).filter(Boolean) : null;
   if (!groupid) return res.json({ return_code: 'MISSING_FIELDS', message: 'groupid is required' });
 
   try {
-    const out = commit ? await listStyle(groupid, req.user.display_name) : await checkStyle(groupid);
+    const out = commit ? await listStyle(groupid, req.user.display_name, codes) : await checkStyle(groupid, codes);
     return res.json({ return_code: 'SUCCESS', ...out });
   } catch (err) {
     if (err instanceof ListingError) return res.json({ return_code: err.code, message: err.message });

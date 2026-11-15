@@ -17,7 +17,8 @@ THE LAYOUT, top to bottom: the total (SKUs held, units under it), then the five 
 
 EACH BOX OPENS ITS LIST (owner, 2026-11-15 — docs/stock-ladder.md → "Drill-down from each box"): a step box, and the Overstocked
          tag (a different list from step 2), open /analytics/slow-sizes/step?key=… (step/page.tsx — read its header): Arrived and
-         Sold 90 a list only, the other four a list first and then the Amazon price cards. The New stuff tag opens nothing. The old
+         Sold 90 a list only, Overstocked / Unsold 90 / Unsold 180 a list first and then the Amazon price cards, Clearance its own
+         screen (/analytics/slow-sizes/clearance — the three channels side by side, 2026-11-15). The New stuff tag opens nothing. The old
          size run, the four parts and their links (New Additions, Deep sellers, the 3–9 months / Clearance lists) were removed from
          this screen on 2026-11-15; git history has them. The list pages (/analytics/slow-sizes/list) still exist, unlinked from here.
 

@@ -7,9 +7,11 @@ Purpose: The drill-down from Range's front screen (owner, 2026-11-15; design doc
          step box, and the Overstocked tag, opens its own list here (lib/stockLadder → LIST_TEXT):
            arrived · sold        a list only, with a link to Amazon Pricing — the Buy Box already prices these sizes (New / Raise / Cut)
                                  and a second door to the same sizes was rejected on 13 Nov.
-           overstocked · unsold90 · unsold180 · clearance
+           overstocked · unsold90 · unsold180
                                  list first, then PRICE THESE (n) opens the Amazon price cards (/amz/step-cards) for what the list
                                  is showing.
+           clearance             NOT HERE since 2026-11-15: Range's step 5 box opens the Clearance screen (../clearance — every SKU,
+                                 Shopify | Amazon | eBay side by side; lib/stockLadder → stepListHref). ?key=clearance still renders.
 
 WHO IS ON IT (owner: "leave Birkenstock and Shopify out of these decisions for now"): the step's SKUs live at Amazon, Birkenstock left
          out — server utils/stockLadderList.js, THE copy. The line under the title says how many of the step's SKUs that is.

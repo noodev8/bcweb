@@ -111,9 +111,13 @@ export default function EbayListingsPage() {
   const urlView = useUrlParam('view') === 'not' ? 'not' : 'on';
   const [chosen, setChosen] = useState<View | undefined>(undefined);
   const view = chosen ?? urlView;
+  // ← Back when another screen sent us (?from=, our own paths only) — the Clearance screen's List → / listing → (owner, 2026-11-15).
+  const fromRaw = useUrlParam('from');
+  const from = fromRaw && fromRaw.startsWith('/') && !fromRaw.startsWith('//') ? fromRaw : null;
+  const backLabel = useUrlParam('back') || 'Back';
 
   return (
-    <AppShell title="eBay listings">
+    <AppShell title="eBay listings" backHref={from ?? undefined} backLabel={from ? backLabel : undefined}>
       <div className="mb-4 inline-flex rounded-lg bg-slate-100 p-1" role="tablist">
         {([['on', 'On eBay'], ['not', 'Not on eBay']] as [View, string][]).map(([k, label]) => (
           <button
@@ -141,8 +145,11 @@ function OnEbay() {
   const listings = data?.listings ?? NO_LISTINGS;
 
   const [filter, setFilter] = useState<Filter>('all');
-  const [search, setSearch] = useState('');
-  const [open, setOpen] = useState<string | null>(null);   // the variation listing whose sizes are showing
+  // ?q= (the Clearance screen's "listing →", owner 2026-11-15) starts the search on that style; typing takes over.
+  const urlQ = useUrlParam('q');
+  const [typed, setSearch] = useState<string | null>(null);
+  const search = typed ?? urlQ ?? '';
+  const [openPick, setOpen] = useState<string | null | undefined>(undefined);   // the variation listing whose sizes are showing
 
   const counts = useMemo(() => ({
     all: listings.length,
@@ -160,6 +167,8 @@ function OnEbay() {
       return terms.every((t) => hay.includes(t));
     });
   }, [listings, filter, search]);
+  // Sent here for one style (?q=) and it's the only listing left: open its sizes. A click takes over.
+  const open = openPick !== undefined ? openPick : (urlQ && typed === null && visible.length === 1 ? visible[0].item_id : null);
 
   const s = data?.summary;
 

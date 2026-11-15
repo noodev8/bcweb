@@ -37,6 +37,8 @@ import Link from 'next/link';
 import { mutate } from 'swr';
 import { ArrowPathIcon, CheckCircleIcon, ChevronRightIcon, ExclamationTriangleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { useApiQuery } from '@/lib/useApiQuery';
+import { useUrlParam } from '@/lib/useUrlParam';
+import RrpStepper from '@/components/RrpStepper';
 import {
   getEbayCandidates, getEbayProfitPreview, listOnEbay, type EbayCandidate, type EbayCandidateSize, type EbayListResult, type EbayMissing,
 } from '@/lib/api';
@@ -85,8 +87,11 @@ export default function NotOnEbay() {
   const rows = data?.rows ?? NO_ROWS;
 
   const [filter, setFilter] = useState<Filter>('all');
-  const [search, setSearch] = useState('');
-  const [open, setOpen] = useState<string | null>(null);
+  // ?q= (the Clearance screen's "List →", owner 2026-11-15) starts the search on that style and opens its form; typing takes over.
+  const urlQ = useUrlParam('q');
+  const [typed, setSearch] = useState<string | null>(null);
+  const search = typed ?? urlQ ?? '';
+  const [openPick, setOpen] = useState<string | null | undefined>(undefined);
   // Listed on this visit (groupid -> result) — shown as Listed until the next Refresh drops the row.
   const [listed, setListed] = useState<Record<string, EbayListResult>>({});
 
@@ -114,6 +119,8 @@ export default function NotOnEbay() {
       return terms.every((t) => hay.includes(t));
     });
   }, [rows, filter, search]);
+  const open = openPick !== undefined ? openPick
+    : (urlQ && typed === null ? (visible.find((r) => r.groupid === urlQ) ?? (visible.length === 1 ? visible[0] : null))?.groupid ?? null : null);
 
   return (
     <>
@@ -307,8 +314,11 @@ function Detail({ row: r, listed, onListed }: { row: EbayCandidate; listed: Ebay
               <td className="py-1.5 pr-4">
                 {editable ? (
                   <span className="flex items-center gap-1.5">
-                    <input inputMode="decimal" value={prices[z.code] ?? ''} onChange={(e) => setPrices((p) => ({ ...p, [z.code]: e.target.value }))}
-                      className={inputClass + ' w-20 py-1 tabular-nums'} />
+                    {/* − / + in 5% of RRP steps, % shown (owner, 2026-11-15 — components/RrpStepper). */}
+                    <RrpStepper text={prices[z.code] ?? ''} rrp={r.rrp} onChange={(v) => setPrices((p) => ({ ...p, [z.code]: v }))}>
+                      <input inputMode="decimal" value={prices[z.code] ?? ''} onChange={(e) => setPrices((p) => ({ ...p, [z.code]: e.target.value }))}
+                        className={inputClass + ' w-20 py-1 tabular-nums'} />
+                    </RrpStepper>
                     {z.price_from === 'shopify' && <span className="text-[10px] text-slate-400" title="No Amazon price — the Shopify price + £4.50">Shopify +£4.50</span>}
                     {z.price_from === 'clearance' && <span className="text-[10px] text-amber-700" title="Unsold 9+ months — the Shopify clearance rule">50% RRP</span>}
                   </span>
