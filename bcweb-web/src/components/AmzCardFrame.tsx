@@ -20,7 +20,9 @@ THE CARD, top to bottom (owner's trim, 2026-11-14: "too many figures … I am in
            facts      one or two quiet lines (stock and sales; the last price change)
            decide     review (chips, or the Buy Box cards' fixed date) · ← · secondary (Leave / Next) · primary (Set / Undo)
            note       one reserved line (warnings / what was sent)
-         MATCH only fills the box — the primary button still writes. No Match when we hold the Buy Box.
+         MATCH is one click: it sets the price at once (the page's onMatch — same write as Set, owner 2026-11-15). No Match when we
+         hold the Buy Box, or when the lead's price is already ours.
+         PROFIT COLOUR (owner, 2026-11-15): green = £3 a pair or more (the walk-away), amber = under £3, red = a loss.
          No walk-away / break-even figures or walk-away warnings (owner, 2026-11-14) — the profit figure says it.
 
 KEYS (not while typing in another input; in the box only Enter / Esc / ↑ ↓): Enter = primary · → or L = secondary · ← = previous ·
@@ -42,8 +44,9 @@ const AMAZON_RETAIL_UK = 'A3P5ROKL5A1OLE';
 
 export const money = (v: number | null | undefined) => (v === null || v === undefined ? '—' : `£${v.toFixed(2)}`);
 const r2 = (n: number) => Math.round(n * 100) / 100;
-// Profit a pair: red when it is a loss — the only colour.
-const keepCls = (v: number | null) => (v !== null && v < 0 ? 'text-red-600' : 'text-slate-900');
+// Profit a pair against the £3-a-pair walk-away (utils/amzPricingStandard.js): green ≥ £3, amber under, red a loss.
+const WALK_AWAY = 3;
+const keepCls = (v: number | null) => (v === null ? 'text-slate-900' : v < 0 ? 'text-red-600' : v < WALK_AWAY - 0.005 ? 'text-amber-600' : 'text-emerald-600');
 
 // THE LAST PRICE CHANGE line — both kinds of card (it replaced the Buy Box cards' price line with dots, owner 2026-11-14).
 function changeDay(v: string): string {
@@ -78,6 +81,8 @@ export interface AmzCardFrameProps {
   holder: string;                                     // "A self-poster at £58.97", "We have it"
   share: number | null;                               // our share of views
   matchAt: number | null;                             // the lead's price — null when we hold it / unknown
+  onMatch: (price: number) => void;                   // one-click Match: the page writes this price at once (as Set does)
+  busy?: boolean;
   offers?: AmzBuyBoxOffer[]; featured?: AmzBuyBoxFeatured[];
   rank?: number | null;                               // Amazon Fashion Best Sellers Rank (owner, 2026-11-14: "Rank:", nothing else)
   bbTags?: ReactNode;                                 // "following us", "Amazon sells it"
@@ -112,7 +117,7 @@ export default function AmzCardFrame(p: AmzCardFrameProps) {
   const profit = valid ? p.profitAt(price) : null;
   const goingDown = changed && p.now !== null && price < p.now;
   const matchKeeps = p.matchAt !== null ? p.profitAt(p.matchAt) : null;
-  const atMatch = p.matchAt !== null && valid && Math.round(price * 100) === Math.round(p.matchAt * 100);
+  const atMatch = p.matchAt !== null && p.now !== null && Math.round(p.now * 100) === Math.round(p.matchAt * 100);
   const nudge = (d: number) => {
     if (p.locked) return;
     const base = valid ? price : p.now ?? 0;
@@ -256,8 +261,9 @@ export default function AmzCardFrame(p: AmzCardFrameProps) {
           {p.matchAt !== null && (
             <span className="inline-flex items-center gap-3">
               <span>match keeps <b className={'tabular-nums ' + keepCls(matchKeeps)}>{money(matchKeeps)}</b></span>
-              <button type="button" onClick={() => p.setPriceStr(p.matchAt!.toFixed(2))} disabled={p.locked || atMatch}
-                className="rounded-md border border-slate-300 bg-white px-3 py-0.5 text-sm font-medium text-slate-800 hover:bg-slate-50 disabled:opacity-40">Match {money(p.matchAt)}</button>
+              <button type="button" onClick={() => { p.setPriceStr(p.matchAt!.toFixed(2)); p.onMatch(p.matchAt!); }} disabled={p.locked || p.busy || atMatch}
+                title="Set this price now — saved and sent to Amazon in one click"
+                className="rounded-md bg-brand-600 px-3 py-0.5 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-40">Match {money(p.matchAt)}</button>
             </span>
           )}
         </div>

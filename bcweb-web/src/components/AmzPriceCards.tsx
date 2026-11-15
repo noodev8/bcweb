@@ -34,7 +34,8 @@ SET = the normal W-A1 (POST /amz-apply), sent to Amazon at once, note "Due card"
 LEAVE = POST /amz-review (the list's "no change — just set review"): the price stays, the review date moves; note "… — left". On to
          the next card at once while it saves; a failure brings the card back.
 REVIEW CHIPS = THE one list (lib/reviewPeriods.ts: 3 · 7 · 14 · 30 + Season). Preselected 7 — the /amz-pricing skill's
-         REVIEW_AFTER_PRICE_DAYS (utils/amzPricingStandard.js), the earliest a new price can be judged. The pick stays for the visit.
+         REVIEW_AFTER_PRICE_DAYS (utils/amzPricingStandard.js), the earliest a new price can be judged. The pick stays for the visit,
+         EXCEPT Season: it goes back to 7 on the next card (owner, 2026-11-15) — a long wait is chosen per size, never carried over.
 
 ORDER: styles in the server's order (most FBA stock first), each style's sizes together in size order — sister sizes side by side.
          THE LIST STAYS PUT while you work (a snapshot: no refetch on focus); Refresh reloads it.
@@ -148,6 +149,10 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const want = cur ?? at;
   const current = want === END ? null : cards.find((c) => c.code === want) ?? (mode === 'due' ? open[0] : cards[0]) ?? null;
   const index = current ? cards.indexOf(current) : -1;
+
+  // SEASON doesn't carry to the next card — back to 7 days (header); set during render, React's reset-on-change pattern.
+  const [reviewFor, setReviewFor] = useState<string | null>(current?.code ?? null);
+  if ((current?.code ?? null) !== reviewFor) { setReviewFor(current?.code ?? null); if (review === SEASON.days) setReview(DEFAULT_REVIEW); }
 
   // The next card after `code`: DUE wraps round to what's still to do (null = Due is clear); SEARCH walks on in order (END at the end).
   function nextAfter(code: string, doneNow: Map<string, Done>): string | null {
@@ -270,9 +275,9 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
 
         {/* The last result as one quiet line, in a fixed slot so nothing above moves. */}
         <div className="flex h-6 min-w-0 items-center gap-2 whitespace-nowrap text-sm" title={msg?.text}>
-          {msg && (
+          {/* Errors and warnings only — no success line or tick (owner, 2026-11-15); the card's own note says what was sent. */}
+          {msg && msg.tone !== 'ok' && (
             <>
-              {msg.tone === 'ok' && <span className="font-bold text-emerald-600">✓</span>}
               <span className={'min-w-0 truncate ' + (msg.tone === 'err' ? 'text-red-600' : msg.tone === 'warn' ? 'text-amber-700' : 'text-slate-600')}>{msg.text}</span>
             </>
           )}
@@ -323,7 +328,7 @@ function Card({ mode, card, n, of, busy, done, review, onReview, onSet, onLeave,
       ) : undefined}
       priceStr={priceStr} setPriceStr={setPriceStr}
       now={now} profitNow={card.profit_now} profitAt={(p) => profitAt(card, p)} rrp={card.rrp}
-      holder={holderLabel(card)} share={card.bb_share ?? null} matchAt={matchAt} offers={card.offers} featured={card.featured} rank={card.sales_rank ?? null}
+      holder={holderLabel(card)} share={card.bb_share ?? null} matchAt={matchAt} busy={busy || done?.kind === 'set'} onMatch={(m) => { if (!busy) onSet(m, false); }} offers={card.offers} featured={card.featured} rank={card.sales_rank ?? null}
       facts={<>
         <div>
           <span className={card.fba === 0 ? 'text-amber-700' : ''}>{card.fba} at Amazon{card.fba_inbound ? ` · +${card.fba_inbound} coming` : ''}</span>
