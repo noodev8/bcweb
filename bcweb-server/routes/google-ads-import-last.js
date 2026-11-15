@@ -9,7 +9,7 @@ Purpose: Google Ads module — how fresh is the ad data, and where are the holes
 
 WHY THIS IS MORE THAN "WHEN DID IT LAST RUN"
 Since 2026-11-15 the nightly sweep (scripts/google-ads-sweep.js) imports the last 30 days from the Google Ads API, so the data should
-be at most a day or two old; the upload remains for back-fills (docs/google-ads-spec.md §8). Staleness now means the sweep has
+be at most a day or two old; a range is back-filled with the sweep's --from/--to (docs/google-ads-spec.md §8). Staleness now means the sweep has
 stopped — its bclog row says why. Either way the SHAPE of what we hold is the thing worth reporting:
 
   - `lastRun`   when the last successful import ran — upload or sweep (bclog; `by` is 'Scheduler' for the sweep).

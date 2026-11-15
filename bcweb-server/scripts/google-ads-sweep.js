@@ -4,7 +4,7 @@ Script: scripts/google-ads-sweep.js   (the nightly Google Ads pull → google_pr
 =======================================================================================================================================
 Purpose: Fetch both Google Ads reports from the API (utils/googleAdsApi.js) and write them through the SAME plan and upserts as the
          screen's CSV upload (utils/googleAdsImport.js). Replaces downloading bcweb_product_30 / adcost_summary_30 by hand; the upload
-         panel stays as the fallback and for one-off back-fills.
+         panel was removed from the screen (2026-11-15) and its routes left unused. Back-fill a range with --from/--to.
 
 WHY IT RE-PULLS 30 DAYS EVERY NIGHT
 Google revises conversions upward for weeks after the click, so the last 30 days keep changing. The upsert takes the later figure and

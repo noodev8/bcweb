@@ -38,8 +38,8 @@ Every window ends at `asOf` — the newest COMPLETE day of Google ad data — on
 morning does not appear here, and someone will eventually ask why. The answer: sales are live, the ad report only covers days it has
 finished watching, and the newest day in an import is normally a PART day (a report pulled at 14:38 holds that day up to 14:38). A
 window running to today would set N days of sales against fewer days of cost, and Kept would read high by exactly that gap. Anchored,
-the two sides always describe the same days. The money bar prints the real range it measured, and the import panel's freshness line
-says how old that is — between them the screen never claims a day it has not measured. The route header (google-ads-styles) has the
+the two sides always describe the same days. The money bar prints the real range it measured, and the freshness line (GoogleAdsFreshness — the data
+arrives nightly from the Google Ads API since 2026-11-15) says how old that is — between them the screen never claims a day it has not measured. The route header (google-ads-styles) has the
 full reasoning, and what Google does and does not actually delay.
 =======================================================================================================================================
 */
@@ -51,7 +51,7 @@ import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import GoogleAdsMoneyBar from '@/components/GoogleAdsMoneyBar';
 import GoogleAdsCampaignPanel from '@/components/GoogleAdsCampaignPanel';
-import GoogleAdsImport from '@/components/GoogleAdsImport';
+import GoogleAdsFreshness from '@/components/GoogleAdsFreshness';
 import GoogleAdsDrill from '@/components/GoogleAdsDrill';
 import GoogleAllowanceBar from '@/components/GoogleAllowanceBar';
 import {
@@ -898,7 +898,7 @@ function GoogleAdsScreen() {
 
   return (
     <AppShell backHref={back.href ?? undefined} backLabel={back.href ? back.label || 'Back' : undefined}>
-      {/* ---- Window switch + import ------------------------------------------------------------------------------------ */}
+      {/* ---- Window switch + freshness --------------------------------------------------------------------------------- */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {/* The period, and beside it the way back to a clean screen. */}
         <div className="flex flex-wrap items-center gap-2">
@@ -964,7 +964,7 @@ function GoogleAdsScreen() {
             <ChartBarIcon className="h-4 w-4 text-slate-400" />
             Ad Daily
           </Link>
-          <GoogleAdsImport onImported={() => { stylesQ.refresh(); campaignsQ.refresh(); }} />
+          <GoogleAdsFreshness />
         </div>
       </div>
 

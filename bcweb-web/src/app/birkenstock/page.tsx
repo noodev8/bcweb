@@ -774,8 +774,8 @@ export default function BirkenstockPage() {
                 }`}
                 title={
                   `Kept subtracts Google ad spend up to ${adsAsOf}, but the profit it comes out of is live to today. The figure ` +
-                  `therefore reads HIGH — never low — by about ${adsDaysOld} days of spend. Import the Google Ads data before ` +
-                  `working the order off this sheet.`
+                  `therefore reads HIGH — never low — by about ${adsDaysOld} days of spend. The nightly Google Ads read has ` +
+                  `stopped (see Bclog) — get it running before working the order off this sheet.`
                 }
               >
                 ⚠ Ads only to {adsAsOf} <span className="text-slate-400">· {adsDaysOld} days behind</span>

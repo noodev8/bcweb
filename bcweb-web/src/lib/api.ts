@@ -3947,8 +3947,8 @@ export function getAdDaily(days?: number) {
 
 // ---- Google Ads module (campaign assignment — docs/google-ads-spec.md) -----------------------------------------------------------
 // The screen decides which STYLES sit in which Google Ads campaign bucket, writing skusummary.googlecampaign, which the nightly
-// merchant feed ships as Google's custom_label_0. Ad performance arrives by uploading two Report editor exports; there is no
-// scheduled job.
+// merchant feed ships as Google's custom_label_0. Ad performance arrives nightly from the Google Ads API
+// (scripts/google-ads-sweep.js).
 //
 // TWO KINDS OF NUMBER LIVE ON THIS SCREEN AND THE TYPES KEEP THEM APART:
 //   OURS     units / revenue / profit — from `sales`, Shopify channel only, profit NET (after fees, postage, returns).
@@ -4021,8 +4021,8 @@ export interface GoogleAdsWindowMeta { from: string; to: string; label: string }
 //
 // EVERY WINDOW ENDS AT `asOf`, NOT AT TODAY. asOf is the newest COMPLETE day of Google ad data — a part day is excluded, because a
 // report downloaded at 14:38 contains that day only up to 14:38. Both the sales side and the ad side of every window are cut off
-// there; otherwise the window would hold sales carrying no ad cost and Kept would read high by exactly that much. Under manual
-// import the gap is however long since someone last uploaded. Trust `windows.*.from` / `.to` for what was actually measured; do not
+// there; otherwise the window would hold sales carrying no ad cost and Kept would read high by exactly that much. With the
+// nightly sweep the gap is normally one day. Trust `windows.*.from` / `.to` for what was actually measured; do not
 // assume a window runs to today. Full reasoning in the google-ads-styles route header.
 export function getGoogleAdsStyles() {
   return request<{
@@ -4183,8 +4183,9 @@ export function googleAdsCampaignDelete(args: { name: string }) {
   );
 }
 
-// How fresh the ad data is and WHERE THE HOLES ARE. Gaps matter: google_campaign_daily silently lost 12 Jul - 2 Aug 2026 because
-// imports are sporadic and a Last-30-days window could not reach back far enough. A silent hole reads as a quiet month.
+// How fresh the ad data is (and where the holes are — not shown on screen). The nightly API sweep keeps the newest day at yesterday;
+// older means the sweep has stopped (components/GoogleAdsFreshness.tsx). The CSV upload's client calls were removed 2026-11-15 with the
+// panel; the server routes remain, unused.
 export interface GoogleAdsCoverage {
   from: string; to: string; rows: number; days: number; daysOld: number | null;
   gaps: { from: string; to: string; days: number }[];
@@ -4193,48 +4194,6 @@ export function getGoogleAdsImportLast() {
   return request<{ lastRun: string | null; by: string | null; product: GoogleAdsCoverage | null; campaign: GoogleAdsCoverage | null }>(
     { url: '/google-ads-import-last', method: 'GET' },
     (b) => ({ lastRun: b.lastRun ?? null, by: b.by ?? null, product: b.product ?? null, campaign: b.campaign ?? null })
-  );
-}
-
-// Import: preview reads and writes nothing; commit re-derives the plan inside its own transaction from the SAME files. The client
-// sends the files twice rather than a plan, so a stale preview can never be committed blind.
-export interface GoogleAdsImportSide {
-  label: string; filename: string;
-  window: { from: string; to: string; days: number } | null;
-  rowsInFile: number;
-  counts: { write: number; unchanged: number; skipped: number; balances: boolean };
-  skipped: { reason: string; label: string; count: number; examples: string[] }[];
-  extraColumns: string[];
-  campaigns: string[];
-  emptyDays: string[];
-  styles?: { inFile: number; unmatched: number; unmatchedExamples: string[] };
-  labelMismatch?: { styles: number; ofStyles: number; examples: { groupid: string; googleSays: string; weSay: string }[] };
-  censoredShareDays?: number;
-}
-
-// Let the BROWSER set the multipart boundary. Passing an explicit Content-Type here omits the boundary and the server parses nothing.
-// The long timeout is for the 13-month backfill (~70k rows), which takes ~10s to write.
-function googleAdsUpload(url: string, files: File[]): AxiosRequestConfig {
-  const form = new FormData();
-  for (const f of files) form.append('files', f);
-  return { url, method: 'POST', data: form, headers: { 'Content-Type': undefined }, timeout: 120000 };
-}
-
-export function googleAdsImportPreview(files: File[]) {
-  return request<{ rejected: { filename: string; reason: string }[]; product: GoogleAdsImportSide | null; campaign: GoogleAdsImportSide | null }>(
-    googleAdsUpload('/google-ads-import-preview', files),
-    (b) => ({ rejected: b.rejected || [], product: b.product ?? null, campaign: b.campaign ?? null })
-  );
-}
-
-export interface GoogleAdsImportResult {
-  written: number; unchanged: number; skipped: number;
-  window: { from: string; to: string; days: number } | null;
-}
-export function googleAdsImportCommit(files: File[]) {
-  return request<{ product: GoogleAdsImportResult | null; campaign: GoogleAdsImportResult | null }>(
-    googleAdsUpload('/google-ads-import-commit', files),
-    (b) => ({ product: b.product ?? null, campaign: b.campaign ?? null })
   );
 }
 

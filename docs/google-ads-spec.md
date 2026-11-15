@@ -598,11 +598,12 @@ price and sales timeline. Enough to answer "did moving this style change anythin
 ## 7.8 What the owner actually has to do
 
 **Since 2026-11-15: nothing.** The nightly sweep (§8) reads both reports from the Google
-Ads API and imports the last 30 days through the same plan as the upload. The rest of
-this section is the manual routine, kept for the fallback: the upload panel still works,
-and it's how to back-fill a range by hand (or run the sweep with `--from/--to`).
+Ads API and imports the last 30 days through the same plan as the upload. The upload
+panel was taken off the screen the same day (it is now just the freshness line,
+`components/GoogleAdsFreshness.tsx`); the upload routes stay on the server, unused. To
+back-fill a range, run the sweep with `--from/--to`.
 
-The manual routine, as first built:
+The manual routine, as first built (history):
 
 **When you want to work the screen** — download both saved reports from the Google Ads
 Report editor, drop them on the import panel, commit. Then use the screen.
