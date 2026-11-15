@@ -41,6 +41,7 @@ Exports:
   oldestHeldArrival(held: Map<code, units>) -> Map<code, 'YYYY-MM-DD'>   // every code with units > 0
   idleSince(lastSale, onShelf) -> { since: 'YYYY-MM-DD', from: 'sale' | 'arrival' } | null   // null = none held
   lastNetSales(codes: string[]) -> Map<code, 'YYYY-MM-DD'>      // codes with no net sale ever are absent
+  netSaleDates(codes: string[]) -> Map<code, string[]>          // every net sale date, newest first (same walk)
   CLEARANCE_MONTHS                              9
   clearanceCutoff(today: 'YYYY-MM-DD') -> 'YYYY-MM-DD'          // idle since <= this = clearance
 =======================================================================================================================================
@@ -122,6 +123,32 @@ async function lastNetSales(codes) {
   return out;
 }
 
+// EVERY net sale date of each code, newest first, by the SAME walk as lastNetSales (a return cancels the next sale(s) before it on its
+// channel, unit for unit; a partly cancelled sale still counts) — lastNetSales stops at the first kept sale, this keeps walking. Read
+// by the Stock ladder (utils/stockLadder.js) to find a 9-month gap inside the stock run. Codes with no net sale are absent.
+async function netSaleDates(codes) {
+  const out = new Map();
+  if (codes.length === 0) return out;
+  const r = await query(
+    `SELECT code, channel, to_char(solddate, 'YYYY-MM-DD') AS d, qty
+       FROM sales WHERE code = ANY($1::text[]) AND qty <> 0 AND solddate IS NOT NULL
+      ORDER BY code, channel, solddate DESC, id DESC`,
+    [codes]
+  );
+  let key = null, cancel = 0;
+  for (const x of r.rows) {
+    const k = `${x.code}|${x.channel}`;
+    if (k !== key) { key = k; cancel = 0; }
+    if (x.qty < 0) { cancel += -x.qty; continue; }
+    if (cancel >= x.qty) { cancel -= x.qty; continue; }
+    cancel = 0;   // a unit of this sale stayed sold
+    if (!out.has(x.code)) out.set(x.code, []);
+    out.get(x.code).push(x.d);
+  }
+  for (const list of out.values()) list.sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
+  return out;
+}
+
 const CLEARANCE_MONTHS = 9;
 // Calendar months back, clamped to the month's last day (30 Nov - 9 months = 28 Feb). UTC, so BST never shifts it.
 function clearanceCutoff(today) {
@@ -132,4 +159,4 @@ function clearanceCutoff(today) {
   return first.toISOString().slice(0, 10);
 }
 
-module.exports = { LOG_FLOOR, oldestHeldArrival, idleSince, lastNetSales, CLEARANCE_MONTHS, clearanceCutoff };
+module.exports = { LOG_FLOOR, oldestHeldArrival, idleSince, lastNetSales, netSaleDates, CLEARANCE_MONTHS, clearanceCutoff };

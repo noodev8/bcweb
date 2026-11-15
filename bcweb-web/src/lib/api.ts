@@ -1790,6 +1790,21 @@ export function getSlowSizes() {
   );
 }
 
+// THE STOCK LADDER (server: routes/analytics-stock-ladder.js, rules in utils/stockLadder.js; design docs/stock-ladder.md) — every held
+// SKU on one of five steps, plus the Overstocked label on step 2 (its SKUs are INSIDE step 2's count). Counts only for now.
+export type LadderStepKey = 'arrived' | 'sold' | 'unsold90' | 'unsold180' | 'clearance';
+export interface StockLadder {
+  today: string;
+  held: { skus: number; units: number };
+  steps: { step: number; key: LadderStepKey; skus: number; units: number }[];
+  overstocked: { skus: number; units: number; over: number };
+}
+export function getStockLadder() {
+  return request<StockLadder>({ url: '/analytics-stock-ladder', method: 'GET' }, (b) => ({
+    today: b.today, held: b.held, steps: b.steps || [], overstocked: b.overstocked,
+  }));
+}
+
 // DEEP SELLERS (server: routes/analytics-deep-sizes.js, rules in utils/deepSizes.js) — sizes that sell (Range's green card) but hold
 // 3+ more than 90 days' worth at their 12-month pace.
 export interface DeepSize {

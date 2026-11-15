@@ -27,8 +27,9 @@ duplicates"). The page reads top to bottom in order of importance:
                   term 40% as high as possible. Do one, will help the other" — and "combine the cards so not too much highlights"):
                   New stuff — prospect performance: of the SKUs first booked in on Goods In in 90 days, the % sold since (any channel)
                   (owner, 2026-11-05) (GET /process-overview — the same rows New Additions lists) -> New Additions;
-                  Range — of every size we hold, the % that sold in the last 90 days; new stock pulls it down until it sells (THE split,
-                  lib/slowBands → splitHeldSizes, same request as Slow movers) -> the Slow movers front screen.
+                  Range — the Stock ladder's STEP 2 (Sold 90): of every SKU we hold, the % on step 2 (owner, 2026-11-15: "So it matches
+                  our new screen"); new stock (step 1) pulls it down until it sells. Same request and key as Range (GET
+                  /analytics-stock-ladder, rules utils/stockLadder.js) -> Range.
                   Selling a new SKU moves it into Range's sold part, so the first lifts the second. Range was tried as its own tile
                   beside New stuff first (the 2026-11-05 SKU HEALTH lesson: a whole-range figure can read as comparable — the shared card
                   and its heading say how they relate). Slow movers left the menu for it (no duplicates). CLEARANCE is NOT on Daily
@@ -57,8 +58,7 @@ import AppShell from '@/components/AppShell';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { SKU_HEALTH } from '@/lib/features';
-import { getAmzImportLast, getAmzLoadedList, getBackupLast, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getSlowSizes } from '@/lib/api';
-import { splitHeldSizes } from '@/lib/slowBands';
+import { getAmzImportLast, getAmzLoadedList, getBackupLast, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getStockLadder } from '@/lib/api';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
@@ -235,13 +235,12 @@ function Daily() {
   const newSkus = overview.data ? overview.data.newSkus : null;
   const soldPct = newSkus ? `${newSkus.total > 0 ? Math.round((newSkus.sold / newSkus.total) * 100) : 0}%` : null;
   const prospects = overview.data ? overview.data.prospects : null;
-  // RANGE (owner, 2026-11-06 — "worth a look?", A TRIAL): of every size we hold, the % that sold in the last 90 days — Slow movers'
-  // Sold box, THE split (lib/slowBands → splitHeldSizes), the same request and key as that screen. Up only when sizes sell; new stock
-  // pulls it down until it sells, the same signal New stuff gives. Opens the Slow movers front screen. NB the 2026-11-05 SKU HEALTH strip
-  // was taken off for reading as comparable with New stuff — this tile is on trial for exactly that.
-  const slow = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
-  const range = slow.data && overview.data ? splitHeldSizes(slow.data.sizes, overview.data.rows) : null;
-  const rangePct = range ? `${range.held > 0 ? Math.round((range.counts.sold.sizes / range.held) * 100) : 0}%` : null;
+  // RANGE = the Stock ladder's STEP 2 (owner, 2026-11-15): of every SKU we hold, the % on step 2 (Sold 90) — the same request and key
+  // as Range's screen, so the two always agree. Up only when SKUs sell; new stock (step 1) pulls it down until it sells, the same
+  // signal New stuff gives. (Was Slow movers' Sold part, lib/slowBands, 2026-11-06 — that also counted restocks not yet sold.)
+  const ladder = useApiQuery('analytics-stock-ladder', () => getStockLadder());
+  const range = ladder.data ? { sold: ladder.data.steps.find((x) => x.key === 'sold')?.skus ?? 0, held: ladder.data.held.skus } : null;
+  const rangePct = range ? `${range.held > 0 ? Math.round((range.sold / range.held) * 100) : 0}%` : null;
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
   const sales = useApiQuery('dashboard-sales-today', () => getSalesReport({ window: 'today', limit: 1 }));
   const today = sales.data?.summary ?? null;
@@ -313,7 +312,7 @@ function Daily() {
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
             <CountLink href="/analytics/new-additions" label="New stuff" n={soldPct} unit={newSkus ? `${newSkus.sold} of ${newSkus.total} new` : 'new SKUs'} />
             <CountLink href="/analytics/slow-sizes" label="Range" n={rangePct}
-              unit={range ? `${range.counts.sold.sizes.toLocaleString('en-GB')} of ${range.held.toLocaleString('en-GB')} held` : 'held'} />
+              unit={range ? `${range.sold.toLocaleString('en-GB')} of ${range.held.toLocaleString('en-GB')} held` : 'held'} />
           </div>
         </div>
 

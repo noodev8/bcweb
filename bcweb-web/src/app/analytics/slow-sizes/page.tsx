@@ -1,276 +1,128 @@
 'use client';
 /*
 =======================================================================================================================================
-Page: /analytics/slow-sizes  (RANGE on screen — owner, 2026-11-06: "lose its 'slow movers' name. Especially in the navigations";
-      reached from Daily's Range figure and the "Sizes →" link on Slow. The route and the code keep "slow-sizes".)
+Page: /analytics/slow-sizes  (RANGE on screen — the route and the code keep "slow-sizes"; reached from Daily's Range figure)
 =======================================================================================================================================
-Purpose: WHAT DO I WORK ON (owner, 2026-11-06). Every SIZE we hold, split four ways, the slow parts each opening the list they are
-         worked from — the same way New stuff works ("I had a list of 90 day items that were sold and unsold so I worked on the unsold").
+Purpose: THE STOCK LADDER (owner, 2026-11-15 — "adapt Range" rather than build a second screen; design docs/stock-ladder.md, the chart
+         is the PDF in the owner's Downloads). Every SKU we hold on exactly ONE of five steps, left to right like the chart:
+           STEP 1 Arrived · STEP 2 Sold 90 · STEP 3 Unsold 90 · STEP 4 Unsold 180 · STEP 5 Clearance
+         and OVERSTOCKED hanging under step 2 — a LABEL, not a step: its SKUs are inside step 2's count, so the five still add up to
+         the total. Rules: bcweb-server/utils/stockLadder.js (THE copy) — this page only draws GET /analytics-stock-ladder.
 
-SIZES, NOT ITEMS — ONE QUESTION. The same day this screen was briefly a stock REPORT: every item in stock (2,907) as a hero figure,
-         split by size rules and then by each item's own age, with charts. Owner, after: "Why do I care? and what can I do about it …
-         Maybe that figure was the catalyst and red herring." Stock health by item age is Sell-through's question (utils/unitAge.js)
-         and is NOT mixed in here. Git history has the report versions.
+THE LAYOUT, top to bottom: the total (SKUs held, units under it), then the five step boxes with arrows between them (each: STEP n, its
+         name, its rule in a few words, its % of every SKU held as the big number, then SKUs · units), Overstocked under step 2 with
+         its SKUs and the pairs over 4 months' worth (the number to sell off).
 
-THE LAYOUT, top to bottom (one card):
-  1. THE SIZE RUN — the sizes we hold at each UK size, as tiles like a shoe's size run, the TOTAL only (owner, same day: "A size grid
-     … to help me get my head around the fact these are sizes … Especially to stop me about thinking of QTY", then "too much data …
-     No bar charts. And put it at the top. Just totals"). UK size = skumap.uksize (the route's `uk`), so EU and UK brands share one
-     line (Birkenstock EU 38 = UK 5); HALF SIZES ROLL UP to the next whole size (a glance, not exact), 13 and up folded into one
-     tile, a child size or none recorded = Other. A count of
-     SIZES, never qty. (A 100% column per size, split by part, with a legend and table, was tried for minutes — git history.)
-  2. THE TOTAL — "1,039 SKUs" (every SKU we hold stock of), the units in them under it, CENTRED under the tiles as their sum
-     (owner: "put the big 1039 as a part of the chart"; no header — "sizes" by the number says it).
-  3. THE FOUR PARTS, left to right, adding back up to the total, each with its % OF EVERY SIZE WE HOLD as the big number ("at a
-     glance it shows the split"), then its count of sizes and the units in them (readable, not demoted):
-       Not sold yet · first 90 days  New stuff's unsold new SKUs that we hold (THE New stuff rule, GET /process-overview) -> New Additions
-       Sold in the last 90 days      every other held size that isn't slow — one pair counts; NOT "winners" (that word is the 12-month
-                                     status); it also holds the few that SOLD BEFORE and were restocked in 90 days (done their job —
-                                     the restock is the reorder process's business), no special mention, name held back on purpose
-                                     ("rabbit hole"); no list, so no link
-       No sale 91 days – 9 months    -> /analytics/slow-sizes/list?band=mid (lib/slowBands)
-       No sale 9 months+             -> /analytics/slow-sizes/list?band=cl  (a never-sold size restocked anyway is dated from its
-                                     FIRST arrival by the server, so it lands here)
-     New stuff's own Sold % (26% — a different base, the new SKUs) stays on Daily / New Additions. Units = local + Amazon, one number.
+NOTHING OPENS YET (owner, same day: "No lists or drill down yet"). The boxes and the Overstocked tag will each open their own list
+         later — Overstocked is a different list from step 2. The old size run, the four parts and their links (New Additions, Deep
+         sellers, the 3–9 months / Clearance lists) were removed from this screen on 2026-11-15; git history has them. The list
+         pages (/analytics/slow-sizes/list) still exist, unlinked from here.
 
-ON SCREEN THE UNIT IS "SKUs" (owner, same day: "lets move to SKUs - that might have been a source of my earlier confusion") — each
-         style in each size; "sizes" read as shoe sizes (UK 5) beside the size run. The code still says sizes (SlowSize, counts.sizes).
+THE LOOK follows the chart the owner approved: plain white boxes, STEP n as its own small line so the numbers don't read as quantities
+         (owner: "it looks like they are QTYs"), step 2 (the sweet spot) in brand blue, Overstocked a small solid amber tag (colour
+         as a mark, not a band — the owner's rule for working screens). No tooltips (owner, 2026-11-06: "complicating my mind").
 
-READ-ONLY. Consumes GET /analytics-slow-sizes and GET /process-overview (Daily's own key, so New stuff's count is Daily's rows).
+READ-ONLY.
 =======================================================================================================================================
 */
 
-import { Suspense, useMemo, type ReactNode } from 'react';
-import Link from 'next/link';
-import { ChevronRightIcon } from '@heroicons/react/20/solid';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { Fragment, Suspense } from 'react';
+import { ChevronRightIcon, ChevronDownIcon } from '@heroicons/react/20/solid';
+import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getDeepSizes, getProcessOverview, getSlowSizes } from '@/lib/api';
-import { NEW_DAYS, SLOW_BANDS, splitHeldSizes, type SlowPartKey } from '@/lib/slowBands';
+import { getStockLadder, type LadderStepKey } from '@/lib/api';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
-type PartKey = SlowPartKey;
-const PART_ORDER: PartKey[] = ['new', 'sold', 'mid', 'cl'];
-// Each part's header — its rule.
-const PART_LABEL: Record<PartKey, string> = {
-  new: `Not sold yet · first ${NEW_DAYS} days`,
-  sold: `Sold in the last ${NEW_DAYS} days`,
-  mid: `No sale ${SLOW_BANDS[0].sub}`,
-  cl: `No sale ${SLOW_BANDS[1].sub}`,
+// Each step's name and its rule in a few words — the chart's wording.
+const STEP_TEXT: Record<LadderStepKey, { name: string; rule: string }> = {
+  arrived: { name: 'Arrived', rule: 'came in from 0 stock' },
+  sold: { name: 'Sold 90', rule: 'sold in 90 days' },
+  unsold90: { name: 'Unsold 90', rule: '91 to 180 days' },
+  unsold180: { name: 'Unsold 180', rule: 'to 9 months' },
+  clearance: { name: 'Clearance', rule: '9 months + · until sold out' },
 };
 
-// THE SIZE RUN's tiles — UK sizes BLENDED: every half size rolls UP to the next whole size (owner, same day: "All half sizes, roll up
-// to the next full size. Shortens the number of sizes … Dont have to be exact but it is a good glance" — so UK 5½ counts in 6), the
-// thin tail from 13 folded into one tile, then Other (a child size or none recorded).
-const TAIL_FROM = 13;
-const ukTile = (uk: string | null) => {
-  if (uk === null) return 'other';
-  const whole = Math.ceil(Number(uk));
-  return whole >= TAIL_FROM ? 'tail' : String(whole);
-};
-const ukLabel = (t: string) => (t === 'other' ? 'Other' : t === 'tail' ? `${TAIL_FROM}+` : t);
-const ukOrder = (t: string) => (t === 'other' ? 1e6 : t === 'tail' ? 1e5 : Number(t));
-
-// THE SHADE — each tile's % of its sizes that SOLD IN THE LAST 90 DAYS (sizes, never pairs), darker = more of that size selling
-// (owner, same day: "add the shade and the %"). Sequential, ONE hue (the dataviz method's blue ramp, steps 100 -> 600), in 10-point
-// steps so close values don't pretend to differ; ink flips to white from the 400 step. The % is printed too, so nothing is colour-only.
-const SHADES: { from: number; bg: string; ink: string; sub: string }[] = [
-  { from: 55, bg: '#184f95', ink: '#ffffff', sub: '#cde2fb' },
-  { from: 45, bg: '#256abf', ink: '#ffffff', sub: '#cde2fb' },
-  { from: 35, bg: '#3987e5', ink: '#ffffff', sub: '#e6f0fd' },
-  { from: 25, bg: '#6da7ec', ink: '#0b0b0b', sub: '#1c2b44' },
-  { from: 15, bg: '#9ec5f4', ink: '#0b0b0b', sub: '#33445e' },
-  { from: 0, bg: '#cde2fb', ink: '#0b0b0b', sub: '#52514e' },
-];
-const shadeFor = (pct: number) => SHADES.find((s) => pct >= s.from) ?? SHADES[SHADES.length - 1];
-// One fixed line height for every line of the run (labels and tiles), so the row labels on the left line up with the tiles' lines.
-const RUN_LINE = 'flex h-5 items-center leading-none';
-
-export default function SlowMoversFrontPage() {
+export default function RangePage() {
   return (
     <Suspense fallback={null}>
-      <SlowMoversFront />
+      <StockLadderFront />
     </Suspense>
   );
 }
 
-function SlowMoversFront() {
+function StockLadderFront() {
   const sp = useSearchParams();
-  const pathname = usePathname();
-  // ← Back: ?from= when Slow sent us here (same-site paths only), else the dashboard — Daily's Range figure is the main door now
-  // (the Products & stock menu tile went 2026-11-06).
+  // ← Back: ?from= when another screen sent us here (same-site paths only), else the dashboard.
   const raw = sp.get('from');
   const from = raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null;
   const back = from ? sp.get('back') || 'Back' : null;
-  const self = encodeURIComponent(`${pathname}${sp.toString() ? `?${sp}` : ''}`);
 
-  const sq = useApiQuery('analytics-slow-sizes', () => getSlowSizes());
-  const nq = useApiQuery('process-overview', () => getProcessOverview());
-  // DEEP SELLERS — the green card opens that screen (see hrefs.sold). Same key as the screen itself, so opening it after this is
-  // instant. Its count, on the card, is the deep SKUs (utils/deepSizes.js), every one a green size.
-  const dq = useApiQuery('analytics-deep-sizes', () => getDeepSizes());
-
-  const view = useMemo(() => {
-    if (!sq.data || !nq.data) return null;
-    const sizes = sq.data.sizes;
-    // The four parts — THE split (lib/slowBands → splitHeldSizes), shared with Daily's tile so the two can't disagree.
-    const { counts } = splitHeldSizes(sizes, nq.data.rows);
-    const sum = (list: { units: number }[]) => list.reduce((t, s) => t + s.units, 0);
-    const hrefs: Record<PartKey, string | null> = {
-      new: `/analytics/new-additions?from=${self}&back=${encodeURIComponent('Range')}`,
-      // The green card opens DEEP SELLERS (owner, 2026-11-06: a link under it "feels like a bolt on ... We cant go there by clicking
-      // the green?"): every card opens its work list, and the green card's work is the sizes that sell but were bought too deep.
-      sold: `/analytics/deep-sizes?from=${self}`,
-      mid: `/analytics/slow-sizes/list?band=mid&from=${self}`,
-      cl: `/analytics/slow-sizes/list?band=cl&from=${self}`,
-    };
-    const parts = PART_ORDER.map((k) => ({ key: k, head: PART_LABEL[k], sizes: counts[k].sizes, units: counts[k].units, href: hrefs[k] }));
-    // THE SIZE RUN — per UK size: the sizes held, and how many of them sold in the last 90 days (a last net sale on or after this day).
-    const [y, m, d] = sq.data.today.split('-').map(Number);
-    const soldSince = new Date(Date.UTC(y, m - 1, d - NEW_DAYS)).toISOString().slice(0, 10);
-    const runBy = new Map<string, { count: number; sold: number; units: number }>();
-    for (const s of sizes) {
-      const t = ukTile(s.uk);
-      const r = runBy.get(t) ?? { count: 0, sold: 0, units: 0 };
-      r.count += 1;
-      r.units += s.units;
-      if (s.last_sale && s.last_sale >= soldSince) r.sold += 1;
-      runBy.set(t, r);
-    }
-    const run = [...runBy.entries()].sort((a, b) => ukOrder(a[0]) - ukOrder(b[0]))
-      .map(([t, r]) => ({ t, label: ukLabel(t), count: r.count, units: r.units, pct: Math.round((r.sold / r.count) * 100) }));
-    return { parts, run, held: sizes.length, heldUnits: sum(sizes) };
-  }, [sq.data, nq.data, self]);
-  const pctOf = (v: number) => (view && view.held > 0 ? Math.round((v / view.held) * 100) : 0);
-
-  const error = sq.error?.message ?? nq.error?.message ?? null;
+  const q = useApiQuery('analytics-stock-ladder', () => getStockLadder());
+  const d = q.data;
+  const pctOf = (v: number) => (d && d.held.skus > 0 ? Math.round((v / d.held.skus) * 100) : 0);
 
   return (
     <AppShell backHref={from ?? '/dashboard'} backLabel={back ?? 'Dashboard'}>
-      {error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
-      {!view && !error && <p className="text-sm text-slate-400">Loading…</p>}
-      {view && (
-        <section className="rounded-lg border border-slate-200 bg-white">
-          <div className="px-5 py-5">
-            {/* 1. THE SIZE RUN — sizes we hold per UK size, totals only. */}
-            {/* Centred (owner, same day: "center the grid on the screen"), with a caption saying what the numbers are — sizes HELD,
-                not sales (owner: "are those numbers the sales?"). */}
-            {/* STOCK PRINTED ON THE TILES — a trial (owner, same day: "try the printed version first and we can take it out"): the
-                in-stock qty behind each UK size, its depth. A row-label column on the left names the four lines (the lines share fixed
-                heights so they line up across the tiles). */}
-            <div className="flex flex-wrap items-stretch justify-center gap-1.5">
-              <div className="mr-1 flex flex-col items-end py-1 text-[11px] text-slate-500">
-                <span className={RUN_LINE + ' font-medium'}>UK</span>
-                <span className={RUN_LINE} title="Each style in each size — one SKU">SKUs</span>
-                <span className={RUN_LINE}>in stock</span>
-                <span className={RUN_LINE}>sold 90d</span>
-              </div>
-              {view.run.map((r) => {
-                const sh = shadeFor(r.pct);
-                return (
-                  <div key={r.t} title={`UK ${r.label}: ${n(r.count)} SKUs held · ${n(r.units)} in stock · ${r.pct}% sold in the last ${NEW_DAYS} days`}
-                    className="flex min-w-[2.75rem] flex-col items-center rounded-md px-1.5 py-1" style={{ background: sh.bg }}>
-                    <span className={RUN_LINE + ' text-sm font-semibold'} style={{ color: sh.ink }}>{r.label}</span>
-                    <span className={RUN_LINE + ' text-xs tabular-nums'} style={{ color: sh.sub }}>{n(r.count)}</span>
-                    <span className={RUN_LINE + ' text-xs tabular-nums'} style={{ color: sh.sub }}>{n(r.units)}</span>
-                    <span className={RUN_LINE + ' text-[11px] font-medium tabular-nums'} style={{ color: sh.ink }}>{r.pct}%</span>
-                  </div>
-                );
-              })}
-            </div>
-            {/* 2. THE TOTAL — part of the chart (owner, same day: "put the big 1039 as a part of the chart"): centred directly under the
-                tiles, the sum they add up to, then the caption for the whole block. */}
-            <div className="mt-4 text-center">
-              <span className="text-5xl font-semibold text-slate-900">{n(view.held)}</span>
-              <span className="ml-2 text-lg text-slate-500">SKUs</span>
-              <div className="mt-1 text-sm tabular-nums text-slate-600">{n(view.heldUnits)} in stock</div>
-            </div>
-            <p className="mt-2 text-center text-xs text-slate-400">
-              half sizes counted in the next whole size · darker = more of that size sold in the last {NEW_DAYS} days
-            </p>
+      {q.error && <div className="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{q.error.message}</div>}
+      {!d && !q.error && <p className="text-sm text-slate-400">Loading…</p>}
+      {d && (
+        <section className="rounded-lg border border-slate-200 bg-white px-5 py-6">
+          {/* THE TOTAL — what the five steps add up to. */}
+          <div className="text-center">
+            <span className="text-5xl font-semibold text-slate-900">{n(d.held.skus)}</span>
+            <span className="ml-2 text-lg text-slate-500">SKUs</span>
+            <div className="mt-1 text-sm tabular-nums text-slate-600">{n(d.held.units)} in stock</div>
           </div>
 
-          {/* 3. THE FOUR PARTS — adding back up to the total. Each a complete card, centred like Daily's boxes, and THE WHOLE CARD is the
-              link (owner, 2026-11-06: "make the card clickable instead of tapping on the text. And tidy up the cards to make them look
-              more complete"). Sold opens Deep sellers (its work: the sizes bought too deep). */}
-          {/* GROUPED BY WHICH WAY TO PUSH (owner, 2026-11-06: "3 tiles saying Push LOW and the one being push HIGH … on its own"): Sold
-              on its own at the left edge — push HIGH; the three not selling together — push LOW. */}
-          <div className="grid grid-cols-1 gap-8 border-t border-slate-200 bg-slate-100 p-5 lg:grid-cols-4">
-            {/* Each group its own panel (owner: "Make the separation a little more obvious" … "more"). */}
-            <div className="rounded-2xl border-2 border-emerald-300 bg-white p-3 lg:order-2">
-              <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-emerald-700">Push high ↑</div>
-              {view.parts.filter((p) => p.key === 'sold').map((p) => (
-              <PartCard key={p.key} href={p.href} head={p.head} tone={PART_TONE[p.key]}>
-                <div className="text-4xl font-semibold">{pctOf(p.sizes)}%</div>
-                <div className="mt-1.5 opacity-90">
-                  <span className="text-xl font-semibold">{n(p.sizes)}</span> SKU{p.sizes === 1 ? '' : 's'}
-                  <span className="mx-1.5 opacity-60">·</span>
-                  <span className="text-xl font-semibold">{n(p.units)}</span> in stock
-                </div>
-                {/* What the click opens: the deep sellers among them (utils/deepSizes.js). */}
-                {dq.data && (
-                  <div className="mt-3 border-t border-white/30 pt-2 text-sm">
-                    <span className="font-semibold">{n(dq.data.sizes.length)}</span> bought too deep
+          {/* THE FIVE STEPS — one row on a wide screen with arrows between (the chart's direction of travel), stacked on a phone. */}
+          <div className="mt-8 flex flex-col items-stretch gap-2 lg:flex-row lg:items-start">
+            {d.steps.map((s, i) => {
+              const t = STEP_TEXT[s.key];
+              const sweet = s.key === 'sold';
+              return (
+                <Fragment key={s.key}>
+                  {i > 0 && (
+                    <div className="flex items-center justify-center text-slate-300 lg:mt-[4.5rem]" aria-hidden>
+                      <ChevronRightIcon className="hidden h-6 w-6 lg:block" />
+                      <ChevronDownIcon className="h-6 w-6 lg:hidden" />
+                    </div>
+                  )}
+                  <div className="flex min-w-0 flex-1 flex-col items-center">
+                    <div className={'w-full rounded-xl border-2 bg-white px-3 py-4 text-center '
+                      + (sweet ? 'border-blue-600' : 'border-slate-300')}>
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step {s.step}</div>
+                      <div className="mt-0.5 text-base font-semibold text-slate-900">{t.name}</div>
+                      <div className="text-xs text-slate-500">{t.rule}</div>
+                      <div className="mt-3 text-4xl font-semibold text-slate-900">{pctOf(s.skus)}%</div>
+                      <div className="mt-1 text-sm tabular-nums text-slate-600">
+                        <span className="font-semibold text-slate-900">{n(s.skus)}</span> SKU{s.skus === 1 ? '' : 's'}
+                        <span className="mx-1.5 text-slate-300">·</span>
+                        <span className="font-semibold text-slate-900">{n(s.units)}</span> in stock
+                      </div>
+                    </div>
+                    {/* OVERSTOCKED — hangs off step 2 like the chart's tag: a label on step 2, not a sixth step. */}
+                    {sweet && (
+                      <>
+                        <div className="h-3 w-0.5 bg-amber-400" aria-hidden />
+                        <div className="rounded-full border-2 border-amber-400 bg-amber-400 px-4 py-1.5 text-center text-slate-900">
+                          <div className="text-sm font-semibold">Overstocked</div>
+                          <div className="text-xs tabular-nums">
+                            <span className="font-semibold">{n(d.overstocked.skus)}</span> SKU{d.overstocked.skus === 1 ? '' : 's'}
+                            <span className="mx-1">·</span>
+                            <span className="font-semibold">{n(d.overstocked.over)}</span> pairs over
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
-              </PartCard>
-              ))}
-            </div>
-            <div className="rounded-2xl border-2 border-red-300 bg-white p-3 lg:col-span-3">
-              <div className="mb-2 text-center text-xs font-semibold uppercase tracking-wide text-red-700">Push low ↓</div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {view.parts.filter((p) => p.key !== 'sold').map((p) => (
-              <PartCard key={p.key} href={p.href} head={p.head} tone={PART_TONE[p.key]}>
-                <div className="text-4xl font-semibold">{pctOf(p.sizes)}%</div>
-                <div className="mt-1.5 opacity-90">
-                  <span className="text-xl font-semibold">{n(p.sizes)}</span> SKU{p.sizes === 1 ? '' : 's'}
-                  <span className="mx-1.5 opacity-60">·</span>
-                  <span className="text-xl font-semibold">{n(p.units)}</span> in stock
-                </div>
-              </PartCard>
-                ))}
-              </div>
-            </div>
+                </Fragment>
+              );
+            })}
           </div>
         </section>
       )}
     </AppShell>
-  );
-}
-
-// THE CARDS' COLOURS (owner, 2026-11-06: "a red should be the clearance and the green are the ones selling. that kind of thing"; a
-// thin coloured edge with a faint tint "looks unfinished"): the four parts are STATES, healthy -> stuck, so a traffic light as a SOLID
-// HEADING BAND with the part's name in it (never colour alone), the figures on white below. NOT blue: on the size run above, darker blue
-// means MORE selling, so blue cards would say the opposite in the same colour.
-// SOLID fills, white text (owner, 2026-11-06): green = selling, red = clearance, and No sale 91 days – 9 months ORANGE — "just less than
-// clearance. Its getting to clearance"; grey = not judged yet.
-const PART_TONE: Record<PartKey, string> = {
-  new: 'border-slate-500 bg-slate-500 text-white',       // not judged yet
-  sold: 'border-emerald-600 bg-emerald-600 text-white',  // selling
-  mid: 'border-orange-500 bg-orange-500 text-white',     // getting to clearance
-  cl: 'border-red-600 bg-red-600 text-white',            // clearance
-};
-
-// A part's card: ONE CLOSED BOX in its colour — a coloured border all round and a light fill of the same colour (owner: the band
-// "feels like a dropdown. Close the box"), heading and figures centred inside. With a list behind it the whole card is the link
-// (a small arrow in the corner); without one it is the same card, inert.
-function PartCard({ href, head, tone, children }: { href: string | null; head: string; tone: string; children: ReactNode }) {
-  // ONE HEIGHT for all four (owner, 2026-11-06: "keep the card heights the same"): tall enough for the green card's extra
-  // "bought too deep" line, content centred, so the cards also hold still while that count loads.
-  const card = `relative flex min-h-[11.5rem] flex-col items-center justify-center rounded-xl border-2 px-4 py-5 text-center ${tone}`;
-  const body = (
-    <>
-      {href && <ChevronRightIcon aria-hidden className="absolute right-3 top-3 h-4 w-4 opacity-80" />}
-      <div className="mb-2 text-sm font-semibold">{head}</div>
-      {children}
-    </>
-  );
-  if (!href) return <div className={card}>{body}</div>;
-  return (
-    <Link href={href} className={card + ' outline-none transition hover:shadow-md focus-visible:ring-2 focus-visible:ring-brand-300'}>
-      {body}
-    </Link>
   );
 }

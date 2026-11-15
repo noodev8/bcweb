@@ -44,6 +44,7 @@ ON ORDER = supplier lines not yet arrived (orderstatus ordertype 2 local / 3 Ama
 =======================================================================================================================================
 Exports:
   RANGE_DAYS, NEW_DAYS, MIN_OVER
+  keepFor(sold12, daysHere | null, coverDays) -> pairs to hold for coverDays at the 12-month pace (>= 1)
   readDeepSizes() -> { today, sizes: [{ code, groupid, size, title, brand, units, last_sale, idle_days, sold_12m, sold_90d,
                                         first_seen, days_here, keep, over, on_order, on_amazon }],
                        styles: [{ groupid, units, deep_units, way_out }], held: [...all held sizes of those styles, same shape as
@@ -61,6 +62,14 @@ const PACE_CAP_DAYS = 365;
 
 // Whole days between two 'YYYY-MM-DD' strings, in UTC so BST never shifts a day.
 const day = (x) => { const [y, m, d] = x.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+
+// THE PACE RULE (see DEEP in the header) — the pairs a size should hold to cover `coverDays` at its 12-month pace: net units sold in
+// 12 months over the days it has been here (first seen; null = before the log = old), capped at 365; rounded up, never below 1.
+// Shared with the Stock ladder's Overstocked label (utils/stockLadder.js, cover = 4 months).
+function keepFor(sold12, daysHere, coverDays) {
+  const paceDays = Math.min(daysHere ?? PACE_CAP_DAYS, PACE_CAP_DAYS);
+  return Math.max(1, Math.ceil((sold12 * coverDays) / Math.max(paceDays, 1)));
+}
 
 async function readDeepSizes() {
   const { today, sizes } = await readSlowSizes();
@@ -95,8 +104,7 @@ async function readDeepSizes() {
     const sold90 = Math.max(Number(r?.s90) || 0, 0);
     const firstSeen = first.get(s.code) || null;
     const daysHere = firstSeen ? t - day(firstSeen) : null;              // null = before the log, i.e. old
-    const paceDays = Math.min(daysHere ?? PACE_CAP_DAYS, PACE_CAP_DAYS);
-    const keep = Math.max(1, Math.ceil((sold12 * 90) / Math.max(paceDays, 1)));
+    const keep = keepFor(sold12, daysHere, 90);
     return {
       code: s.code, groupid: s.groupid, size: s.size, title: s.title, brand: s.brand, units: s.units,
       last_sale: s.last_sale, idle_days: s.idle_days, sold_12m: sold12, sold_90d: sold90,
@@ -126,4 +134,4 @@ async function readDeepSizes() {
   return { today, sizes: deep, styles, held };
 }
 
-module.exports = { RANGE_DAYS, NEW_DAYS, MIN_OVER, readDeepSizes };
+module.exports = { RANGE_DAYS, NEW_DAYS, MIN_OVER, keepFor, readDeepSizes };
