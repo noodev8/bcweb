@@ -8,6 +8,11 @@ Purpose: Shopify pricing in the Amazon cards' way (components/AmzPriceCards), wi
            Due on  (default)  the DUE styles, worked to zero: Set / Leave take a style off; the run wraps round to what's left.
            Due off (?pending=1)  every style on the list, walked in order; a not-due style is only looked at — its Leave is "Next"
                               (nothing written, its review date kept), as on the Amazon search cards.
+         ?step=<ladder step> (Range's Arrived choice, 2026-11-15): only the styles holding a SKU on that Stock ladder step (server
+         pricing-all-list → step); everything else is the same cards. With a step the toolbar carries its own All | Due switch
+         (owner, 2026-11-15: "allow us to filter by DUE as well") — it flips ?pending=1, nothing else; there is no list behind it.
+         And a REASON LINE (owner, same day: "will I know why it is there?") — lib/stockLadder → shopifyStepReason, from the row's
+         step_skus / step_idle_days.
          Data: GET /pricing-all-list?cards=1 (getShopifyCards) — the list's own rows and order, each with its card. The Due system is
          untouched: a Set here is the normal W1 and a Leave the normal W2, so Daily's "Shopify due" moves exactly as from the list.
 
@@ -33,27 +38,40 @@ KEYS: the frame's (Enter = Set · → or L = Leave (Next) · ← = previous card
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import ShopifyCardFrame from '@/components/ShopifyCardFrame';
 import { LastChangeLine, money } from '@/components/AmzCardFrame';
-import { applyPrice, getShopifyCards, parkStyle, type ShopifyCardRow, type ShopifyCardSize, type SizePriceEnded } from '@/lib/api';
+import { applyPrice, getShopifyCards, parkStyle, type LadderStepKey, type ShopifyCardRow, type ShopifyCardSize, type SizePriceEnded } from '@/lib/api';
 import { REVIEW_PERIODS, seasonPark } from '@/lib/reviewPeriods';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
+import { LIST_TEXT, shopifyStepReason } from '@/lib/stockLadder';
 import { useAuth } from '@/contexts/AuthContext';
 
 const DEFAULT_REVIEW = 7;
 const NOTE = 'Shopify card';
-const LEVEL_BAND = 0.03;                         // within 3% of Google's benchmark = level
+const LEVEL_BAND = 0.03;
+const BENCHMARK_STALE_DAYS = 3;                  // as components/GoogleAdsFreshness → STALE_DAYS                         // within 3% of Google's benchmark = level
 const END = '__end__';                           // walking all: past the last card
 const STORE_PRODUCT_BASE = 'https://brookfieldcomfort.com/products/';
 const SEASON = seasonPark();
+// ?step= — the Stock ladder steps the cards can be narrowed to, by their screen name (lib/stockLadder → LIST_TEXT).
+const STEP_TITLE: Record<LadderStepKey, string> = {
+  arrived: LIST_TEXT.arrived.name, sold: LIST_TEXT.sold.name, unsold90: LIST_TEXT.unsold90.name,
+  unsold180: LIST_TEXT.unsold180.name, clearance: LIST_TEXT.clearance.name,
+};
 
 const noSubscribe = () => () => {};
 const r2 = (n: number) => Math.round(n * 100) / 100;
 function dayOf(v: string): Date { const [y, m, d] = v.slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); }
 const dateLabel = (v: string) => dayOf(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+// Whole days from a YYYY-MM-DD to today, both read as local calendar days.
+function daysSince(v: string): number {
+  const t = new Date(); const today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  return Math.round((today.getTime() - dayOf(v).getTime()) / 86400000);
+}
 const shortDate = (v: string) => dayOf(v).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 function profitAt(row: ShopifyCardRow, price: number): number | null {
@@ -75,16 +93,19 @@ type Done =
 
 export default function ShopifyPriceCards() {
   const { logout } = useAuth();
+  const router = useRouter();
   const all = useUrlParam('pending') === '1';    // the list's Due switch OFF: every style, walked
   const at = useUrlParam('at');                  // the card to open on (the style drill's Back)
+  const stepRaw = useUrlParam('step');
+  const step: LadderStepKey | null = stepRaw && stepRaw in STEP_TITLE ? (stepRaw as LadderStepKey) : null;
   const fromRaw = useUrlParam('from');
   const from = fromRaw && fromRaw.startsWith('/') && !fromRaw.startsWith('//') ? fromRaw : null;
   const backHref = from ?? `/pricing/all?by=all${all ? '&pending=1' : ''}`;
   const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
-  const selfPath = `/pricing/cards?${all ? 'pending=1&' : ''}${from ? `from=${encodeURIComponent(from)}&` : ''}`;
+  const selfPath = `/pricing/cards?${step ? `step=${step}&` : ''}${all ? 'pending=1&' : ''}${from ? `from=${encodeURIComponent(from)}&` : ''}`;
 
-  const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(hydrated ? ['shopify-price-cards'] : null,
-    () => getShopifyCards(),
+  const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(hydrated ? ['shopify-price-cards', step ?? ''] : null,
+    () => getShopifyCards(step ?? undefined),
     { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false });
   const data = isLoading ? undefined : raw;   // fresh on every open — never price from an old copy (as the Amazon cards)
 
@@ -164,8 +185,32 @@ export default function ShopifyPriceCards() {
             className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
             ← Back
           </Link>
-          <span className="text-sm font-semibold text-slate-900">{all ? 'Every style on the list' : 'Due styles'}</span>
-          {data?.benchmarkDay && <span className="text-xs text-slate-400" title="The last nightly read of Google's price benchmark">Google read {shortDate(data.benchmarkDay)}</span>}
+          {step ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-900">{STEP_TITLE[step]} styles</span>
+              {/* ALL | DUE (header) — flips ?pending=1; the cards start again from the first of the new set. */}
+              <span className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+                {([['all', true], ['due', false]] as const).map(([label, wantAll]) => {
+                  const on = all === wantAll;
+                  const count = data ? (wantAll ? data.rows.length : data.rows.filter((r) => !r.parked).length) : null;
+                  return (
+                    <button key={label} type="button" disabled={on}
+                      onClick={() => { setCur(null); router.replace(`/pricing/cards?step=${step}&${wantAll ? 'pending=1&' : ''}${from ? `from=${encodeURIComponent(from)}` : ''}`, { scroll: false }); }}
+                      className={'h-7 rounded px-2.5 text-sm font-medium ' + (on ? 'bg-slate-800 text-white' : 'text-slate-700 hover:bg-slate-50')}>
+                      {label === 'all' ? 'All' : 'Due'}{count !== null && <span className="ml-1 tabular-nums">{count}</span>}
+                    </button>
+                  );
+                })}
+              </span>
+            </span>
+          ) : (
+            <span className="text-sm font-semibold text-slate-900">{all ? 'Every style on the list' : 'Due styles'}</span>
+          )}
+          {/* GOOGLE FRESHNESS — hidden while the nightly read is current (owner, 2026-11-15: "hide it unless stale"); amber once the
+              last read is BENCHMARK_STALE_DAYS old, as the Google Ads screen's freshness line. */}
+          {data?.benchmarkDay && daysSince(data.benchmarkDay) >= BENCHMARK_STALE_DAYS && (
+            <span className="text-sm text-amber-700">Google prices from {shortDate(data.benchmarkDay)} — the nightly read has stopped</span>
+          )}
           <span className="ml-auto inline-flex shrink-0 items-center gap-2 text-sm text-slate-500">
             {cards.length > 0 && (
               <span className="tabular-nums">{all ? `${cards.length} styles · ${setCount} set · ${leftCount} left` : `${setCount} set · ${leftCount} left · ${open.length} to go`}</span>
@@ -197,7 +242,9 @@ export default function ShopifyPriceCards() {
         {data?.truncated && <p className="text-sm text-amber-700">Showing the first {data.rows.length} of {data.total} styles.</p>}
 
         {data && (current ? (
-          <Card key={current.groupid} row={current} all={all} n={index + 1} of={cards.length} busy={busy} done={done.get(current.groupid) ?? null}
+          <Card key={current.groupid} row={current} all={all} reason={step ? shopifyStepReason(step, {
+            onStep: current.step_skus?.length ?? 0, held: current.step_held ?? 0,
+            heldIdle: current.step_idle_days ?? null, styleLastSale: current.style_last_sale_days ?? null }) : null} n={index + 1} of={cards.length} busy={busy} done={done.get(current.groupid) ?? null}
             review={review} onReview={setReview} showSizes={showSizes} onShowSizes={setShowSizes}
             onSet={(p) => setPrice(current, p)} onLeave={() => leave(current)} onPrev={previous}
             onNext={() => setCur(nextAfter(current.groupid, done))}
@@ -226,8 +273,8 @@ export default function ShopifyPriceCards() {
   );
 }
 
-function Card({ row, all, n, of, busy, done, review, onReview, showSizes, onShowSizes, onSet, onLeave, onPrev, onNext, drillHref }: {
-  row: ShopifyCardRow; all: boolean; n: number; of: number; busy: boolean; done: Done | null;
+function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes, onShowSizes, onSet, onLeave, onPrev, onNext, drillHref }: {
+  row: ShopifyCardRow; all: boolean; reason: string | null; n: number; of: number; busy: boolean; done: Done | null;
   review: number; onReview: (d: number) => void; showSizes: boolean; onShowSizes: (v: boolean) => void;
   onSet: (price: number) => void; onLeave: () => void; onPrev: () => void; onNext: () => void; drillHref: string;
 }) {
@@ -267,6 +314,7 @@ function Card({ row, all, n, of, busy, done, review, onReview, showSizes, onShow
     <ShopifyCardFrame
       groupid={row.groupid} title={row.title} brand={row.brand} imagename={card?.imagename ?? null}
       counter={`${n} of ${of}`} links={links} status={status}
+      reason={reason ? <span className="text-slate-700">{reason}</span> : undefined}
       priceStr={priceStr} setPriceStr={setPriceStr}
       now={now} profitAt={(p) => profitAt(row, p)} rrp={row.rrp}
       market={<>

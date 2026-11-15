@@ -53,6 +53,7 @@ KEYS: the frame's (Enter = Set · → or L = Leave (Next) · ← = previous card
 
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzCardFrame, { LastChangeLine, money } from '@/components/AmzCardFrame';
@@ -122,6 +123,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const step = isLadderList(stepParam) ? stepParam : null;
   const whenParam = useUrlParam('when');
   const when = isChip(whenParam) ? whenParam : 'all';
+  const router = useRouter();
   const walk = mode !== 'due';   // search and step cards walk start to end; due cards wrap round to what's left
   // The log note: "Step card · Unsold 90" says which list the price came from.
   const noteFor = mode === 'step' && step ? `${NOTE.step} · ${LIST_TEXT[step].name}` : NOTE[mode];
@@ -239,7 +241,25 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
             className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
             ← Back
           </Link>
-          <span className="text-sm font-semibold text-slate-900">{title}</span>
+          {mode === 'step' && step ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="text-sm font-semibold text-slate-900">{LIST_TEXT[step].name}</span>
+              {/* ALL | DUE (owner, 2026-11-15 — as the Shopify step cards): flips ?when=, the cards re-read and start from the first.
+                  Within a week / Later stay on the step list's chips. */}
+              <span className="inline-flex rounded-md border border-slate-200 bg-white p-0.5 shadow-sm">
+                {(['all', 'due'] as const).map((w) => (
+                  <button key={w} type="button" disabled={when === w}
+                    onClick={() => { setCur(null); setDone(new Map()); router.replace(`/amz/step-cards?step=${step}&when=${w}${fromQs}`, { scroll: false }); }}
+                    className={'h-7 rounded px-2.5 text-sm font-medium ' + (when === w ? 'bg-slate-800 text-white' : 'text-slate-700 hover:bg-slate-50')}>
+                    {w === 'all' ? 'All' : 'Due'}
+                  </button>
+                ))}
+              </span>
+              {when !== 'all' && when !== 'due' && <span className="text-sm text-slate-500">{CHIPS.find((c) => c.key === when)?.label}</span>}
+            </span>
+          ) : (
+            <span className="text-sm font-semibold text-slate-900">{title}</span>
+          )}
           {mode === 'search' && <span className="text-xs text-slate-400" title="The mood chosen on Amazon Pricing">Buy Box suggestions in {mood[0].toUpperCase() + mood.slice(1)}</span>}
           <span className="ml-auto inline-flex shrink-0 items-center gap-2 text-sm text-slate-500">
             {cards.length > 0 && (

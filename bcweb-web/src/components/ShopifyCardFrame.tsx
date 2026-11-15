@@ -11,6 +11,7 @@ Purpose: The Shopify price card, laid out like the Amazon one (components/AmzCar
 THE CARD, top to bottom:
            who        picture, groupid, n of N, name, brand, RRP (tap = into the box, amber "over" when the box is above it),
                       [status], links (style drill / Shopify)
+           [reason]   one line above the price (the step cards: why this style is here — owner, 2026-11-15)
            price      −£5 −£2 −£1 [box] +£1 +£2 +£5 (decision 3: Shopify prices are mostly £50–£100) · "back to" once moved
            profit     Now £x keeps £y a pair → at £z keeps £w. Only a LOSS is coloured (red) — the Amazon £3 walk-away colours are
                       an Amazon rule, not copied (decision 2)
@@ -43,6 +44,7 @@ export interface ShopifyCardFrameProps {
   counter?: string;
   links: { href: string; label: string; external?: boolean; title?: string }[];
   status?: ReactNode;
+  reason?: ReactNode;                                 // one line above the price
   // PRICE — the box is the page's state
   priceStr: string; setPriceStr: (s: string) => void;
   now: number | null; profitAt: (price: number) => number | null; rrp: number | null;
@@ -129,6 +131,7 @@ export default function ShopifyCardFrame(p: ShopifyCardFrameProps) {
 
       {/* THE PRICE — the box with the nudges · profit · the market lines. */}
       <div className="px-5 py-4">
+        {p.reason && <div className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">{p.reason}</div>}
         <div className="flex flex-wrap items-center gap-2">
           {NUDGES.filter((d) => d < 0).map((d) => (
             <button key={d} type="button" onClick={() => nudge(d)} className={pill}>−£{-d}</button>

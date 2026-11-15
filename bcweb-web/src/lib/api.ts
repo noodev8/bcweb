@@ -439,9 +439,11 @@ export function getSittingList() {
 }
 
 // Shopify Pricing's home list (2026-10-26) — every in-stock Shopify style, parked included (the Due switch filters client-side).
-export function getAllList() {
-  return request<{ total: number; truncated: boolean; outOfStock: number; rows: LoserRow[] }>(
-    { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include' } },
+// `step` = a Stock ladder step key: only the styles holding a SKU on that step (Range's Arrived choice, 2026-11-15).
+// Each row then carries step_skus: the style's SKU codes on that step.
+export function getAllList(step?: LadderStepKey) {
+  return request<{ total: number; truncated: boolean; outOfStock: number; rows: (LoserRow & { step_skus?: string[] })[] }>(
+    { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include', ...(step ? { step } : {}) } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, outOfStock: Number(b.out_of_stock) || 0, rows: b.rows || [] })
   );
 }
@@ -462,10 +464,15 @@ export interface ShopifyCard {
   last_change: AmzLastChange | null;
   sizes: ShopifyCardSize[];
 }
-export type ShopifyCardRow = LoserRow & { card: ShopifyCard | null };
-export function getShopifyCards() {
+// step_skus / step_idle_days only with ?step= (server pricing-all-list): the style's SKUs on the step, its freshest held SKU's idle days.
+// step_held = sizes of the style we hold; style_last_sale_days = days since ANY size of it sold (sold-out sizes too), null = never.
+export type ShopifyCardRow = LoserRow & {
+  card: ShopifyCard | null; step_skus?: string[]; step_idle_days?: number | null;
+  step_held?: number; style_last_sale_days?: number | null;
+};
+export function getShopifyCards(step?: LadderStepKey) {
   return request<{ total: number; truncated: boolean; benchmarkDay: string | null; rows: ShopifyCardRow[] }>(
-    { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include', cards: '1' } },
+    { url: '/pricing-all-list', method: 'GET', params: { limit: STATUS_LIST_LIMIT, parked: 'include', cards: '1', ...(step ? { step } : {}) } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, benchmarkDay: b.benchmark_day ?? null, rows: b.rows || [] })
   );
 }

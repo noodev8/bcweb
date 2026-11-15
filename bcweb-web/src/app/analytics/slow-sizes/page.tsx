@@ -16,14 +16,16 @@ THE LAYOUT, top to bottom: the total (SKUs held, units under it), then the five 
          share of the range, kept apart so the steps' own % still add up to 100%.
 
 EACH BOX OPENS ITS LIST (owner, 2026-11-15 — docs/stock-ladder.md → "Drill-down from each box"): a step box, and the Overstocked
-         tag (a different list from step 2), open /analytics/slow-sizes/step?key=… (step/page.tsx — read its header): Arrived and
-         Sold 90 a list only, Overstocked / Unsold 90 / Unsold 180 a list first and then the Amazon price cards, Clearance its own
-         screen (/analytics/slow-sizes/clearance — the three channels side by side, 2026-11-15). The New stuff tag opens nothing. The old
+         tag (a different list from step 2), open /analytics/slow-sizes/step?key=… (step/page.tsx — read its header): Arrived,
+         Unsold 90 and Unsold 180 a choice of two doors (Amazon | Shopify price cards for the step's styles, 2026-11-15 — step/page.tsx → StepChoice), Sold 90 a list only, Overstocked (and the Unsold 90 / 180 lists behind the choice) a list first and then the Amazon price cards, Clearance its own
+         screen (/analytics/slow-sizes/clearance — the three channels side by side, 2026-11-15). The New stuff tag opens the New stuff screen (/analytics/new-additions — the same place Daily's
+         figure goes, owner 2026-11-15), Back returning here. The old
          size run, the four parts and their links (New Additions, Deep sellers, the 3–9 months / Clearance lists) were removed from
          this screen on 2026-11-15; git history has them. The list pages (/analytics/slow-sizes/list) still exist, unlinked from here.
 
 THE LOOK follows the chart the owner approved: plain white boxes, STEP n as its own small line so the numbers don't read as quantities
-         (owner: "it looks like they are QTYs"), step 2 (the sweet spot) in brand blue, Overstocked a small solid amber tag (colour
+         (owner: "it looks like they are QTYs"), step 2 (the sweet spot) a soft green box with a green edge (owner, 2026-11-15: "a nice subtle green shade … to show it
+         is our sweet spot" — a summary card, so the shade is allowed), Overstocked a small solid amber tag (colour
          as a mark, not a band — the owner's rule for working screens). No tooltips (owner, 2026-11-06: "complicating my mind").
 
 READ-ONLY.
@@ -38,7 +40,7 @@ import { useSearchParams } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { getProcessOverview, getStockLadder } from '@/lib/api';
-import { LIST_TEXT, stepListHref } from '@/lib/stockLadder';
+import { CHOICE_STEPS, LIST_TEXT, stepBoxHref, stepListHref } from '@/lib/stockLadder';
 
 const n = (v: number) => v.toLocaleString('en-GB');
 
@@ -104,9 +106,10 @@ function StockLadderFront() {
                     </div>
                   )}
                   <div className="flex min-w-0 flex-1 flex-col items-center">
-                    <Link href={stepListHref(s.key)} title={`Open the ${t.name} list`}
-                      className={'block w-full rounded-xl border-2 bg-white px-3 py-4 text-center transition hover:bg-slate-50 '
-                      + (sweet ? 'border-blue-600' : 'border-slate-300 hover:border-slate-400')}>
+                    <Link href={stepBoxHref(s.key)} title={CHOICE_STEPS.includes(s.key) ? `Price the ${t.name} sizes — Amazon or Shopify` : `Open the ${t.name} list`}
+                      className={'block w-full rounded-xl border-2 px-3 py-4 text-center transition '
+                      + (sweet ? 'border-emerald-600 bg-emerald-50 hover:bg-emerald-100'
+                        : 'border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50')}>
                       <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Step {s.step}</div>
                       <div className="mt-0.5 text-base font-semibold text-slate-900">{t.name}</div>
                       <div className="text-xs text-slate-500">{t.rule}</div>
@@ -123,14 +126,16 @@ function StockLadderFront() {
                     {arrived && newSkus && (
                       <>
                         <div className="h-3 w-0.5 bg-emerald-600" aria-hidden />
-                        <div className="rounded-full border-2 border-emerald-600 bg-emerald-600 px-4 py-1.5 text-center text-white">
+                        <Link href={`/analytics/new-additions?from=${encodeURIComponent('/analytics/slow-sizes')}&back=Range`}
+                          title="Open New stuff"
+                          className="rounded-full border-2 border-emerald-600 bg-emerald-600 px-4 py-1.5 text-center text-white transition hover:border-emerald-700 hover:bg-emerald-700">
                           <div className="text-sm font-semibold">
                             New stuff {newSkus.total > 0 ? Math.round((newSkus.sold / newSkus.total) * 100) : 0}% sold
                           </div>
                           <div className="text-xs tabular-nums">
                             <span className="font-semibold">{n(newSkus.sold)}</span> of {n(newSkus.total)} new SKUs
                           </div>
-                        </div>
+                        </Link>
                       </>
                     )}
                     {/* OVERSTOCKED — hangs off step 2 like the chart's tag: a label on step 2, not a sixth step. */}

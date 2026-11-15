@@ -71,7 +71,29 @@ Agreed 2026-11-15. Sits on top of step 2 (Sold 90).
 Birkenstock and Shopify are left out of these decisions for now (owner: "too many variables and mixes"). Counted that day, Birkenstock
 was most of the stock on Overstocked (60 of 71), Unsold 90 (303 of 365) and Clearance (100 of 163), and nearly all of it local.
 
-- **Arrived, Sold 90:** a list only, perhaps with a link to Amazon Pricing. No step cards. The Buy Box already prices these sizes
+- **Arrived — a choice of two doors, no list (owner, 2026-11-15:** the list "doesn't mean much"; the aim is the first sale). **Amazon
+  New cards** = the Buy Box deck's New tab as it is (`/amz/buybox/deck?g=new` — only sizes landed at Amazon within 30 days with no
+  Amazon sale; after that they are on the normal Due list). **Shopify price cards** = `/pricing/cards?step=arrived&pending=1`, the
+  styles holding an Arrived SKU (any brand; `pricing-all-list ?step=`), walking all of them because nearly every style is parked
+  (that day 169 SKUs on Arrived · 104 at FBA, 65 local only · 8 New cards ready · 35 Shopify styles, 0 due).
+- **Unsold 90 — the same choice (owner, 2026-11-15, option A).** Amazon = the step's price cards on Due (`/amz/step-cards?step=unsold90&when=due`, an All | Due switch on the cards; owner: "I was expecting amazon to be price cards too, rather than the list" — the list stays at `&side=amazon`, a quiet link under the doors).
+  Shopify = `/pricing/cards?step=unsold90`, opened on **Due** with an All | Due switch, and ONLY the styles with every held size
+  on step 3 or later: a card sets the style price, and a style still holding a new or selling size must not be cut to clear its
+  dead sizes (that wants a size price on the card — option B, next). That day: 364 SKUs (303 Birkenstock, none at FBA; 50
+  non-Birkenstock at FBA, all parked), 135 styles, 56 whole-stuck, 46 of them on the Shopify list, 2 due (19 season-parked to
+  March). A set cut per step (e.g. −5%) still not added: 3 Unsold 90 step-card presses so far, averaging +21%.
+  **Option B (size prices on the Shopify card) not built (owner, 2026-11-15):** the 197 SKUs in styles still selling other sizes
+  (37 styles held back by ONE selling size) wait for Clearance, where size prices already happen. Instead the Shopify card says
+  why a style is there — a reason line, `lib/stockLadder → shopifyStepReason`: the sizes we hold and how long since any sold, plus
+  the whole style's last sale when a size now sold out sold more recently (e.g. "Unsold 180 — 1 size left, unsold 193 days · the
+  style's other sizes sold out, last sale 13 days ago · a firmer cut"; Arrived: "n sizes waiting for a first sale"). The first
+  wording, "no size has sold for n days", was false for most cards: that day 35 of 46 Unsold 90 styles and 5 of 6 Unsold 180 were
+  a selling style's leftovers. The choice's tally line reads "… + 197 in styles still selling
+  other sizes".
+- **Unsold 180 — the same choice (owner, 2026-11-15).** A style is on the Shopify cards of ONE stuck step: the step of its
+  freshest size (no held size on an earlier step), so the reason line's days always fit. That day 39 SKUs = 6 on Amazon cards
+  (all parked) + 9 on Shopify cards (6 styles, 0 due) + 24 in styles with a size that sold more recently (17 Birkenstock).
+- **Sold 90:** a list only, perhaps with a link to Amazon Pricing. No step cards. The Buy Box already prices these sizes
   (New, Raise, Cut), and a second door to the same sizes was rejected on 13 Nov.
 - **Overstocked, Unsold 90, Unsold 180, Clearance:** list first, then cards.
   - The list shows every size on the step: days since the last sale, the review date, and pairs over for Overstocked.
