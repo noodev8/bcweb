@@ -182,8 +182,9 @@ async function applyStock(client, stockRows, ref) {
 /**
  * Recompute amzfeed's five sales columns from the `sales` table and write them back.
  *
- * These are read by of_filteramzdisplay:220-230 and by nothing in BCWEB. They exist purely to keep the PowerBuilder Amazon screen
- * working while the two systems run in parallel (decision D1).
+ * Read by the Amazon Order screen (routes/amazon-order-list.js units_7d / units_30d) and the Buy Box rules — NOT only PowerBuilder.
+ * Run by every Update Orders (utils/amzOrderSync.js → writeAmazonOrders) since 2026-11-16; before that only the retired Orders
+ * upload ran it, so the figures froze on 2026-11-08. Pending orders (amz_pending_order) count in sold / sold7.
  *
  * The window is FIXED at 30 days (decision O2), never derived from the uploaded file. The owner compares `amzsold` across SKUs by
  * eye, so it has to mean the same thing on every run — the legacy behaviour of counting "whatever window happened to be downloaded"
@@ -198,8 +199,14 @@ async function projectDerivedToAmzfeed(client) {
              SUM(qty) FILTER (WHERE qty > 0)                                              AS sold,
              SUM(qty) FILTER (WHERE qty > 0 AND solddate >= CURRENT_DATE - $2::int)       AS sold7,
              -COALESCE(SUM(qty) FILTER (WHERE qty < 0), 0)                                AS returned
-      FROM sales
-      WHERE channel = 'AMZ' AND solddate >= CURRENT_DATE - $1::int
+      FROM (
+        SELECT code, qty, solddate FROM sales WHERE channel = 'AMZ' AND solddate >= CURRENT_DATE - $1::int
+        -- Pending Amazon orders count as sold (owner, 2026-11-16: "I need to know now so that I can plan for re-ordering" — a
+        -- later cancellation is a hit taken knowingly). amz_pending_order is replaced every Update Orders and an order leaves it
+        -- the run it is booked into sales, so nothing is counted twice.
+        UNION ALL
+        SELECT code, qty, solddate FROM amz_pending_order WHERE code IS NOT NULL AND qty > 0
+      ) s
       GROUP BY code
     ),
     latest AS (

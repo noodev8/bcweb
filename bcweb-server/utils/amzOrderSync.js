@@ -36,7 +36,7 @@ Speed: one getOrders call (+ pages of 100) and one getOrderItems per order NOT a
 const sp = require('./amzSpApi');
 const { query } = require('../database');
 const { loadReference, planSales, planCancellations } = require('./amzImport');
-const { insertSales, retractCancelled } = require('./amzImportApply');
+const { insertSales, retractCancelled, projectDerivedToAmzfeed } = require('./amzImportApply');
 const { amzProfit } = require('./amzProfit');
 const { safeNumeric } = require('./sql');
 
@@ -155,7 +155,10 @@ async function fetchAmazonOrders({ since: sinceOverride } = {}) {
   return { startedAt, since, ordersRead: uk.length, alreadyBooked: booked.size, fetchedOrders: fresh.length, rows, cancellations, skipped, pending };
 }
 
-const PENDING_DAYS = 3;   // Amazon cancels an order that stays Pending much longer than this
+// Was 3 ("Amazon cancels an order that stays Pending much longer"), but orders here have sat Pending 3+ days (026-3347253-6189150,
+// 2026-11-16) and dropped off Sales and the order counts while still live. Wider costs nothing: only Pending orders are returned,
+// a cancelled one leaves by its status, and lines already known are re-used (no extra getOrderItems).
+const PENDING_DAYS = 30;
 
 /**
  * Every UK order Amazon still has as Pending (created in the last PENDING_DAYS), as lines { orderId, orderItemId, sku, qty, date,
@@ -254,6 +257,8 @@ async function writeAmazonOrders(client, fetched, { commit = true } = {}) {
     inserted = await insertSales(client, plan.insert);
     retracted = await retractCancelled(client, cancelPlan);
     if (fetched.pending) pendingLines = await writePending(client, fetched.pending);
+    // The Amazon Order screen's 7 / 30-day sold figures (amzfeed.amzsold*), pending orders included — owner 2026-11-16.
+    await projectDerivedToAmzfeed(client);
     await client.query(
       `INSERT INTO amz_api_sync (job, cursor_at, last_ok_at, last_ok_note, last_error, last_error_at)
        VALUES ($1, $2, now(), $3, NULL, NULL)
