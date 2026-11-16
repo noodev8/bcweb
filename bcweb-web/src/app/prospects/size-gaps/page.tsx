@@ -203,7 +203,7 @@ function SizeGapsBody() {
           ) : (
             <p className="text-sm text-slate-500">
               Sizes in the brand&apos;s range ({rangeLine || 'none set'}) that aren&apos;t on our system, or have no stock, nothing on
-              order and no sale in 90 days. Sorted by each style&apos;s best size — its profit a pair over 12 months (Best size).
+              order and no sale in 90 days. Styles with no online sales in 12 months are hidden; the rest run most pairs sold first.
               Click a style to pick all its gaps, or a size to pick one.
             </p>
           )}
@@ -272,7 +272,7 @@ function SizeGapsBody() {
                     <th className="w-[30rem] py-2.5 pl-4 pr-3 text-left font-medium">Style</th>
                     <th className="w-32 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Brand</th>
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
-                      title="The style's best size: its profit a pair over the last 12 months, online channels (shop sales left out — their profit is gross), net of returns. The list runs highest first — qty plays no part. Under it, the style's pairs sold online in 12 months (shown only). Hover a size for its own figure.">Best size</th>
+                      title="The style's best size: its profit a pair over the last 12 months, online channels (shop sales left out — their profit is gross), net of returns. The list runs by the style's pairs sold online in 12 months (shown under it), most first. Hover a size for its own figure.">Best size</th>
                     {marked && <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Marked</th>}
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
                       title="Our sales of the style, its Amazon Order, and our Amazon listing (to check how a size ranks)">Links</th>

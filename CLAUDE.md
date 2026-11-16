@@ -89,7 +89,7 @@ A dead size of a selling style gets its own price on the SAME Shopify product �
 ## Prospects, Size gaps, AMZ loaded
 
 - **Prospects** (`/prospects`, `utils/prospect.js`): the team's notepad for new Amazon finds. Rank / price typed by hand — no scraping, no API, no rank comparison. Delete asks why (Ordered | Dropped archive; Delete for good is a real delete). Archive kept 6 months (purged on add / archive). **No links to pricing or ordering, no sales figures**; the only link to our stock is the DUPLICATE warning. Return on cost = `returnOnCost`.
-- **Size gaps** (`/prospects/size-gaps`, `utils/sizeGaps.js`): sizes missing from styles we sell. Ranges are a BRAND + Womens/Mens setting set by hand in `size_gap_range` (never inferred from sister colours). Size = the whole number at the end of the code. Sorted by the best size's 12-month online profit a pair. Marks are per size, in their own table, and every mark ends when the size arrives.
+- **Size gaps** (`/prospects/size-gaps`, `utils/sizeGaps.js`): sizes missing from styles we sell. Ranges are a BRAND + Womens/Mens setting set by hand in `size_gap_range` (never inferred from sister colours). Size = the whole number at the end of the code. Styles with no online sale in 12 months are hidden; the rest run most pairs sold online in 12 months first (owner 2026-11-16, was best-size profit a pair). Marks are per size, in their own table, and every mark ends when the size arrives.
 - **AMZ loaded** (`/amz-loaded`): styles held locally with no `amzfeed` row (Birkenstock left out). Its review is `skusummary.next_amz_load_review` — never a price review.
 
 ## eBay (`/ebay`)

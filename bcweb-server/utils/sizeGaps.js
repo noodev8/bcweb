@@ -265,19 +265,15 @@ async function readSizeGaps() {
       });
     }
     if (!gaps) continue;
+    if (!(pairsBy.get(s.groupid) > 0)) continue;   // owner 2026-11-16: hide styles with no online sales in 12 months
     if (open) { counts.open_styles += 1; counts.open_sizes += open; }
     styles.push({
       groupid: s.groupid, title: s.title || null, brand: s.brand, imagename: s.imagename || null,
       asin: asinBy.get(s.groupid) || null, sizing: s.sizing, best: bestBy.get(s.groupid) || null, pairs_12m: pairsBy.get(s.groupid) || 0, sizes,
     });
   }
-  // Best size's profit a pair first; a style with nothing sold in 12 months last; ties by group id.
-  styles.sort((a, b) => {
-    if (a.best && b.best) return b.best.per_pair - a.best.per_pair || a.groupid.localeCompare(b.groupid);
-    if (a.best) return -1;
-    if (b.best) return 1;
-    return a.groupid.localeCompare(b.groupid);
-  });
+  // Most pairs sold online in 12 months first (owner 2026-11-16, replaced best-size profit a pair); ties by group id.
+  styles.sort((a, b) => b.pairs_12m - a.pairs_12m || a.groupid.localeCompare(b.groupid));
 
   return { today, ranges, styles, counts };
 }
