@@ -272,8 +272,9 @@ function DetailThumb({ imagename, alt }: { imagename: string | null; alt: string
   );
 }
 
-// AMAZON RANK for a No AMZ size (owner, 2026-11-15: "tap and get the Amazon rank for that SKU — saves getting all of them while I'm
-// checking"). One size per tap, by its barcode, in Amazon's catalogue whoever sells it — the Clearance screen's own look-up (POST
+// AMAZON RANK for a size (owner, 2026-11-15: "tap and get the Amazon rank for that SKU — saves getting all of them while I'm
+// checking"). First for No AMZ sizes only; since 2026-11-16 on listed sizes too — when picking to FBA, a good rank says a size is
+// worth sending anyway (owner). One size per tap, by its barcode, in Amazon's catalogue whoever sells it — the Clearance screen's own look-up (POST
 // /clearance-amz-lookup, server utils/amzBarcodeLookup.js, THE copy). Stores nothing; the answer is held by the page for the visit
 // (`hit`), so closing and re-opening the row doesn't ask again.
 function AmazonRankLookup({ code, hit, onHit }: { code: string; hit?: AmzBarcodeHit; onHit: (h: AmzBarcodeHit) => void }) {
@@ -1918,7 +1919,7 @@ function AmazonOrderContent() {
   // table needed side-scrolling); the caret beside a SKU reveals them inline instead (owner request, 2026-08-13), with the style's
   // Can't get line. ONE row at a time since 2026-09-27 (see CLICK, SELECT, EXPAND in the header): opening another closes the first.
   const [expandedCode, setExpandedCode] = useState<string | null>(null);
-  // Amazon rank answers for No AMZ sizes, by code — see AmazonRankLookup. For the visit only, nothing stored.
+  // Amazon rank answers, by code — see AmazonRankLookup. For the visit only, nothing stored.
   const [rankHits, setRankHits] = useState<Map<string, AmzBarcodeHit>>(() => new Map());
   // The Amazon price screen for one SKU, reached from either Profit figure. ?from= is this screen's own URL (its ?q/?from kept) so
   // the price screen's Back and Apply land back here — the basket survives (localStorage draft), the search steps don't.
@@ -2869,8 +2870,8 @@ function AmazonOrderContent() {
                             {r.barcode || '—'}
                             {r.barcode && <CopyButton value={r.barcode} label="barcode" />}
                           </dd>
-                          {/* No AMZ only: tap for this size's Amazon rank by its barcode (see AmazonRankLookup). */}
-                          {!r.on_amazon && r.barcode && (
+                          {/* Every size with a barcode: tap for its Amazon rank (see AmazonRankLookup). */}
+                          {r.barcode && (
                             <>
                               <dt className="text-slate-500">Amazon rank</dt>
                               <dd className="text-sm">
