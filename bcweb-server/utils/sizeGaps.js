@@ -9,7 +9,8 @@ Purpose: THE RULES of Size gaps (owner, 2026-11-08) — sizes missing from style
 
 THE RANGE = a BRAND SETTING (size_gap_range, set by hand): Lunar UK 3–9 (2026-11-08); Rieker, Remonte, Strive Womens EU 36–42 (2026-11-09,
          owner: "these 3 in EU fit well for our next work" — in their OWN sizing); then Free Spirit Womens UK 3–8, Rieker Mens EU 40–46,
-         Roamers / Goor Mens UK 6–14, Lazy Dogz Womens UK 3–8 (2026-11-09, migrations/20261109b — read its header for who was left out). Every style of the brand is checked against every
+         Roamers / Goor Mens UK 6–14, Lazy Dogz Womens UK 3–8 (2026-11-09, migrations/20261109b — read its header for who was left out);
+         Shepherd Womens EU 36–42, Mens EU 40–50 (2026-11-16, owner — inserted directly, no migration). Every style of the brand is checked against every
          whole size in it (owner chose a brand setting over "what the model's other colours carry", which can never suggest a size we
          never bought). A range is per BRAND + WHO — the first word of title.shopifytitle ('Womens' / 'Mens'), because Rieker's Mens
          styles run EU 40–46 and a women's range would flag their 36–39 as gaps — so Rieker has two ranges. A brand + who with no range
@@ -46,6 +47,11 @@ THE ORDER = THE STYLE'S BEST SIZE, BY PROFIT A PAIR (owner, 2026-11-09 — repla
          pairs_12m = the style's 12-month net pairs, the same online sales as the profit. The figure IS SHOWN (owner: "There's no indication of why you sorted that way") — the
          Best size column, and each size's own figure on hover. No success bar: the owner works top to bottom and parks the low ones.
          A style with NOTHING held stays on the list (owner: "It is on the list so won't be misplaced").
+
+PENDING AMAZON ORDERS COUNT (owner, 2026-11-16 — a new brand's first sales sat 2–3 days as pending and the style was hidden as "no
+         sales" while it was plainly selling: "it might happen again"). amz_pending_order lines (an order not yet booked in sales) add to
+         the style's pairs, the profit a pair (at est_profit) and a size's last sale — the same reading as Sales and Amazon Order. An order
+         leaves the pending table the run it books, and the NOT EXISTS skips it if both are seen, so nothing counts twice.
 
 THE MARKS (size_gap_mark, one per groupid + size — a missing size has no code):
   park      until = today + 14, 30, 90 or 180 DAYS (owner, 2026-11-09 — all in days: "use days so they are all the same"; was 3 / 6 months.
@@ -123,7 +129,7 @@ async function readSizeGaps() {
   const sizingBy = new Map(stylesQ.rows.map((r) => [r.groupid, r.sizing]));   // 'UK' | 'EU' — the label on the Best size
 
   // THE SIZES ON OUR SYSTEM (live skumap rows whose code ends in a whole size), each with stock and supplier lines on order. One query, no N+1.
-  const [sizesQ, marksQ, asinQ, perCodeQ] = await Promise.all([
+  const [sizesQ, marksQ, asinQ, perCodeQ, pendingQ] = await Promise.all([
     query(
       `WITH m AS (
          SELECT m.groupid, m.code, ${sizeSql('m.code')} AS uk FROM skumap m
@@ -155,13 +161,25 @@ async function readSizeGaps() {
         WHERE groupid = ANY($1::text[]) AND NULLIF(TRIM(asin), '') IS NOT NULL
         ORDER BY groupid, COALESCE(amztotal, 0) DESC, code`, [groupids]),
     // THE ORDER (header): each size's 12-month NET profit and NET pairs, online channels (no CM3). Every code the style sold, on the run or not.
+    // PENDING AMAZON ORDERS COUNT (header), at their estimated profit; a line whose order is already booked in sales is skipped, as on Sales.
     query(
       `SELECT x.groupid, x.code, SUM(x.profit)::float AS profit, SUM(x.qty)::int AS pairs,
               ${sizeSql('x.code')} AS uk
-         FROM sales x
+         FROM (
+           SELECT groupid, code, profit, qty, solddate FROM sales
+            WHERE COALESCE(channel, '') <> 'CM3'   -- the shop's profit is gross (header) — online channels only
+           UNION ALL
+           SELECT p.groupid, p.code, p.est_profit, p.qty, p.solddate FROM amz_pending_order p
+            WHERE NOT EXISTS (SELECT 1 FROM sales s WHERE s.channel = 'AMZ' AND s.ordernum = p.ordernum)
+         ) x
         WHERE x.groupid = ANY($1::text[]) AND x.code IS NOT NULL AND x.solddate > ${LONDON_TODAY_SQL} - 365
-          AND COALESCE(x.channel, '') <> 'CM3'   -- the shop's profit is gross (header) — online channels only
         GROUP BY x.groupid, x.code`, [groupids]),
+    // Pending Amazon orders' last day per code — a size sold today is SELLING (not a gap) before the order books.
+    query(
+      `SELECT p.code, to_char(MAX(p.solddate), 'YYYY-MM-DD') AS last_sale FROM amz_pending_order p
+        WHERE p.groupid = ANY($1::text[]) AND p.code IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM sales s WHERE s.channel = 'AMZ' AND s.ordernum = p.ordernum)
+        GROUP BY p.code`, [groupids]),
   ]);
 
   // Profit a pair per style + size (for the tiles) and each style's best size (for the order). Net pairs 0 or less = no figure.
@@ -195,6 +213,10 @@ async function readSizeGaps() {
 
   const codes = sizesQ.rows.map((r) => r.code);
   const lastSale = await lastNetSales(codes);
+  for (const r of pendingQ.rows) {   // a pending Amazon order is a sale (header)
+    const prev = lastSale.get(r.code);
+    if (!prev || r.last_sale > prev) lastSale.set(r.code, r.last_sale);
+  }
 
   // EVERY MARK ENDS WHEN THE SIZE ARRIVES (header): any Goods In of one of its codes on or after the day it was marked.
   const arrived = new Set();
@@ -265,7 +287,7 @@ async function readSizeGaps() {
       });
     }
     if (!gaps) continue;
-    if (!(pairsBy.get(s.groupid) > 0)) continue;   // owner 2026-11-16: hide styles with no online sales in 12 months
+    if (!(pairsBy.get(s.groupid) > 0)) continue;   // owner 2026-11-16: hide styles with no online sales in 12 months (pending Amazon orders count)
     if (open) { counts.open_styles += 1; counts.open_sizes += open; }
     styles.push({
       groupid: s.groupid, title: s.title || null, brand: s.brand, imagename: s.imagename || null,
