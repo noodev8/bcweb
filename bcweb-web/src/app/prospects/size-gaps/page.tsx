@@ -36,13 +36,17 @@ MARKS, PER SIZE ONLY (owner): Park 14 · 30 · 90 · 180 days (180 put back 2026
 THE COUNT = STYLES with an open gap (owner: "we will do the whole style"); Prospects' link reads the same number from the same
          request (SWR key 'size-gaps'), so a mark here moves it there.
 
-VIEW STATE IN THE URL (?view=park|ordered|notmade), written by the handlers — never an effect. Consumes GET /size-gaps.
+SEARCH (owner, 2026-11-16: "Im just interested in shepherd or ives at a time"): one box over group id, title and brand, every word must
+         match (case-insensitive) — "shepherd", "ives", "ives black". Client-side on the loaded list; it narrows the rows, so a pick
+         outside it is never acted on (pickedHere reads only rows on screen). Kept across the views.
+
+VIEW STATE IN THE URL (?view=park|ordered|notmade, ?q=), written by the handlers — never an effect. Consumes GET /size-gaps.
 =======================================================================================================================================
 */
 
 import { Suspense, useMemo, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { ArrowLeftIcon, ArrowTopRightOnSquareIcon } from '@heroicons/react/20/solid';
+import { ArrowLeftIcon, ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
@@ -97,6 +101,7 @@ function SizeGapsBody() {
   const router = useRouter();
   const pathname = usePathname();
   const [view, setViewState] = useState<View>(() => VIEWS.find((v) => v === sp.get('view')) ?? 'open');
+  const [search, setSearchState] = useState(() => sp.get('q') ?? '');
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -104,17 +109,39 @@ function SizeGapsBody() {
   const q = useApiQuery('size-gaps', getSizeGaps);
   const data = q.data;
 
+  // Both bits of view state go in the URL together, so Back from a link returns to the same view and search.
+  const writeUrl = (v: View, q: string) => {
+    const p = new URLSearchParams();
+    if (v !== 'open') p.set('view', v);
+    if (q.trim()) p.set('q', q.trim());
+    const str = p.toString();
+    router.replace(str ? `${pathname}?${str}` : pathname, { scroll: false });
+  };
   const setView = (v: View) => {
     setViewState(v);
     setPicked(new Set());
     setMsg(null);
-    router.replace(v === 'open' ? pathname : `${pathname}?view=${v}`, { scroll: false });
+    writeUrl(v, search);
+  };
+  const setSearch = (q: string) => {
+    setSearchState(q);
+    setMsg(null);
+    writeUrl(view, q);
   };
 
-  // The rows of this view: styles with at least one pickable size, in the server's order (12-month profit).
+  // The rows of this view: styles with at least one pickable size, in the server's order (pairs sold), narrowed by the search —
+  // every word must appear in the group id, title or brand.
+  const words = useMemo(() => search.toLowerCase().split(/\s+/).filter(Boolean), [search]);
   const rows = useMemo(
-    () => (data?.styles ?? []).filter((s) => s.sizes.some((z) => pickable(z, view))),
-    [data, view]);
+    () => (data?.styles ?? []).filter((s) => {
+      if (!s.sizes.some((z) => pickable(z, view))) return false;
+      if (!words.length) return true;
+      const hay = `${s.groupid} ${s.title ?? ''} ${s.brand ?? ''}`.toLowerCase();
+      return words.every((w) => hay.includes(w));
+    }),
+    [data, view, words]);
+  // The open view's count under a search = what is on screen (the server's counts are the whole list).
+  const shownGaps = rows.reduce((t, s) => t + s.sizes.filter((z) => pickable(z, view)).length, 0);
 
   // Where a link leaves from (this view included), for the destination's Back.
   const qs = sp.toString();
@@ -208,10 +235,26 @@ function SizeGapsBody() {
             </p>
           )}
 
+          {/* SEARCH — one brand or style at a time (owner, 2026-11-16). */}
+          <div className="relative w-80 max-w-full">
+            <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search brand or style — e.g. shepherd, ives"
+              aria-label="Search brand or style"
+              className="w-full rounded-md border border-slate-300 bg-white py-1.5 pl-8 pr-8 text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            {search && (
+              <button type="button" onClick={() => setSearch('')} aria-label="Clear search"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-700">
+                <XMarkIcon className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+
           {/* THE BAR — what's picked and what to do with it. Sticky, so it stays in reach down a long list. */}
           <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 shadow-sm">
             <span className="tabular-nums">
-              {marked ? `${n(rows.length)} style${rows.length === 1 ? '' : 's'}` : `${n(counts?.open_styles ?? 0)} style${counts?.open_styles === 1 ? '' : 's'} · ${n(counts?.open_sizes ?? 0)} gap sizes`}
+              {marked || words.length
+                ? `${n(rows.length)} style${rows.length === 1 ? '' : 's'}${!marked ? ` · ${n(shownGaps)} gap size${shownGaps === 1 ? '' : 's'}` : ''}${words.length ? ' found' : ''}`
+                : `${n(counts?.open_styles ?? 0)} style${counts?.open_styles === 1 ? '' : 's'} · ${n(counts?.open_sizes ?? 0)} gap sizes`}
             </span>
             <span className="mx-1 h-5 w-px bg-slate-200" aria-hidden />
             <span className="tabular-nums text-slate-900">
@@ -263,16 +306,18 @@ function SizeGapsBody() {
           <div className="w-fit max-w-full overflow-clip rounded-xl border border-slate-200 bg-white">
             {rows.length === 0 ? (
               <p className="px-6 py-10 text-center text-sm text-slate-500">
-                {marked ? 'Nothing marked like this.' : 'No size gaps — every size in range is held, on order, selling or marked.'}
+                {words.length ? `Nothing matches “${search.trim()}” here.` : marked ? 'Nothing marked like this.' : 'No size gaps — every size in range is held, on order, selling or marked.'}
               </p>
             ) : (
               <table className="text-sm">
                 <thead className="bg-slate-50 text-xs text-slate-500 shadow-[0_1px_0_0_theme(colors.slate.200)]">
                   <tr>
-                    <th className="w-[30rem] py-2.5 pl-4 pr-3 text-left font-medium">Style</th>
+                    <th className="w-[30rem] py-2.5 pl-4 pr-3 text-left font-medium"
+                      title="The number under a size = pairs sold online in the last 12 months, net of returns, pending Amazon orders included (shop sales left out). Blank = none sold.">
+                      Style <span className="font-normal text-slate-400">· pairs sold in 12m under each size</span></th>
                     <th className="w-32 border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Brand</th>
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-right font-medium"
-                      title="The style's best size: its profit a pair over the last 12 months, online channels (shop sales left out — their profit is gross), net of returns. The list runs by the style's pairs sold online in 12 months (shown under it), most first. Hover a size for its own figure.">Best size</th>
+                      title="The style's best size: its profit a pair over the last 12 months, online channels (shop sales left out — their profit is gross), net of returns. The list runs by the style's pairs sold online in 12 months (shown under it), most first. Each size's own pairs are under its tile; hover a size for its profit a pair.">Best size</th>
                     {marked && <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Marked</th>}
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
                       title="Our sales of the style, its Amazon Order, and our Amazon listing (to check how a size ranks)">Links</th>
@@ -292,9 +337,13 @@ function SizeGapsBody() {
                               <div className="truncate font-mono text-base font-semibold text-slate-900">{s.groupid}</div>
                               <div className="mt-0.5 truncate text-xs text-slate-500"><span title={s.title || undefined}>{s.title || 'Untitled'}</span></div>
                               <div className="mt-2 flex flex-wrap gap-1">
+                                {/* Each size's pairs sold under its tile (owner, 2026-11-16: the tooltip "is not clear") — blank = none sold. */}
                                 {s.sizes.map((z) => (
-                                  <SizeTile key={z.uk} z={z} sizing={s.sizing ?? 'UK'} view={view} picked={picked.has(key(s.groupid, z.uk))}
-                                    onClick={(e) => clickTile(e, s.groupid, z)} />
+                                  <div key={z.uk} className="flex flex-col items-center">
+                                    <SizeTile z={z} sizing={s.sizing ?? 'UK'} view={view} picked={picked.has(key(s.groupid, z.uk))}
+                                      onClick={(e) => clickTile(e, s.groupid, z)} />
+                                    <span className="mt-0.5 h-3.5 text-[10px] font-medium leading-none tabular-nums text-slate-600">{z.pairs > 0 ? n(z.pairs) : ''}</span>
+                                  </div>
                                 ))}
                               </div>
                             </div>
@@ -387,8 +436,8 @@ function SizeTile({ z, sizing, view, picked, onClick }: { z: SizeGapSize; sizing
 
 function tileTip(z: SizeGapSize, sizing: string): string {
   const size = `${z.uk} ${sizing}`;   // UK for Lunar, EU for Rieker / Remonte / Strive
-  // Each size's own profit a pair (12 months) — the figure the Best size column picks the highest of.
-  const pp = z.per_pair != null ? ` · ${money(z.per_pair)} a pair (12m)` : '';
+  // Each size's pairs and own profit a pair (12 months) — the profit is the figure the Best size column picks the highest of.
+  const pp = (z.pairs > 0 ? ` · ${n(z.pairs)} sold (12m)` : '') + (z.per_pair != null ? ` · ${money(z.per_pair)} a pair (12m)` : '');
   if (z.state === 'held') return `${size} · ${n(z.units)} in stock${pp}`;
   if (z.state === 'onorder') return `${size} · ${n(z.on_order)} on order${pp}`;
   // Short on purpose (owner, 2026-11-14): "sold in the last 90 days" read as "sold out" — just the date of the last sale.

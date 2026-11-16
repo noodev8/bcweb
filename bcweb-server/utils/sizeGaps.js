@@ -78,6 +78,7 @@ Exports:
         pairs_12m,                           // the style's 12-month NET pairs, online (no CM3) — shown, never sorts
         sizes: [ { uk, code, state: 'gap'|'held'|'onorder'|'selling', is_new, units, on_order, last_sale,
                    per_pair,                  // this size's 12-month profit a pair, null if none sold (net)
+                   pairs,                     // this size's 12-month NET pairs, online (no CM3), pending Amazon orders included — shown under the tile
                    mark: { mark, until, marked_on, marked_by } | null } ]   // every size of the range, in order (uk = THE size, UK or EU); marked_on = London day
      } ],   // only styles with at least one gap (open or marked), best-size order
      counts: { open_styles, open_sizes, park, ordered, notmade } }   // open = an unmarked gap; the mark counts are SIZES
@@ -283,6 +284,7 @@ async function readSizeGaps() {
         on_order: have ? have.on_order : 0,
         last_sale: have ? have.last_sale : null,
         per_pair: perPairBySize.has(key) ? perPairBySize.get(key) : null,
+        pairs: sumBySize.has(key) ? sumBySize.get(key).pairs : 0,   // 12-month net pairs, online, pending included (shown under the tile)
         mark: k ? { mark: k.mark, until: k.until, marked_on: k.marked_day, marked_by: k.marked_by } : null,
       });
     }

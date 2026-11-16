@@ -1997,6 +1997,7 @@ export interface SizeGapSize {
   on_order: number;             // supplier lines not yet arrived
   last_sale: string | null;     // YYYY-MM-DD, last NET sale
   per_pair: number | null;      // 12-month net profit a pair, online channels (no CM3); null = none sold online (net)
+  pairs: number;                // 12-month net pairs, online channels (no CM3), pending Amazon orders included
   mark: { mark: SizeGapMarkKind; until: string | null; marked_on: string; marked_by: string | null } | null;   // in force today; marked_on = London day
 }
 export interface SizeGapStyle {
