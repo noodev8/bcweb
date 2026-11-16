@@ -25,23 +25,49 @@ copy") — and its local stock; LIST ON AMAZON (FBA) (components/AmazonListFba �
 Modify — replaced the .xlsm upload file here 2026-11-11, owner; the file, components/AmazonExport → POST /product-amazon, stays
 behind its ⋯ as the backup); and the review chips for this style. One style open at a time; the tick box (not the row)
 ticks for the bar.
+
+CHECK RANKS ON AMAZON (owner, 2026-11-15: in place of pasting each barcode into Amazon): one button looks up every barcoded size of
+every style on the list (parked ones too) in Amazon's catalogue — server /clearance-amz-lookup → utils/amzBarcodeLookup.js, THE copy,
+the Clearance screen's look-up. Read only, 20 barcodes a call; never on page load; answers kept for the visit, nothing stored.
+The style row's Amazon rank column shows its BEST rank (sizes can sit on different ASINs with different ranks); the drop-down shows
+each size's rank + ASIN, or "not on Amazon".
 =======================================================================================================================================
 */
 
 import { Fragment, useMemo, useState } from 'react';
-import { ChevronRightIcon, ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/20/solid';
+import { ArrowPathIcon, ChevronRightIcon, ClipboardDocumentIcon, CheckIcon } from '@heroicons/react/20/solid';
 import AppShell from '@/components/AppShell';
 import AmazonExport from '@/components/AmazonExport';
 import AmazonListFba from '@/components/AmazonListFba';
 import ListViewControls, { fmtReviewDate } from '@/components/ListViewControls';
 import ReviewPicker from '@/components/ReviewPicker';
 import { useApiQuery } from '@/lib/useApiQuery';
-import { getAmzLoadedList, markAmzLoadedReview, type AmzLoadedRow } from '@/lib/api';
+import { getAmzLoadedList, lookupOnAmazon, markAmzLoadedReview, type AmzBarcodeHit, type AmzLoadedRow } from '@/lib/api';
 
 const NO_ROWS: AmzLoadedRow[] = [];
 
 function money(v: number | null) {
   return v === null ? '—' : `£${v.toFixed(2)}`;
+}
+
+type Hits = Map<string, AmzBarcodeHit>;   // code -> the look-up's answer (only sizes Amazon could be asked about)
+const LOOKUP_MAX = 300;                    // the server's cap per request — a longer list goes in turns
+
+// A style's reading from its sizes' answers: null = not looked up yet; else the best (lowest) rank, 0 = on Amazon but no rank,
+// -1 = Amazon has none of its sizes.
+function styleRank(row: AmzLoadedRow, hits: Hits): number | null {
+  const answers = row.sizes_list.map((z) => hits.get(z.code)).filter((h): h is AmzBarcodeHit => !!h);
+  if (answers.length === 0) return null;
+  const ranks = answers.filter((h) => h.found && h.rank).map((h) => h.rank as number);
+  if (ranks.length) return Math.min(...ranks);
+  return answers.some((h) => h.found) ? 0 : -1;
+}
+
+function RankText({ rank }: { rank: number | null }) {
+  if (rank === null) return <span className="text-slate-300">·</span>;
+  if (rank === -1) return <span className="text-xs text-slate-400">not on Amazon</span>;
+  if (rank === 0) return <span className="text-xs text-slate-500">no rank</span>;
+  return <span className="font-medium text-slate-800">{rank.toLocaleString('en-GB')}</span>;
 }
 
 export default function AmzLoadedPage() {
@@ -55,6 +81,29 @@ export default function AmzLoadedPage() {
   const [openId, setOpenId] = useState<string | null>(null);   // the style whose sizes are showing
   const [bulkOpen, setBulkOpen] = useState(false);              // the Bulk edit panel (collapsed by default, as on pricing)
   const [copied, setCopied] = useState<string | null>(null);   // the barcode just copied (a tick for a moment)
+  const [hits, setHits] = useState<Hits>(() => new Map());      // CHECK RANKS answers, for the visit
+  const [looking, setLooking] = useState(false);
+  const [lookErr, setLookErr] = useState<string | null>(null);
+
+  // Every barcoded size of every style on the list (Due on or off) not answered yet.
+  const toLook = useMemo(
+    () => rows.flatMap((r) => r.sizes_list).filter((z) => z.ean && !hits.has(z.code)).map((z) => z.code),
+    [rows, hits]);
+
+  async function checkRanks() {
+    if (looking || toLook.length === 0) return;
+    setLooking(true); setLookErr(null);
+    let failed = 0;
+    for (let i = 0; i < toLook.length; i += LOOKUP_MAX) {
+      const res = await lookupOnAmazon(toLook.slice(i, i + LOOKUP_MAX));
+      if (!res.success || !res.data) { setLookErr(res.error || 'Could not check Amazon'); break; }
+      const { results } = res.data;
+      failed += res.data.failed;
+      setHits((prev) => { const next = new Map(prev); for (const h of results) if (h.found !== null) next.set(h.code, h); return next; });
+    }
+    setLooking(false);
+    if (failed > 0) setLookErr(`Amazon refused ${failed} batch${failed === 1 ? '' : 'es'} — press again for the rest`);
+  }
 
   async function copy(ean: string) {
     try {
@@ -115,7 +164,7 @@ export default function AmzLoadedPage() {
         <summary className="cursor-pointer select-none text-slate-400 hover:text-slate-600">What is this screen for?</summary>
         <div className="mt-2 max-w-2xl space-y-1 leading-relaxed">
           <p>Styles we hold in stock that have <strong className="font-medium text-slate-600">no size on Amazon</strong> (Birkenstock left out). The job: decide whether each is worth listing there.</p>
-          <p><strong className="font-medium text-slate-600">Check it</strong> — click a style for its sizes and barcodes; paste a barcode into Amazon to see the listing, its rank and the competition.</p>
+          <p><strong className="font-medium text-slate-600">Check it</strong> — &ldquo;Check ranks on Amazon&rdquo; finds every size in Amazon&rsquo;s catalogue by its barcode (whoever sells it) and shows each style&rsquo;s best rank; click a style for each size&rsquo;s answer. The barcodes are still there to paste into Amazon for the listing and the competition.</p>
           <p><strong className="font-medium text-slate-600">Worth it</strong> — the Amazon upload file button in the style&rsquo;s drop-down. <strong className="font-medium text-slate-600">Not now</strong> — set a review: the style leaves the Due list (and the dashboard count) until then. Pricing review dates aren&rsquo;t touched.</p>
         </div>
       </details>
@@ -137,6 +186,20 @@ export default function AmzLoadedPage() {
               </div>
             }
           />
+
+          {/* CHECK RANKS ON AMAZON — one press for the whole list; nothing on page load. */}
+          <div className="mb-3 flex flex-wrap items-center justify-end gap-2">
+            {lookErr && <span className="text-xs text-red-700">{lookErr}</span>}
+            {hits.size > 0 && toLook.length === 0 && !looking
+              ? <span className="text-xs text-slate-500">Ranks checked</span>
+              : rows.length > 0 && (
+                <button type="button" onClick={checkRanks} disabled={looking || toLook.length === 0}
+                  title="Find each size in Amazon's catalogue by its barcode — the ASIN and sales rank, whoever sells it. Nothing is stored."
+                  className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                  {looking ? <><ArrowPathIcon className="mr-1.5 h-4 w-4 animate-spin" />Checking {toLook.length} sizes…</> : 'Check ranks on Amazon'}
+                </button>
+              )}
+          </div>
 
           {/* BULK EDIT — the pricing lists' collapsed bar (components/BulkActionBar): the selection count and the last result always
               visible, "Bulk edit ▸" opens the review control for the ticked styles. */}
@@ -181,6 +244,7 @@ export default function AmzLoadedPage() {
                     <th className="w-28 px-3 py-2.5 text-right font-medium">Shopify</th>
                     <th className="w-24 px-3 py-2.5 text-right font-medium">RRP</th>
                     <th className="w-28 px-3 py-2.5 text-center font-medium" title="Shopify units sold in the last 90 days">Sold SHP 90d</th>
+                    <th className="w-28 px-3 py-2.5 text-right font-medium" title="Best Amazon sales rank among the style's sizes — after Check ranks">Amazon rank</th>
                     <th className="w-24 py-2.5 pl-3 pr-4 text-left font-medium">Review</th>
                   </tr>
                 </thead>
@@ -214,6 +278,7 @@ export default function AmzLoadedPage() {
                           <td className={'px-3 py-2 text-right tabular-nums ' + (r.parked ? '' : 'font-medium text-slate-800')}>{money(r.price)}</td>
                           <td className="px-3 py-2 text-right tabular-nums text-slate-500">{money(r.rrp)}</td>
                           <td className="px-3 py-2 text-center tabular-nums">{r.u90 ? r.u90 : <span className="text-slate-300">·</span>}</td>
+                          <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums"><RankText rank={styleRank(r, hits)} /></td>
                           {/* As on the pricing lists: a parked style's date in an amber chip, otherwise Due. */}
                           <td className="whitespace-nowrap py-2 pl-3 pr-4">
                             {r.parked
@@ -223,8 +288,8 @@ export default function AmzLoadedPage() {
                         </tr>
                         {isOpen && (
                           <tr className="border-b border-slate-200 bg-slate-50">
-                            <td colSpan={8} className="px-4 pb-4 pt-1">
-                              <SizesPanel row={r} busy={busy} copied={copied} onCopy={copy} onSetReview={(d) => setReview([r.groupid], d)} />
+                            <td colSpan={9} className="px-4 pb-4 pt-1">
+                              <SizesPanel row={r} hits={hits} busy={busy} copied={copied} onCopy={copy} onSetReview={(d) => setReview([r.groupid], d)} />
                             </td>
                           </tr>
                         )}
@@ -241,9 +306,21 @@ export default function AmzLoadedPage() {
   );
 }
 
+// One size's look-up answer in the drop-down: rank + ASIN, "no rank", "not on Amazon", or a dot before Check ranks.
+function SizeAnswer({ hit }: { hit: AmzBarcodeHit | undefined }) {
+  if (!hit) return <span className="text-slate-300">·</span>;
+  if (!hit.found) return <span className="text-slate-400">not on Amazon</span>;
+  return (
+    <span className="tabular-nums" title={hit.title || undefined}>
+      <span className={hit.rank ? 'font-medium text-slate-800' : 'text-slate-500'}>{hit.rank ? `rank ${hit.rank.toLocaleString('en-GB')}` : 'no rank'}</span>
+      <span className="ml-1.5 font-mono text-slate-400">{hit.asin}</span>
+    </span>
+  );
+}
+
 // THE DROP-DOWN for one style: its sizes with barcodes to COPY and local stock; the Amazon upload file; and the review for this style.
-function SizesPanel({ row, busy, copied, onCopy, onSetReview }: {
-  row: AmzLoadedRow; busy: boolean; copied: string | null; onCopy: (ean: string) => void; onSetReview: (days: number) => Promise<boolean>;
+function SizesPanel({ row, hits, busy, copied, onCopy, onSetReview }: {
+  row: AmzLoadedRow; hits: Hits; busy: boolean; copied: string | null; onCopy: (ean: string) => void; onSetReview: (days: number) => Promise<boolean>;
 }) {
   return (
     <div className="flex flex-wrap items-start gap-x-10 gap-y-4 rounded-lg border border-slate-200 bg-white p-4">
@@ -252,7 +329,8 @@ function SizesPanel({ row, busy, copied, onCopy, onSetReview }: {
           <tr className="border-b border-slate-200">
             <th className="py-1.5 pr-5 text-left font-medium">Size</th>
             <th className="py-1.5 pr-5 text-left font-medium">Barcode</th>
-            <th className="py-1.5 text-center font-medium">Local</th>
+            <th className="py-1.5 pr-5 text-center font-medium">Local</th>
+            <th className="py-1.5 text-left font-medium">Amazon</th>
           </tr>
         </thead>
         <tbody>
@@ -279,7 +357,8 @@ function SizesPanel({ row, busy, copied, onCopy, onSetReview }: {
                   </button>
                 ) : <span className="text-xs text-slate-400">no barcode</span>}
               </td>
-              <td className="py-1.5 text-center tabular-nums">{z.local ? z.local : <span className="text-slate-300">·</span>}</td>
+              <td className="py-1.5 pr-5 text-center tabular-nums">{z.local ? z.local : <span className="text-slate-300">·</span>}</td>
+              <td className="py-1.5 text-xs"><SizeAnswer hit={hits.get(z.code)} /></td>
             </tr>
           ))}
         </tbody>
