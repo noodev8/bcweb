@@ -40,13 +40,17 @@ SEARCH (owner, 2026-11-16: "Im just interested in shepherd or ives at a time"): 
          match (case-insensitive) — "shepherd", "ives", "ives black". Client-side on the loaded list; it narrows the rows, so a pick
          outside it is never acted on (pickedHere reads only rows on screen). Kept across the views.
 
+CUT (owner, 2026-11-16: "a soft cut. Just to get it out of our way. No storage or retrieval or count of cuts"): a row's Cut takes the
+         style off the screen for now — page state only, nothing saved, no count, no list of what was cut. Refresh starts again: every
+         cut row back, the search cleared, nothing picked, the list reloaded; so does leaving the page (a Sales / Amazon order link) or reloading it. Not a mark.
+
 VIEW STATE IN THE URL (?view=park|ordered|notmade, ?q=), written by the handlers — never an effect. Consumes GET /size-gaps.
 =======================================================================================================================================
 */
 
 import { Suspense, useMemo, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { ArrowLeftIcon, ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/20/solid';
+import { ArrowLeftIcon, ArrowPathIcon, ArrowTopRightOnSquareIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/20/solid';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
@@ -102,6 +106,7 @@ function SizeGapsBody() {
   const pathname = usePathname();
   const [view, setViewState] = useState<View>(() => VIEWS.find((v) => v === sp.get('view')) ?? 'open');
   const [search, setSearchState] = useState(() => sp.get('q') ?? '');
+  const [cut, setCut] = useState<Set<string>>(() => new Set());   // soft cut — page state only (header)
   const [picked, setPicked] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -134,12 +139,12 @@ function SizeGapsBody() {
   const words = useMemo(() => search.toLowerCase().split(/\s+/).filter(Boolean), [search]);
   const rows = useMemo(
     () => (data?.styles ?? []).filter((s) => {
-      if (!s.sizes.some((z) => pickable(z, view))) return false;
+      if (cut.has(s.groupid) || !s.sizes.some((z) => pickable(z, view))) return false;
       if (!words.length) return true;
       const hay = `${s.groupid} ${s.title ?? ''} ${s.brand ?? ''}`.toLowerCase();
       return words.every((w) => hay.includes(w));
     }),
-    [data, view, words]);
+    [data, view, words, cut]);
   // The open view's count under a search = what is on screen (the server's counts are the whole list).
   const shownGaps = rows.reduce((t, s) => t + s.sizes.filter((z) => pickable(z, view)).length, 0);
 
@@ -206,6 +211,20 @@ function SizeGapsBody() {
     setMsg({ ok: true, text: `${what}: ${done} size${done === 1 ? '' : 's'}${d.until ? ` until ${dayOf(d.until)}` : ''}${skipped}` });
   };
 
+  // CUT one style off the screen (header). REFRESH = everything back. Both clear every pick (owner, 2026-11-16).
+  const cutStyle = (e: ReactMouseEvent, groupid: string) => {
+    e.stopPropagation();
+    setCut((prev) => new Set(prev).add(groupid));
+    setPicked(new Set());
+    setMsg(null);
+  };
+  const refresh = () => {   // a fresh start: the full list (search cleared), nothing cut, nothing picked
+    setCut(new Set());
+    setPicked(new Set());
+    setSearch('');
+    void q.refresh();
+  };
+
   const counts = data?.counts;
   const marked = view !== 'open';
 
@@ -235,7 +254,8 @@ function SizeGapsBody() {
             </p>
           )}
 
-          {/* SEARCH — one brand or style at a time (owner, 2026-11-16). */}
+          {/* SEARCH — one brand or style at a time (owner, 2026-11-16) — and REFRESH, which brings back every cut row. */}
+          <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-80 max-w-full">
             <MagnifyingGlassIcon className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden />
             <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search brand or style — e.g. shepherd, ives"
@@ -248,11 +268,16 @@ function SizeGapsBody() {
               </button>
             )}
           </div>
+          <button type="button" onClick={refresh} disabled={q.busy} title="Start again — the full list: search cleared, every cut style back, nothing picked"
+            className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-sm font-medium text-slate-700 hover:border-brand-500 hover:bg-brand-50 disabled:opacity-50">
+            <ArrowPathIcon className={'h-4 w-4 ' + (q.busy ? 'animate-spin' : '')} /> Refresh
+          </button>
+          </div>
 
           {/* THE BAR — what's picked and what to do with it. Sticky, so it stays in reach down a long list. */}
           <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-600 shadow-sm">
             <span className="tabular-nums">
-              {marked || words.length
+              {marked || words.length || cut.size
                 ? `${n(rows.length)} style${rows.length === 1 ? '' : 's'}${!marked ? ` · ${n(shownGaps)} gap size${shownGaps === 1 ? '' : 's'}` : ''}${words.length ? ' found' : ''}`
                 : `${n(counts?.open_styles ?? 0)} style${counts?.open_styles === 1 ? '' : 's'} · ${n(counts?.open_sizes ?? 0)} gap sizes`}
             </span>
@@ -321,6 +346,7 @@ function SizeGapsBody() {
                     {marked && <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium">Marked</th>}
                     <th className="border-l border-slate-200 py-2.5 pl-3 pr-4 text-left font-medium"
                       title="Our sales of the style, its Amazon Order, and our Amazon listing (to check how a size ranks)">Links</th>
+                    <th className="w-10" aria-label="Cut" />
                   </tr>
                 </thead>
                 <tbody>
@@ -394,6 +420,14 @@ function SizeGapsBody() {
                             </a>
                           ) : <span className="text-xs text-slate-400">Not on Amazon</span>}
                           </div>
+                        </td>
+                        {/* CUT — a soft x at the row's end (owner, 2026-11-16), off the screen for now; Refresh brings it back. */}
+                        <td className="py-3 pl-1 pr-3 align-top">
+                          <button type="button" onClick={(e) => cutStyle(e, s.groupid)} aria-label={`Cut ${s.groupid} off the screen`}
+                            title="Off the screen for now — nothing saved; Refresh brings it back"
+                            className="rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-slate-600">
+                            <XMarkIcon className="h-4 w-4" />
+                          </button>
                         </td>
                       </tr>
                     );
