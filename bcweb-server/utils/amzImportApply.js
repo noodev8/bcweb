@@ -242,9 +242,9 @@ async function projectDerivedToAmzfeed(client) {
  *   amzorderdate2 — the last sold date        (of_updateamzdatadb:490)
  *   amzprofit     — the last per-unit profit  (of_updateamzdatadb:555)
  *
- * Nothing in BCWEB reads either, and `of_filteramzdisplay` recomputes profit locally rather than reading `amzprofit` — but only four
- * PowerBuilder functions have been examined, so "nothing reads them" is unproven. They cost one statement, so they are maintained
- * rather than risked. This matters most if the operator stops running the PowerBuilder import: without this, both would go stale.
+ * `amzprofit` IS read in BCWEB: it is the Amazon Order screen's unit profit (routes/amazon-order-list.js — profit_30d and the Hot |
+ * Warm presets). Run by every Update Orders (utils/amzOrderSync.js) since 2026-11-16 — before that only the retired Orders upload
+ * ran it, so the column froze on 2026-11-08 and a size first sold after that had no profit on the screen.
  *
  * `amzprofit` is STICKY, matching the legacy behaviour at :550-556 — a SKU with no sale in the window keeps its previous value rather
  * than being zeroed, so the column always holds the last profit actually seen. That is why this is a JOIN and not a LEFT JOIN.

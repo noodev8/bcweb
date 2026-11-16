@@ -6,7 +6,10 @@ Method: GET
 Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU (one row per size, an amzfeed row) with its Amazon
          profit, read from columns already maintained elsewhere rather than recomputed here:
            - unit_profit = skumap.amzprofit — the per-unit profit of the SKU's LAST Amazon sale (utils/amzImportApply.js ->
-             projectDerivedToSkumap). STICKY: a SKU with no recent sale keeps its last-seen figure rather than going blank/zero.
+             projectDerivedToSkumap, run by every Update Orders). STICKY: a SKU with no recent sale keeps its last-seen figure
+             rather than going blank/zero. A size never booked yet whose only sale is a PENDING Amazon order takes that order's
+             ESTIMATE instead (amz_pending_order.est_profit per unit, at the size's current price — the Sales screen's rule; owner
+             2026-11-16), replaced by the real figure on the run after Amazon confirms it.
            - units_30d   = amzfeed.amzsold - amzfeed.amzreturn, floored at 0 — NET of returns. Both are the same FIXED 30-day
              window (decision O2 / utils/amzImportApply.js projectDerivedToAmzfeed, one windowed CTE), so subtracting them is a
              like-for-like net-sold figure, kept comparable across SKUs by never varying with the uploaded report's date range.
@@ -227,13 +230,22 @@ router.get('/', async (req, res) => {
           AND l.changed_at >= now() - interval '72 hours'
           AND ROUND(l.new_price, 2) IS DISTINCT FROM ROUND(${safeNumeric('af.amzprice')}, 2)
         ORDER BY l.code, l.id DESC
+      ),
+      amzpend AS (
+        -- PENDING Amazon orders (utils/amzOrderSync.js → writePending): the estimated profit per unit, at the size's current price.
+        -- Only the fallback for a size with no booked profit yet (see unit_profit in the header). Not named "pending" — that CTE is
+        -- the pick list's.
+        SELECT code, ROUND(SUM(est_profit) / NULLIF(SUM(qty), 0), 2) AS unit_profit
+        FROM amz_pending_order
+        WHERE code IS NOT NULL AND qty > 0 AND est_profit IS NOT NULL
+        GROUP BY code
       )
       SELECT a.code, a.groupid, SUBSTRING(a.code FROM '[^-]*$') AS size,
              t.shopifytitle AS title,
              ${safeNumeric('a.amzprice')} AS price,
              GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0) AS units_30d,
              COALESCE(a.amzsold7,0) AS units_7d,
-             ${safeNumeric('m.amzprofit')} AS unit_profit,
+             COALESCE(${safeNumeric('m.amzprofit')}, amzpend.unit_profit) AS unit_profit,
              COALESCE(a.amztotal,0) + COALESCE(staged.units,0) + COALESCE(ord.units,0) + COALESCE(pending.units,0) AS fba_total,
              COALESCE(pending.units,0) AS pick_pending,
              COALESCE(a.amzlive,0) AS fba_live,
@@ -266,8 +278,9 @@ router.get('/', async (req, res) => {
       LEFT JOIN ord ON ord.code = a.code
       LEFT JOIN lastsold ON lastsold.code = a.code
       LEFT JOIN queued ON queued.code = a.code
+      LEFT JOIN amzpend ON amzpend.code = a.code
       ${noSupplyJoinSql('a.code')}
-      ORDER BY ${safeNumeric('m.amzprofit')} * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
+      ORDER BY COALESCE(${safeNumeric('m.amzprofit')}, amzpend.unit_profit) * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
 
     // OFF AMAZON — see `off_amazon` in the header. A style qualifies when one of its not-listed sizes has local stock; then EVERY

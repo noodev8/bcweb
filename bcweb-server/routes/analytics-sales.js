@@ -71,7 +71,7 @@ Requires auth.
 =======================================================================================================================================
 AMAZON PENDING (owner, 2026-11-12): Amazon orders not yet confirmed (no price from the API) are read from amz_pending_order at an
 ESTIMATED price and profit and COUNTED in the totals ("an indication of how we are doing today"); rows carry pending:true and the
-summary pendingUnits / pendingProfit. Only this screen reads that table.
+summary pendingUnits / pendingProfit. The only other readers are the Amazon Order screen's sold figures and its unit-profit fallback.
 Request Query Params:
   channel (string, optional)  - 'all' (default, incl. CM3) | 'shp' | 'amz' | 'cm3' (the shop). Case-insensitive.
   window  (string, optional)  - 'today' (default) | 'yesterday' | '3d' (these carry the line list) | '7d' | '30d' | '90d' (SUMMARY-ONLY —
