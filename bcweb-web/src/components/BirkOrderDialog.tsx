@@ -71,7 +71,7 @@ export default function BirkOrderDialog({
 }) {
   const { styles, orders, not_in_file: notInFile } = preview;
   const [include, setInclude] = useState<boolean[]>(() => styles.map(actionable));
-  const [styleText, setStyleText] = useState<string[]>(() => styles.map((g) => g.style));
+  const [styleText, setStyleText] = useState<string[]>(() => styles.map((g) => `${g.article}-${g.style}`));
   const [showNotInFile, setShowNotInFile] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,15 +80,16 @@ export default function BirkOrderDialog({
     const out: BirkOrderCommitLine[] = [];
     styles.forEach((g, i) => {
       if (!include[i]) return;
-      const style = editableStyle(g) ? cleanStyle(styleText[i]) : g.style;
-      if (!style) return;
+      // The box holds the whole style code (article included) — what is typed is what is stored, plus the size.
+      const full = editableStyle(g) ? cleanStyle(styleText[i]) : `${g.article}-${g.style}`;
+      if (!full) return;
       for (const l of g.lines) {
         if (l.kind === 'same') continue;
         out.push({
           op: l.kind === 'new' ? 'insert' : 'update',
           ordernum: g.ordernum,
           // An edited style re-spells the code; an untouchable one keeps the server's code exactly, legacy spelling and all.
-          code: editableStyle(g) ? `${g.article}-${style}-${l.size}` : l.code,
+          code: editableStyle(g) ? `${full}-${l.size}` : l.code,
           placedate: l.placedate, bksize: l.bksize, requested: l.requested, cost: l.cost, rrp: l.rrp, due: l.due, ean: l.ean,
         });
       }
@@ -207,7 +208,7 @@ export default function BirkOrderDialog({
               const editable = editableStyle(g);
               const stylePairs = g.lines.reduce((n, l) => n + l.requested, 0);
               const changed = g.lines.filter((l) => l.kind === 'changed');
-              const code = editable ? cleanStyle(styleText[i]) : g.style;
+              const code = editable ? cleanStyle(styleText[i]) : `${g.article}-${g.style}`;
               return (
                 <li key={`${g.ordernum}-${g.article}`} className={'rounded-lg border p-2.5 ' + (canTick ? 'border-slate-200' : 'border-slate-100 bg-slate-50/60')}>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
@@ -219,7 +220,7 @@ export default function BirkOrderDialog({
                       className="h-4 w-4 rounded border-slate-300 disabled:opacity-40"
                       aria-label={`Load ${g.material} ${g.colour}`}
                     />
-                    <span className="font-mono text-xs text-slate-700">{g.article}-{code || '?'}</span>
+                    <span className="font-mono text-xs text-slate-700">{code || '?'}</span>
                     <span className="min-w-0 truncate text-slate-800">
                       {g.material}
                       {g.colour && <span className="text-slate-500"> · {g.colour}</span>}
@@ -264,12 +265,12 @@ export default function BirkOrderDialog({
 
                   {editable && canTick && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-2 pl-7">
-                      <label className="text-xs text-slate-500" htmlFor={`style-${i}`}>New style</label>
+                      <label className="text-xs text-slate-500" htmlFor={`style-${i}`}>New code</label>
                       <input
                         id={`style-${i}`}
                         value={styleText[i]}
                         onChange={(ev) => setStyleText((prev) => prev.map((v, j) => (j === i ? ev.target.value : v)))}
-                        className="w-40 rounded border border-slate-300 px-2 py-1 font-mono text-xs uppercase focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                        className="w-48 rounded border border-slate-300 px-2 py-1 font-mono text-xs uppercase focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
                       />
                       <span className="text-xs text-slate-400">
                         {g.style_source === 'guess' ? 'guessed from the name — check it' : 'not in the product list yet'}
