@@ -14,10 +14,10 @@ The tool is `D:\projects\scripts\merchant-feed\descriptions.py` (README beside i
 
 ## Running it
 
-Run from the **scripts** checkout (`D:\projects\scripts` on the main PC; repo `noodev8/scripts` — on another machine find it
-beside this repo, and `git pull` it first). The script reads that folder's `.env` for the DB and `SHOPIFY_ACCESS_TOKEN`.
+Run from the **scripts** checkout (repo `noodev8/scripts`). Its folder depends on the machine: `C:\scripts` on one,
+`D:\projects\scripts` on the laptop — check both. `git pull` it first. The script reads that folder's `.env` for the DB and `SHOPIFY_ACCESS_TOKEN`.
 Use the real Python: `PYTHON_BIN` in `bcweb-server/.env` on this machine — never bare `python` on Windows (the Microsoft
-Store placeholder). If neither the folder, the `.env` nor Python is there, stop and tell the owner what's missing.
+Store placeholder). If there's no `PYTHON_BIN`, the `py` launcher works (it does on the `C:\scripts` machine). If neither the folder, the `.env` nor Python is there, stop and tell the owner what's missing.
 
 ```
 cd D:\projects\scripts
