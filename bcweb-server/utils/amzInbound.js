@@ -239,19 +239,30 @@ async function prepFor(mskus) {
     const r = await get(`${BASE}/items/prepDetails`, { marketplaceId: sp.marketplaceId(), mskus: mskus.slice(i, i + 50) });
     details.push(...(r.mskuPrepDetails || []));
   }
-  // A brand-new listing has no prep category yet, and Amazon refuses the plan ("Prep classification for this SKU was missing",
-  // Padders 2026-11-17). Footwear needs no prep, so set it to NONE on Amazon first (POST items/prepDetails), then read it as NONE.
-  const unset = details.filter((d) => !d.prepCategory || d.prepCategory === 'UNKNOWN');
-  for (let i = 0; i < unset.length; i += 50) {
-    const r = await post(`${BASE}/items/prepDetails`, {
-      marketplaceId: sp.marketplaceId(),
-      mskuPrepDetails: unset.slice(i, i + 50).map((d) => ({ msku: d.msku, prepCategory: 'NONE', prepTypes: ['NONE'] })),
-    });
-    if (r && r.operationId) await waitOp(r.operationId, 'Setting prep to none on new SKUs');
+  // A SKU with no prep category (UNKNOWN, e.g. a brand-new listing like the Padders, 2026-11-17) stops the plan: "Prep classification
+  // for this SKU was missing". Set it the way it is set by hand in Seller Central — No prep needed (category NONE, type ITEM_NO_PREP;
+  // Amazon refuses a bare 'NONE') — then READ IT BACK, because Amazon decides the owner rules after the change (tested on
+  // REPOSE-TAUPE-05-2611: it came back prepOwner SELLER_ONLY + MUST_MATCH, not the NONE_ONLY older SKUs show).
+  const unset = details.filter((d) => !d.prepCategory || d.prepCategory === 'UNKNOWN').map((d) => d.msku);
+  if (unset.length) {
+    for (let i = 0; i < unset.length; i += 50) {
+      const r = await post(`${BASE}/items/prepDetails`, {
+        marketplaceId: sp.marketplaceId(),
+        mskuPrepDetails: unset.slice(i, i + 50).map((msku) => ({ msku, prepCategory: 'NONE', prepTypes: ['ITEM_NO_PREP'] })),
+      });
+      if (r && r.operationId) await waitOp(r.operationId, `Setting No prep needed on ${unset.length} new SKU${unset.length === 1 ? '' : 's'}`);
+    }
+    const fresh = new Map();
+    for (let i = 0; i < unset.length; i += 50) {
+      const r = await get(`${BASE}/items/prepDetails`, { marketplaceId: sp.marketplaceId(), mskus: unset.slice(i, i + 50) });
+      for (const d of (r.mskuPrepDetails || [])) fresh.set(d.msku, d);
+    }
+    const still = unset.filter((m) => !fresh.has(m) || !fresh.get(m).prepCategory || fresh.get(m).prepCategory === 'UNKNOWN');
+    if (still.length) throw new Stop(`Amazon still has no prep category for ${still.join(', ')}. Set "No prep needed" on them in Seller Central and try again.`);
+    for (let i = 0; i < details.length; i += 1) if (fresh.has(details[i].msku)) details[i] = fresh.get(details[i].msku);
   }
-  for (const d of unset) { d.prepCategory = 'NONE'; d.prepOwnerConstraint = 'NONE_ONLY'; }
   const by = new Map(details.map((d) => [d.msku, d]));
-  const unknown =mskus.filter((m) => !by.has(m));
+  const unknown = mskus.filter((m) => !by.has(m));
   if (unknown.length) throw new Stop(`Amazon doesn't know these SKUs: ${unknown.join(', ')}.`);
   const amazonOnly = mskus.filter((m) => by.get(m).prepOwnerConstraint === 'AMAZON_ONLY' || by.get(m).labelOwnerConstraint === 'AMAZON_ONLY');
   if (amazonOnly.length) throw new Stop(`Amazon wants to prep or label ${amazonOnly.join(', ')} itself, which it charges for. Take them out of the boxes.`);
@@ -261,10 +272,10 @@ async function prepFor(mskus) {
     const d = by.get(m);
     const prepOwner = d.prepOwnerConstraint === 'NONE_ONLY' ? 'NONE'
       : d.prepOwnerConstraint === 'SELLER_ONLY' ? 'SELLER'
-        // A brand-new listing comes back prepCategory 'UNKNOWN' with no constraint, and Amazon then refuses SELLER ("does not
-        // require prepOwner", Padders 2026-11-17) — so UNKNOWN reads as no prep, like NONE.
-        : ((d.prepCategory === 'NONE' || d.prepCategory === 'UNKNOWN' || !d.prepCategory) ? 'NONE' : 'SELLER');
-    if (prepOwner === 'SELLER') textile += 1;
+        : (d.prepCategory === 'NONE' ? 'NONE' : 'SELLER');
+    // sellerPrep counts SKUs with real prep to do (polybag a textile), not a No-prep SKU Amazon happens to want owned by SELLER.
+    if (d.prepCategory !== 'NONE') textile += 1;
+    // labelOwner is always SELLER (we label every unit); with allOwnersConstraint MUST_MATCH a SELLER prepOwner then matches.
     owners.set(m, { prepOwner, labelOwner: 'SELLER' });
   }
   return { owners, sellerPrep: textile };
