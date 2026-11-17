@@ -3516,7 +3516,9 @@ export interface AmzInboundCarriers {
   amazon: { cost: number; currency: string; voidableUntil: string | null; expires: string | null } | null;
 }
 export function getAmzInboundCarriers(id: number, readyDate: string) {
-  return request<{ carriers: AmzInboundCarriers | null }>({ url: '/amz-inbound-carriers', method: 'POST', data: { id, readyDate } },
+  // Amazon works the carriers out while this waits (generateTransportationOptions, often 20s+; the server waits up to 4 minutes), far
+  // past the shared 15s timeout — which showed "Network Error" while the server finished quietly (Padders, 2026-11-17).
+  return request<{ carriers: AmzInboundCarriers | null }>({ url: '/amz-inbound-carriers', method: 'POST', data: { id, readyDate }, timeout: 300000 },
     (b) => ({ carriers: (b.carriers as AmzInboundCarriers) || null }));
 }
 // carrier = the DPD chosen; maxCost = Amazon's DPD price shown (the server never books it dearer).
