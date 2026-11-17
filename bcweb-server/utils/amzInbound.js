@@ -249,7 +249,9 @@ async function prepFor(mskus) {
     const d = by.get(m);
     const prepOwner = d.prepOwnerConstraint === 'NONE_ONLY' ? 'NONE'
       : d.prepOwnerConstraint === 'SELLER_ONLY' ? 'SELLER'
-        : (d.prepCategory === 'NONE' ? 'NONE' : 'SELLER');
+        // A brand-new listing comes back prepCategory 'UNKNOWN' with no constraint, and Amazon then refuses SELLER ("does not
+        // require prepOwner", Padders 2026-11-17) — so UNKNOWN reads as no prep, like NONE.
+        : ((d.prepCategory === 'NONE' || d.prepCategory === 'UNKNOWN' || !d.prepCategory) ? 'NONE' : 'SELLER');
     if (prepOwner === 'SELLER') textile += 1;
     owners.set(m, { prepOwner, labelOwner: 'SELLER' });
   }
