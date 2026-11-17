@@ -567,16 +567,14 @@ function SalesPageContent() {
           {/* Profit less the estimated ad cost (see ADS above); return on cost stays before ads. */}
           <Stat label="Net profit" value={money(summary.profit - (adCost ?? 0))}
             valueClassName={summary.profit - (adCost ?? 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}
-            // PROFIT A PAIR (owner, 2026-11-17) replaced return on cost here: the net profit above (after the estimated Google ads on
-            // All / Shopify) ÷ the pairs SOLD on the tile beside it, for the window on screen — the owner thinks in £ a pair (the
-            // Amazon £3 walk-away). Refunds paid in the window are already inside the profit, so it is per pair after returns.
-            // Markup was tried the same day and dropped: it is before fees, so it says nothing about what's kept.
-            sub={`${adCost !== null ? `after ${money(adCost)} ads · ` : ''}${summary.unitsSold > 0 ? money((summary.profit - (adCost ?? 0)) / summary.unitsSold) : '—'} a pair`}
-            subTitle={(adCost !== null
-              ? `Ads estimated: ${shpOrders} Shopify orders × £${adPerSale?.toFixed(2)} cost per sale (last ${adRateDays} days). `
-              : '') + (summary.unitsSold > 0
-              ? `A pair: ${money(summary.profit - (adCost ?? 0))} net profit ÷ ${int(summary.unitsSold)} pairs sold in this window. Refunds paid are already taken off the profit.`
-              : 'A pair: nothing sold in this window yet.')} />
+            // NO PERCENTAGE OR PER-PAIR FIGURE (owner, 2026-11-17): return on cost, markup and profit a pair were each tried and
+            // dropped the same day — return on cost and markup had no yardstick the owner could use, and £ a pair (net profit ÷ Sold)
+            // only magnified the noise already in the £ figure (the lagging ad rate, refund timing, a handful of pairs) into what
+            // looked like a trend. The bigger picture is the P&L's. Only the ads line remains, on All / Shopify.
+            sub={adCost !== null ? `after ${money(adCost)} ads` : undefined}
+            subTitle={adCost !== null
+              ? `Ads estimated: ${shpOrders} Shopify orders × £${adPerSale?.toFixed(2)} cost per sale (last ${adRateDays} days)`
+              : undefined} />
           {/* SOLD = pairs sold in the window, one number (see ONE NUMBER below; it led with the net from 2026-07-30 to 2026-11-17).
               The RETURN RATE rides on the label as a pill, ALWAYS GREY (owner, 2026-11-17: Amazon's rate sat on the old 15% amber line
               and flipped colour by channel — "just keep the same style"). The grey/amber/red bands are gone.
