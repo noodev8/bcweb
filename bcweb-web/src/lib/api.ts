@@ -2432,14 +2432,16 @@ export interface SalesReportSummary {
   unitsSold: number;
   unitsReturned: number;
   unitsNet: number;
-  unitsSoldSinceReturned: number; // of unitsSold, how many have since come back (any date) — the return-rate numerator
+  // THE RETURN RATE — pairs sold 3 weeks to 3 months ago (from..to) and how many came back. Fixed band: follows channel + search,
+  // never the window, so it is NOT to be divided against unitsSold / unitsReturned (owner, 2026-11-17). pct null = nothing sold.
+  returnRate?: { sold: number; back: number; pct: number | null; from: string | null; to: string | null };
   orders: number;
   lines: number;             // matched lines BEFORE the row cap ("latest 200 of 318")
   revenue: number;           // GROSS, VAT-inclusive — the figure that reconciles with Shopify/Seller Central and the bank
   netRevenue: number;        // the same trade ex-VAT (revenue / 1.2) — the denominator of marginPct
   profit: number;            // the hero number
   marginPct: number | null;  // profit / netRevenue: profit is already ex-VAT, so the denominator has to be too
-  onCostPct: number | null;  // RETURN ON COST over the lines with a cost (net of returns) — what the screen shows in margin's place
+  onCostPct: number | null;  // RETURN ON COST over the lines with a cost (net of returns) — no longer on the tile (profit a pair is)
   products: number;          // distinct styles in the matched set (product mode: >1 = total spans multiple products)
   pendingUnits?: number;     // of the totals, Amazon units not yet confirmed (estimated price / profit)
   pendingProfit?: number;
@@ -2513,7 +2515,7 @@ export function getSalesReport(params: {
       search: b.search ?? null,
       sort: (b.sort as SalesSort) || 'date',
       dir: (b.dir as SalesSortDir) || 'desc',
-      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, unitsSoldSinceReturned: 0, orders: 0, lines: 0, revenue: 0, netRevenue: 0, profit: 0, marginPct: null, onCostPct: null, products: 0 },
+      summary: (b.summary as SalesReportSummary) || { unitsSold: 0, unitsReturned: 0, unitsNet: 0, orders: 0, lines: 0, revenue: 0, netRevenue: 0, profit: 0, marginPct: null, onCostPct: null, products: 0 },
       rows: (b.rows as SalesReportRow[]) || [],
       limit: b.limit ?? 500,
       count: b.count ?? 0,

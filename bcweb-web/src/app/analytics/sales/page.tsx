@@ -567,37 +567,32 @@ function SalesPageContent() {
           {/* Profit less the estimated ad cost (see ADS above); return on cost stays before ads. */}
           <Stat label="Net profit" value={money(summary.profit - (adCost ?? 0))}
             valueClassName={summary.profit - (adCost ?? 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}
-            // RETURN ON COST replaced margin here (owner, 2026-10-27): pence kept per £1 spent on stock — the figure Prospects shows
-            // for a find, so the two can be compared. Margin flattered dear shoes.
-            sub={`${adCost !== null ? `after ${money(adCost)} ads · ` : ''}${pct(summary.onCostPct)} on cost`}
-            subTitle={adCost !== null
-              ? `Ads estimated: ${shpOrders} Shopify orders × £${adPerSale?.toFixed(2)} cost per sale (last ${adRateDays} days)`
-              : 'Return on cost: pence kept per £1 spent on stock'} />
-          {/* Units lead with NET (owner, 2026-07-30) — the gross figure was the headline until the returns badge went on, and with a
-              45%-returned style the big number was then the one that hadn't happened. Net is what the money tiles beside it are already
-              netted to, so the row now reads on one basis throughout. The gross is spelled out underneath as the equation it came from,
-              so nothing is hidden — just demoted.
-              "SOLD" labels the NET figure because that is what was actually sold and kept; the gross is "total" in the sub-line rather
-              than "sold" precisely so the two can't both claim the word. Kept to one word each — this is a 3-line tile, and "20
-              transactions − 9 returned" wraps at the tile's width on a laptop.
-              The RETURN RATE rides on the label as a colour-graded pill — it's the number you want to catch without reading, and on this
-              catalogue it's a real signal (a style returning at 45% is a sizing problem, not a pricing one). The bands are deliberately
-              coarse: quiet grey under 15%, amber to 30%, red above — a traffic light, not a measurement.
-              THE RATE IS BY SALE DATE (owner, 2026-09-25): units sold in this window that have since come back, whenever the refund was
-              booked. It used to be returns-booked ÷ sold in the same window, and because a return is dated the day it's processed, a
-              batch of month-old refunds read as 26.7% on a 3-day view. The sub-line keeps the booked-in-window count — that's the
-              equation for the net figure and the money tiles, which are cash for the window. So the pill and the sub-line can differ,
-              and a recent window's pill reads low (its returns haven't happened yet). */}
-          <Stat label="Sold" value={int(summary.unitsNet)}
-            badge={summary.unitsSold > 0 && summary.unitsSoldSinceReturned > 0
+            // PROFIT A PAIR (owner, 2026-11-17) replaced return on cost here: the net profit above (after the estimated Google ads on
+            // All / Shopify) ÷ the pairs SOLD on the tile beside it, for the window on screen — the owner thinks in £ a pair (the
+            // Amazon £3 walk-away). Refunds paid in the window are already inside the profit, so it is per pair after returns.
+            // Markup was tried the same day and dropped: it is before fees, so it says nothing about what's kept.
+            sub={`${adCost !== null ? `after ${money(adCost)} ads · ` : ''}${summary.unitsSold > 0 ? money((summary.profit - (adCost ?? 0)) / summary.unitsSold) : '—'} a pair`}
+            subTitle={(adCost !== null
+              ? `Ads estimated: ${shpOrders} Shopify orders × £${adPerSale?.toFixed(2)} cost per sale (last ${adRateDays} days). `
+              : '') + (summary.unitsSold > 0
+              ? `A pair: ${money(summary.profit - (adCost ?? 0))} net profit ÷ ${int(summary.unitsSold)} pairs sold in this window. Refunds paid are already taken off the profit.`
+              : 'A pair: nothing sold in this window yet.')} />
+          {/* SOLD = pairs sold in the window, one number (see ONE NUMBER below; it led with the net from 2026-07-30 to 2026-11-17).
+              The RETURN RATE rides on the label as a pill, ALWAYS GREY (owner, 2026-11-17: Amazon's rate sat on the old 15% amber line
+              and flipped colour by channel — "just keep the same style"). The grey/amber/red bands are gone.
+              THE RATE IS A FIXED BAND, NOT THE WINDOW (owner, 2026-11-17): pairs sold 3 weeks to 3 months ago and how many came back
+              (server: RETURN RATE in routes/analytics-sales.js). The window's own sales read too low (6.8% on 30 days when the settled
+              rate was ~15% — returns hadn't happened yet), and refunds booked ÷ sold mixed in refunds for older sales (14 ÷ 73 = 19%,
+              9 of the 14 sold before the window). So the pill says "3 mths" and the same figure shows on every window button.
+              ONE NUMBER: PAIRS SOLD IN THE WINDOW (owner, 2026-11-17: "just a number"). Was the net (sold − refunds paid in the window,
+              with a "73 sold − 14 refunds paid" sub-line), but most of those refunds were for sales made before the window, so the net
+              mixed two groups of shoes. The pill carries returns; the money tiles still net every refund paid in the window (cash). */}
+          <Stat label="Sold" value={int(summary.unitsSold)}
+            badge={summary.returnRate?.pct != null && summary.returnRate.sold > 0
               ? {
-                  text: `${pct((summary.unitsSoldSinceReturned / summary.unitsSold) * 100)} returned`,
-                  tone: returnTone((summary.unitsSoldSinceReturned / summary.unitsSold) * 100),
-                  title: `${int(summary.unitsSoldSinceReturned)} of the ${int(summary.unitsSold)} units sold in this period have since been returned. Recent sales can still come back.`,
+                  text: `${pct(summary.returnRate.pct)} returned · 3 mths`,
+                  title: `Return rate: ${int(summary.returnRate.back)} of the ${int(summary.returnRate.sold)} pairs sold ${summary.returnRate.from ? fmtDate(summary.returnRate.from) : ''} – ${summary.returnRate.to ? fmtDate(summary.returnRate.to) : ''} came back. Measured on sales 3 weeks to 3 months old, so it stays the same whichever dates you pick — newer sales haven't had time to come back yet.`,
                 }
-              : undefined}
-            sub={summary.unitsReturned
-              ? `${int(summary.unitsSold)} total − ${int(summary.unitsReturned)} returned`
               : undefined} />
         </div>
       )}
@@ -824,20 +819,6 @@ function SortableTh({ label, col, sort, dir, onSort, align = 'left' }: {
   );
 }
 
-// Return-rate traffic light. Coarse on purpose — the pill answers "is this normal?", and a footwear catalogue sold online carries a
-// double-digit return rate as a matter of course, so the quiet band has to be generous or every tile would shout.
-type StatTone = 'quiet' | 'warn' | 'bad';
-function returnTone(ratePct: number): StatTone {
-  if (ratePct >= 30) return 'bad';
-  if (ratePct >= 15) return 'warn';
-  return 'quiet';
-}
-const TONE_CLASS: Record<StatTone, string> = {
-  quiet: 'bg-slate-100 text-slate-500',
-  warn: 'bg-amber-50 text-amber-700 ring-1 ring-amber-200',
-  bad: 'bg-rose-50 text-rose-700 ring-1 ring-rose-200',
-};
-
 // A supporting stat tile in the headline strip. The optional badge sits on the LABEL row, not next to the value: it's a qualifier on
 // the number, and putting it beside the value would make two figures compete for the same glance.
 function Stat({ label, value, sub, subTitle, valueClassName, badge }: {
@@ -847,14 +828,14 @@ function Stat({ label, value, sub, subTitle, valueClassName, badge }: {
   // Hover text for the sub-line. Used by the margin tile to name its denominator without spending a line of the tile on it.
   subTitle?: string;
   valueClassName?: string;
-  badge?: { text: string; tone: StatTone; title?: string };
+  badge?: { text: string; title?: string };   // one grey style, never coloured (owner, 2026-11-17)
 }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
         {badge && (
-          <span className={'shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium tabular-nums ' + TONE_CLASS[badge.tone]} title={badge.title}>
+          <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-500" title={badge.title}>
             {badge.text}
           </span>
         )}

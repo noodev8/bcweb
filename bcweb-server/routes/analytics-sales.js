@@ -92,7 +92,9 @@ Success Response:
   "return_code": "SUCCESS",
   "channel": "all", "window": "3d", "searchActive": false, "summaryOnly": false, "from": "2026-07-11", "to": "2026-07-13", "search": null,
   "has": ["ARIZONA"], "not": ["EVA"], "sort": "date", "dir": "desc",
-  "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "unitsSoldSinceReturned": 24, "orders": 640, "lines": 318,
+  "summary": { "unitsSold": 812, "unitsReturned": 19, "unitsNet": 793, "orders": 640, "lines": 318,
+               // the return rate over sales 3 weeks to 3 months old — the same whatever the window (owner, 2026-11-17)
+               "returnRate": { "sold": 1240, "back": 186, "pct": 15.0, "from": "2026-08-17", "to": "2026-10-27" },
                // revenue is GROSS (inc VAT, as the customer paid); netRevenue is the same trade ex-VAT and is the denominator of marginPct
                "revenue": 41234.55, "netRevenue": 34362.13, "profit": 6120.11, "marginPct": 17.8, "products": 137 },
   "rows": [
@@ -171,6 +173,11 @@ const SORTS = {
 // Belt-and-braces cap on how many terms one request may carry. The operator UI can't produce more than a handful, and each term is
 // another predicate on the scan — this just stops a hand-built URL turning into a silly query.
 const MAX_TERMS = 8;
+
+// THE RETURN RATE's band (owner, 2026-11-17): pairs sold from 3 months ago up to 3 weeks ago. 3 weeks because nearly every return
+// is back by then (half within ~11 days); 3 months so there are enough pairs to be steady but a change still shows within a month.
+const RETURN_RATE_MONTHS = 3;
+const RETURN_RATE_SETTLE_DAYS = 21;
 
 // A repeatable query param arrives as a string (one value) or an array (several). Normalise to a trimmed, non-empty, de-duplicated
 // list. `has[]=`-style keys are accepted too, in case a client serialises arrays that way.
@@ -262,23 +269,9 @@ router.get('/', async (req, res) => {
     }
     const termSql = termClauses.length > 0 ? `\n          ${termClauses.join('\n          ')}` : '';
 
-    const filterCte = `
-      WITH b AS (
-        SELECT
-          CASE $1
-            WHEN 'today'     THEN CURRENT_DATE
-            WHEN 'yesterday' THEN CURRENT_DATE - 1
-            WHEN '3d'        THEN CURRENT_DATE - 2
-            WHEN '7d'        THEN CURRENT_DATE - 6
-            WHEN '30d'       THEN CURRENT_DATE - 29
-            WHEN '90d'       THEN CURRENT_DATE - 89
-          END AS from_date,
-          CASE $1
-            WHEN 'yesterday' THEN CURRENT_DATE - 1
-            ELSE CURRENT_DATE
-          END AS to_date
-      ),
-      f AS (
+    // The sale lines (booked + Amazon pending) with their style's extras, narrowed by channel + search steps. `datePredicate` is the
+    // only thing that differs between the window's filter (f, below) and the return-rate band (RETURN RATE, further down).
+    const linesSql = (datePredicate) => `
         -- LEFT JOIN skusummary for sk.supplier (the HAY term match) and as the RRP fallback, so a sale can still match on a groupid
         -- skusummary has since dropped rather than disappearing from the search entirely.
         -- RRP is sales.rrp — stamped at booking (migrations/20260926b_sales_rrp.sql) — falling back to the style's CURRENT rrp only
@@ -301,11 +294,34 @@ router.get('/', async (req, res) => {
            WHERE NOT EXISTS (SELECT 1 FROM sales x WHERE x.channel = 'AMZ' AND x.ordernum = p.ordernum)
         ) s
         LEFT JOIN skusummary sk ON sk.groupid = s.groupid, b
-        WHERE (
+        WHERE ${datePredicate}
+          AND ($3::bool OR s.channel = $4)${termSql}`;
+
+    const filterCte = `
+      WITH b AS (
+        SELECT
+          CASE $1
+            WHEN 'today'     THEN CURRENT_DATE
+            WHEN 'yesterday' THEN CURRENT_DATE - 1
+            WHEN '3d'        THEN CURRENT_DATE - 2
+            WHEN '7d'        THEN CURRENT_DATE - 6
+            WHEN '30d'       THEN CURRENT_DATE - 29
+            WHEN '90d'       THEN CURRENT_DATE - 89
+          END AS from_date,
+          CASE $1
+            WHEN 'yesterday' THEN CURRENT_DATE - 1
+            ELSE CURRENT_DATE
+          END AS to_date
+      ),
+      f AS (${linesSql(`(
               ($2::bool AND s.solddate >= (CURRENT_DATE - INTERVAL '12 months'))   -- product mode: rolling last 12 months
               OR (NOT $2::bool AND s.solddate >= b.from_date AND s.solddate <= b.to_date)  -- pulse mode: the chosen preset window
-            )
-          AND ($3::bool OR s.channel = $4)${termSql}
+            )`)}
+      ),
+      -- RETURN-RATE BAND (owner, 2026-11-17) — sales from 3 months ago up to 3 weeks ago, whatever window is chosen. See RETURN RATE.
+      fr AS (${linesSql(`s.solddate >= (CURRENT_DATE - INTERVAL '${RETURN_RATE_MONTHS} months')
+          AND s.solddate <= CURRENT_DATE - ${RETURN_RATE_SETTLE_DAYS}
+          AND NOT s.pending`)}
       )`;
 
     // Summary-only when a LONG window is chosen in pulse mode — totals with no line list. A search always shows its (capped) lines, so it
@@ -320,7 +336,11 @@ router.get('/', async (req, res) => {
     // UI can label pulse mode with the window and product mode with the item's first->last sale. `products` = distinct styles matched:
     // in product mode, > 1 warns the operator the total spans multiple products (refine to isolate one).
     const summaryResult = await query(
-      `${filterCte}
+      `${filterCte},
+       rk AS (SELECT channel, ordernum, code, SUM(qty) AS sold
+                FROM fr
+               WHERE qty > 0 AND COALESCE(ordernum, '') <> ''
+               GROUP BY channel, ordernum, code)
        SELECT
          (SELECT to_char(from_date, 'YYYY-MM-DD') FROM b) AS window_from,
          (SELECT to_char(to_date,   'YYYY-MM-DD') FROM b) AS window_to,
@@ -339,23 +359,23 @@ router.get('/', async (req, res) => {
          -- RETURN ON COST: profit over what the units cost, both over the lines whose style HAS a cost (a line without one would
          -- add profit with nothing to divide it by). Net of returns on both sides, like the profit.
          SUM(profit) FILTER (WHERE cost_now > 0)                        AS costed_profit,
-         SUM(cost_now * qty) FILTER (WHERE cost_now > 0)                AS costed_cost,
-         -- RETURN RATE BY SALE DATE (owner, 2026-09-25). units_returned above counts return rows BOOKED in the window — right for the
-         -- money, wrong for a rate: a return is dated the day it's processed (sync_returns.py / the Amazon import), so a batch of old
-         -- refunds landing in a 3-day window was divided by 3 days of sales and read as 26.7% "returned". This instead takes the units
-         -- SOLD in the window and counts how many of them have since come back, whenever that return was booked — matched on
-         -- channel + ordernum + code (every return row carries an ordernum; idx_sales_channel_ordernum_code serves the lookup).
-         -- LEAST caps a key at what was sold, so a duplicate reversal can't push a line past 100%. Consequence the owner accepted: a
-         -- recent window reads LOW, because its returns haven't happened yet.
+         SUM(cost_now * qty) FILTER (WHERE cost_now > 0)                AS costed_cost,         -- RETURN RATE (owner, 2026-11-17) — over the fixed band fr, NOT the window. units_returned above counts refunds BOOKED in
+         -- the window (right for the money, which is cash for the window), but most of those are for sales made before it, so
+         -- dividing them by the window's sales is meaningless. The 2026-09-25 fix (window's sales that have since come back) read
+         -- LOW instead — 6.8% on a 30-day Shopify view when the settled rate is ~15% — because half come back after ~11 days and
+         -- nearly all within 3 weeks. So the rate now takes pairs sold 3 weeks to 3 months ago (settled, and enough of them to be
+         -- steady) and counts how many came back, matched on channel + ordernum + code (idx_sales_channel_ordernum_code). It follows
+         -- the channel and search steps, never the date buttons. Lines with no ordernum can't be matched to a return, so they are
+         -- left out of both sides. LEAST caps a key at what was sold, so a duplicate reversal can't push a line past 100%.
+         (SELECT COALESCE(SUM(k.sold), 0)::int FROM rk k)                AS rate_sold,
          (SELECT COALESCE(SUM(LEAST(k.sold, r.ret)), 0)::int
-            FROM (SELECT channel, ordernum, code, SUM(qty) AS sold
-                    FROM f
-                   WHERE qty > 0 AND COALESCE(ordernum, '') <> ''
-                   GROUP BY channel, ordernum, code) k
+            FROM rk k
             JOIN LATERAL (SELECT -SUM(rs.qty) AS ret
                             FROM sales rs
                            WHERE rs.channel = k.channel AND rs.ordernum = k.ordernum AND rs.code = k.code AND rs.qty < 0) r
-              ON r.ret IS NOT NULL)                                     AS units_sold_since_returned
+              ON r.ret IS NOT NULL)                                     AS rate_back,
+         (SELECT to_char(CURRENT_DATE - INTERVAL '${RETURN_RATE_MONTHS} months', 'YYYY-MM-DD')) AS rate_from,
+         (SELECT to_char(CURRENT_DATE - ${RETURN_RATE_SETTLE_DAYS}, 'YYYY-MM-DD'))               AS rate_to
        FROM f`,
       filterParams
     );
@@ -425,9 +445,15 @@ router.get('/', async (req, res) => {
       unitsSold: Number(s.units_sold) || 0,
       unitsReturned: Number(s.units_returned) || 0,
       unitsNet: Number(s.units_net) || 0,
-      // Of unitsSold, how many have since been returned (any date) — the numerator of the return RATE. Not the same thing as
-      // unitsReturned, which is returns booked in the window (cash basis, what unitsNet and the money are netted by). See the SQL.
-      unitsSoldSinceReturned: Number(s.units_sold_since_returned) || 0,
+      // THE RETURN RATE — over sales 3 weeks to 3 months old, NOT the window (see RETURN RATE in the SQL). Not to be compared with
+      // unitsReturned, which is refunds booked in the window (cash basis, what unitsNet and the money are netted by).
+      returnRate: {
+        sold: Number(s.rate_sold) || 0,
+        back: Number(s.rate_back) || 0,
+        pct: Number(s.rate_sold) > 0 ? Math.round((Number(s.rate_back) / Number(s.rate_sold)) * 1000) / 10 : null,
+        from: s.rate_from || null,
+        to: s.rate_to || null,
+      },
       orders: Number(s.orders) || 0,
       lines: Number(s.lines) || 0,   // matched lines BEFORE the row cap — lets the UI say "latest 200 of 318" honestly
 
@@ -438,8 +464,7 @@ router.get('/', async (req, res) => {
       profit: profitTotal,
       marginPct: revenueTotal !== 0 ? Math.round((profitTotal / (revenueTotal / VAT_MULTIPLIER)) * 1000) / 10 : null,
       // Return on cost — see the header and the SQL. null when nothing matched has a cost (or the costed units net to 0).
-      onCostPct: num(s.costed_cost) > 0 ? Math.round((num(s.costed_profit) / num(s.costed_cost)) * 1000) / 10 : null,
-      pendingUnits: Number(s.pending_units) || 0,       // of the above, Amazon lines not yet confirmed (estimated)
+      onCostPct: num(s.costed_cost) > 0 ? Math.round((num(s.costed_profit) / num(s.costed_cost)) * 1000) / 10 : null,      pendingUnits: Number(s.pending_units) || 0,       // of the above, Amazon lines not yet confirmed (estimated)
       pendingProfit: num(s.pending_profit) || 0,
       products,                       // distinct styles matched (product mode: >1 = the total spans multiple products)
     };
