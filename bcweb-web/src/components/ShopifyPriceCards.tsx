@@ -460,9 +460,12 @@ function Card({ row, all, reason, n, of, busy, done, review, onReview, showSizes
         )}
         {/* AMAZON — the dearest live size, shown, never obeyed. */}
         <div className="flex flex-wrap items-baseline gap-x-2">
-          <span className="w-16 shrink-0 text-slate-500">Amazon</span>
+          {/* Pressing "Amazon" or its price fills the box with it (owner, 2026-11-17) — only fills; Set still writes. */}
           {amz !== null
-            ? <span>dearest live size <b className="tabular-nums text-slate-900">{money(amz)}</b>{valid && price < amz - 0.005 && <span className="text-amber-700"> · under it</span>}</span>
+            ? <button type="button" onClick={() => setPriceStr(amz.toFixed(2))} className="w-16 shrink-0 text-left text-slate-500 hover:text-brand-700 hover:underline" title="Put Amazon's dearest live size in the price box">Amazon</button>
+            : <span className="w-16 shrink-0 text-slate-500">Amazon</span>}
+          {amz !== null
+            ? <span>dearest live size <button type="button" onClick={() => setPriceStr(amz.toFixed(2))} className="font-bold tabular-nums text-slate-900 hover:text-brand-700 hover:underline" title="Put this price in the price box">{money(amz)}</button>{valid && price < amz - 0.005 && <span className="text-amber-700"> · under it</span>}</span>
             : <span className="text-slate-500">no size live</span>}
         </div>
         {/* SIZE PRICES — always shown when there is one (decision 4). */}
