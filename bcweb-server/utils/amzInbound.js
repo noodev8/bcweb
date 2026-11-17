@@ -72,6 +72,7 @@ function shipFrom() {
 // The ONLY writes this util may send to Amazon.
 const ALLOWED = [
   new RegExp(`${P}$`),                                                          // createInboundPlan
+  /^\/inbound\/fba\/2024-03-20\/items\/prepDetails$/,                                // setPrepDetails — NONE on new UNKNOWN SKUs only (free)
   new RegExp(`${P}\\/[^/]+\\/packingOptions$`),                                 // generatePackingOptions
   new RegExp(`${P}\\/[^/]+\\/packingOptions\\/[^/]+\\/confirmation$`),          // confirmPackingOption (fees checked = 0)
   new RegExp(`${P}\\/[^/]+\\/packingInformation$`),                             // setPackingInformation
@@ -238,8 +239,19 @@ async function prepFor(mskus) {
     const r = await get(`${BASE}/items/prepDetails`, { marketplaceId: sp.marketplaceId(), mskus: mskus.slice(i, i + 50) });
     details.push(...(r.mskuPrepDetails || []));
   }
+  // A brand-new listing has no prep category yet, and Amazon refuses the plan ("Prep classification for this SKU was missing",
+  // Padders 2026-11-17). Footwear needs no prep, so set it to NONE on Amazon first (POST items/prepDetails), then read it as NONE.
+  const unset = details.filter((d) => !d.prepCategory || d.prepCategory === 'UNKNOWN');
+  for (let i = 0; i < unset.length; i += 50) {
+    const r = await post(`${BASE}/items/prepDetails`, {
+      marketplaceId: sp.marketplaceId(),
+      mskuPrepDetails: unset.slice(i, i + 50).map((d) => ({ msku: d.msku, prepCategory: 'NONE', prepTypes: ['NONE'] })),
+    });
+    if (r && r.operationId) await waitOp(r.operationId, 'Setting prep to none on new SKUs');
+  }
+  for (const d of unset) { d.prepCategory = 'NONE'; d.prepOwnerConstraint = 'NONE_ONLY'; }
   const by = new Map(details.map((d) => [d.msku, d]));
-  const unknown = mskus.filter((m) => !by.has(m));
+  const unknown =mskus.filter((m) => !by.has(m));
   if (unknown.length) throw new Stop(`Amazon doesn't know these SKUs: ${unknown.join(', ')}.`);
   const amazonOnly = mskus.filter((m) => by.get(m).prepOwnerConstraint === 'AMAZON_ONLY' || by.get(m).labelOwnerConstraint === 'AMAZON_ONLY');
   if (amazonOnly.length) throw new Stop(`Amazon wants to prep or label ${amazonOnly.join(', ')} itself, which it charges for. Take them out of the boxes.`);
