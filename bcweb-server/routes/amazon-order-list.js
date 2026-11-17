@@ -251,6 +251,7 @@ router.get('/', async (req, res) => {
              COALESCE(a.amzlive,0) AS fba_live,
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              a.sku AS amz_sku,
+             NULLIF(a.fnsku, '') AS fnsku,
              m.supplier AS supplier,
              sk.brand AS brand,
              sk.season AS season,
@@ -302,6 +303,7 @@ router.get('/', async (req, res) => {
              0 AS fba_live,
              regexp_replace(COALESCE(m.ean,''), 'B$', '') AS barcode,
              NULL AS amz_sku,
+             NULL AS fnsku,
              m.supplier AS supplier,
              sk.brand AS brand,
              sk.season AS season,
@@ -343,6 +345,7 @@ router.get('/', async (req, res) => {
         pick_pending: Number(r.pick_pending) || 0,
         barcode: r.barcode || null,
         amz_sku: r.amz_sku || null,
+        fnsku: r.fnsku || null, // detail row: shows whether a new listing has its FNSKU yet (comes in on Update Orders)
         supplier: r.supplier || null,
         brand: r.brand || null,
         local_stock: Number(r.local_stock) || 0,

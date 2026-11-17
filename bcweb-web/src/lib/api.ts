@@ -155,7 +155,7 @@ export interface AmazonOrderRow {
   code: string; groupid: string; size: string; title: string | null;
   price: number | null; units_7d: number; units_30d: number; unit_profit: number | null; profit_30d: number | null;
   fba_total: number; fba_live: number; pick_pending: number;
-  barcode: string | null; amz_sku: string | null; supplier: string | null; brand: string | null;
+  barcode: string | null; amz_sku: string | null; fnsku: string | null; supplier: string | null; brand: string | null;
   local_stock: number; cost: number | null;
   last_sold: string | null; // YYYY-MM-DD, most recent Amazon sale — null if the SKU has never sold on Amazon
   season: string | null; // skusummary.season — Summer | Winter | Any; drives the SUMMER / WINTER search command

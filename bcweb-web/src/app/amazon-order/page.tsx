@@ -2885,6 +2885,15 @@ function AmazonOrderContent() {
                             {r.amz_sku || '—'}
                             {r.amz_sku && <CopyButton value={r.amz_sku} label="Amazon SKU" />}
                           </dd>
+                          {r.amz_sku && (
+                            <>
+                              <dt className="text-slate-500" title="Comes in on Update Orders once Amazon has set the listing up">FNSKU</dt>
+                              <dd className="flex items-center gap-0.5 font-mono text-slate-900">
+                                {r.fnsku || <span className="font-sans text-amber-700">not yet</span>}
+                                {r.fnsku && <CopyButton value={r.fnsku} label="FNSKU" />}
+                              </dd>
+                            </>
+                          )}
                         </dl>
                       </div>
                       {/* THE ACTION LINE (owner, 2026-10-12) — under the blocks, full width, so nothing here can widen the detail row past
