@@ -331,8 +331,7 @@ function SalesPageContent() {
   // is displayed, and what goes stale after a run (new orders mean new sale rows, so the ledger below reloads).
   const [updateError, setUpdateError] = useState<string | null>(null);
   // ADS (owner, 2026-11-15): the profit TOTAL on screen has an estimated Google cost taken off — rule in lib/useAdCost.ts.
-  const { cost: adCost, orders: shpOrders, perSale: adPerSale, rateDays: adRateDays, refresh: refreshShp } =
-    useAdCost({ channel, window: win, searchActive, summary });
+  const { cost: adCost, refresh: refreshShp } = useAdCost({ channel, window: win, searchActive, summary });
 
   const onUpdated = useCallback(async () => { await Promise.all([refresh(), refreshShp()]); }, [refresh, refreshShp]);
 
@@ -564,17 +563,24 @@ function SalesPageContent() {
                 Central and the bank. */}
             <div className="mt-0.5 text-xs text-slate-400">{money(summary.netRevenue)} ex VAT</div>
           </div>
-          {/* Profit less the estimated ad cost (see ADS above); return on cost stays before ads. */}
-          <Stat label="Net profit" value={money(summary.profit - (adCost ?? 0))}
-            valueClassName={summary.profit - (adCost ?? 0) < 0 ? 'text-rose-600' : 'text-emerald-600'}
-            // NO PERCENTAGE OR PER-PAIR FIGURE (owner, 2026-11-17): return on cost, markup and profit a pair were each tried and
-            // dropped the same day — return on cost and markup had no yardstick the owner could use, and £ a pair (net profit ÷ Sold)
-            // only magnified the noise already in the £ figure (the lagging ad rate, refund timing, a handful of pairs) into what
-            // looked like a trend. The bigger picture is the P&L's. Only the ads line remains, on All / Shopify.
-            sub={adCost !== null ? `after ${money(adCost)} ads` : undefined}
-            subTitle={adCost !== null
-              ? `Ads estimated: ${shpOrders} Shopify orders × £${adPerSale?.toFixed(2)} cost per sale (last ${adRateDays} days)`
-              : undefined} />
+          {/* NET PROFIT = profit LESS the estimated Google ads on All / Shopify (2026-11-15, lib/useAdCost.ts) — the deduction stays;
+              only the "after £x ads" AMOUNT is no longer displayed (owner, 2026-11-17: "take out the displayed number" — the
+              calculation itself was never to go). Return on cost, markup and profit a pair were each tried and dropped the same day.
+              UNDER IT: "% of sales" (owner, 2026-11-17: revenue / net profit, "from the figures on the cards", to see progress ACROSS
+              windows, which a £ figure can't show) = this tile's figure ÷ the EX-VAT revenue printed on the Revenue tile (profit is
+              already ex VAT), so it can be checked by hand from the two cards. It was here until 2026-10-27 as "margin", before ads. */}
+          {(() => {
+            const net = summary.profit - (adCost ?? 0);
+            const ofSales = summary.netRevenue !== 0 ? (net / summary.netRevenue) * 100 : null;
+            return (
+              <Stat label="Net profit" value={money(net)}
+                valueClassName={net < 0 ? 'text-rose-600' : 'text-emerald-600'}
+                sub={ofSales !== null ? `${pct(ofSales)} of sales` : undefined}
+                subTitle={ofSales !== null
+                  ? `${money(net)} net profit${adCost !== null ? ' (after estimated Google ads)' : ''} ÷ ${money(summary.netRevenue)} revenue ex VAT — what you keep from each £1 of sales.`
+                  : undefined} />
+            );
+          })()}
           {/* SOLD = pairs sold in the window, one number (see ONE NUMBER below; it led with the net from 2026-07-30 to 2026-11-17).
               The RETURN RATE rides on the label as a pill, ALWAYS GREY (owner, 2026-11-17: Amazon's rate sat on the old 15% amber line
               and flipped colour by channel — "just keep the same style"). The grey/amber/red bands are gone.
