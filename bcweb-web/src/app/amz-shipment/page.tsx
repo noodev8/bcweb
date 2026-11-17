@@ -968,7 +968,7 @@ function Packing({ initial, autoBack, onShipped }: {
                     ))}
                   </dd>
                   <dt className="text-slate-500">Sending</dt>
-                  <dd>{inboundJob.totals.boxes} {inboundJob.totals.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.totals.units} units</dd>
+                  <dd>{inboundJob.totals.boxes} {inboundJob.totals.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.totals.units} units{inboundJob.totals.kg != null ? `, ${inboundJob.totals.kg} kg` : ''}</dd>
                 </dl>
                 <label className="block">
                   <span className="mb-0.5 block font-medium text-slate-900">Ready to ship</span>

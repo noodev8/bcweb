@@ -3496,7 +3496,7 @@ export interface AmzInboundJob {
   state: 'running' | 'confirm' | 'done' | 'stopped' | 'failed'; step: string;
   log: { at: string; text: string }[]; warnings: string[]; message: string | null; sellerCentral?: string;
   notice?: string | null;   // back at the confirm box: Amazon's DPD got dearer than the price shown (nothing booked)
-  totals: { boxes: number; units: number };
+  totals: { boxes: number; units: number; kg?: number };   // kg = the boxes' weights added up
   confirm: {
     warehouse: string; town: string; fee: number; fees: { text: string; amount: number; currency: string }[];
     expires: string | null; skus: number; sellerPrep: number; today: string;

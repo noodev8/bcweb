@@ -189,7 +189,9 @@ function checkBoxes(boxes) {
   if (unmeasured.length) throw new Stop(`Box ${unmeasured.map((b) => b.box).join(', ')} has no size or weight. Unpack and pack it again.`);
   const noSku = boxes.flatMap((b) => b.lines.filter((l) => !l.sku).map((l) => `${l.code} (box ${b.box})`));
   if (noSku.length) throw new Stop(`No Amazon SKU for ${noSku.join(', ')}.`);
-  return { boxes: boxes.length, units: boxes.reduce((n, b) => n + b.lines.reduce((m, l) => m + l.qty, 0), 0) };
+  // kg = every box's weighed total (what Amazon is sent per box), shown on the confirm box beside boxes / units (owner 2026-11-17).
+  const kg = Math.round(boxes.reduce((n, b) => n + b.dims.weight, 0) * 10) / 10;
+  return { boxes: boxes.length, units: boxes.reduce((n, b) => n + b.lines.reduce((m, l) => m + l.qty, 0), 0), kg };
 }
 
 // Amazon SKU → units across every box.
