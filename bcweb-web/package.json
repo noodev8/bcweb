@@ -14,7 +14,7 @@
     "axios": "^1.7.2",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.2",
-    "next": "^16.2.12",
+    "next": "^16.4.6",
     "qz-tray": "2.2.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -27,7 +27,7 @@
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.19",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.12",
+    "eslint-config-next": "^16.4.6",
     "postcss": "^8.5.10",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.0"

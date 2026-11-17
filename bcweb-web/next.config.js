@@ -3,6 +3,8 @@
 // never talks to Postgres directly (CLAUDE.md), only to the Express API over HTTP.
 const nextConfig = {
   reactStrictMode: true,
+  // Marks this app as upgraded by the Next.js security agent (`next upgrade --agent=security`, 16.4.3 → 16.4.6, 2026-11-17).
+  experimental: { agentUpgrade: 'security' },
   // THE WINNERS SCREEN WAS RETIRED 2026-09-25 — folded into Repricing's Status tab, which shows the same stored tags per channel plus
   // winners by brand and the status trend. Old links and bookmarks land there; the query string (e.g. ?bar=2500) carries over.
   // THE /product LIST WAS RETIRED 2026-10-06 — folded into /inventory, which gained its hand-off menu and its Amazon / Sold 30d figures,
