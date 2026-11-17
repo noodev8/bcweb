@@ -216,7 +216,8 @@ app.use('/amz-shipment-box-delete', require('./routes/amz-shipment-box-delete'))
 app.use('/amz-shipment-box-arrived', require('./routes/amz-shipment-box-arrived')); // AMZ Shipment: mark a stored box's shoes arrived in Order Status (orderstatus only)
 app.use('/amz-inbound-start', require('./routes/amz-inbound-start')); // AMZ Shipment: Do shipment — plan, boxes, ONE warehouse worked out, waits at the confirm box (nothing that costs)
 app.use('/amz-inbound-status', require('./routes/amz-inbound-status')); // AMZ Shipment: Do shipment progress — READ ONLY
-app.use('/amz-inbound-confirm', require('./routes/amz-inbound-confirm')); // AMZ Shipment: the confirm box — books warehouse, delivery window, our own DPD
+app.use('/amz-inbound-carriers', require('./routes/amz-inbound-carriers')); // AMZ Shipment: the confirm box — our own DPD / Amazon's DPD + price for the date (nothing confirmed)
+app.use('/amz-inbound-confirm', require('./routes/amz-inbound-confirm')); // AMZ Shipment: the confirm box — books warehouse, (delivery window,) the DPD chosen
 app.use('/amz-inbound-cancel', require('./routes/amz-inbound-cancel')); // AMZ Shipment: the confirm box's Cancel — cancels the unconfirmed plan (free)
 app.use('/amz-inbound-labels', require('./routes/amz-inbound-labels')); // AMZ Shipment: box labels of the booked shipment (PDF for the Zebra) — READ ONLY
 

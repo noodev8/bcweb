@@ -15,14 +15,19 @@ too soon cancels the job. Each print replaces the previous frame.
 =======================================================================================================================================
 */
 
-import { printLabel } from './labelPrinter';
+import { printLabel, printPdfTo } from './labelPrinter';
 
 const FRAME_ID = 'pdf-print-frame';
 
+// Where a PDF goes: undefined/'' = the Zebra, found by name (the default); BROWSER_PRINT = straight to the browser's print (dialog,
+// or the kiosk shortcut's default printer); anything else = that printer by name through QZ Tray (AMZ Shipment's box labels picker).
+export const BROWSER_PRINT = '__browser__';
+
 // `onPrinted` runs once print() has been called. Printing moves keyboard focus into the frame (it has to — the frame is focused so
 // its document is what prints), so a caller with a scan box hands focus back here; see CustomerOrderList's refocusScan.
-export function printPdfBase64(base64: string, onPrinted?: () => void) {
-  void printLabel('royalMail', base64).then((printed) => {
+export function printPdfBase64(base64: string, onPrinted?: () => void, printer?: string) {
+  if (printer === BROWSER_PRINT) { printInFrame(base64, onPrinted); return; }
+  void (printer ? printPdfTo(printer, base64) : printLabel('royalMail', base64)).then((printed) => {
     if (printed) onPrinted?.();
     else printInFrame(base64, onPrinted);
   });

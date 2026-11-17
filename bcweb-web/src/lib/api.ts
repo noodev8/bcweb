@@ -3482,17 +3482,20 @@ export function markAmzShipmentBoxArrived(box: number, expect: AmzBoxExpect) {
 }
 
 // "Do shipment": drafts cleared, plan made, boxes sent, ONE warehouse worked out — then the job WAITS (state 'confirm') for the one
-// confirm box: Confirm books it (warehouse, delivery window, our own DPD) with the ready-to-ship date picked; Cancel drops the plan.
+// confirm box: pick the ready-to-ship date → the two DPDs for it (getAmzInboundCarriers: our own, Amazon's with its price) → pick one →
+// Confirm books it (warehouse, delivery window for our own DPD, the DPD chosen); Cancel drops the plan.
 // All in the background on the server (utils/amzInbound.js, docs/amz-inbound/PLAN.md), polled while it runs. Held in server memory.
 export interface AmzInboundBooked {
   planId: string; shipmentId: string | null; fba: string | null; warehouse: string | null; town: string;
   carrierSet: boolean; window: { start: string; end: string } | null; readyDate?: string;
   boxes: number; units: number; already: boolean; sellerCentral: string;
+  carrier?: 'own' | 'amazon'; carrierCost?: number | null;   // set when booked by this run (not after a restart)
 }
 export interface AmzInboundJob {
   id: number; by: string; startedAt: string; finishedAt: string | null;
   state: 'running' | 'confirm' | 'done' | 'stopped' | 'failed'; step: string;
   log: { at: string; text: string }[]; warnings: string[]; message: string | null; sellerCentral?: string;
+  notice?: string | null;   // back at the confirm box: Amazon's DPD got dearer than the price shown (nothing booked)
   totals: { boxes: number; units: number };
   confirm: {
     warehouse: string; town: string; fee: number; fees: { text: string; amount: number; currency: string }[];
@@ -3507,8 +3510,18 @@ export function startAmzInbound(boxes: number, units: number) {
 export function getAmzInboundStatus() {
   return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-status', method: 'GET' }, inboundJob);
 }
-export function confirmAmzInbound(id: number, readyDate: string, boxes: number, units: number) {
-  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-confirm', method: 'POST', data: { id, readyDate, boxes, units } }, inboundJob);
+// The two DPDs Amazon offers for the date picked (nothing confirmed). amazon = null when Amazon doesn't offer its DPD.
+export interface AmzInboundCarriers {
+  readyDate: string; own: boolean;
+  amazon: { cost: number; currency: string; voidableUntil: string | null; expires: string | null } | null;
+}
+export function getAmzInboundCarriers(id: number, readyDate: string) {
+  return request<{ carriers: AmzInboundCarriers | null }>({ url: '/amz-inbound-carriers', method: 'POST', data: { id, readyDate } },
+    (b) => ({ carriers: (b.carriers as AmzInboundCarriers) || null }));
+}
+// carrier = the DPD chosen; maxCost = Amazon's DPD price shown (the server never books it dearer).
+export function confirmAmzInbound(id: number, readyDate: string, carrier: 'own' | 'amazon', maxCost: number | null, boxes: number, units: number) {
+  return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-confirm', method: 'POST', data: { id, readyDate, carrier, maxCost, boxes, units } }, inboundJob);
 }
 export function cancelAmzInbound(id: number) {
   return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-cancel', method: 'POST', data: { id } }, inboundJob);

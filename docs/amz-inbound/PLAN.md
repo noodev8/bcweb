@@ -11,7 +11,7 @@ forth to Seller Central's Send to Amazon with the shipping-plan .txt and the box
 | 2 | **NEVER split, regardless of price.** A shipment always goes to ONE Amazon warehouse, even if a split would be cheaper. Price is never used to choose. If Amazon offers no single-warehouse option, BCWEB stops and confirms nothing. |
 | 3 | **Box labels print on the Zebra** (4×6 thermal), through the existing QZ Tray path. |
 | 4 | **Ship from our address**, always the same one. |
-| 5 | **Courier = our own local DPD account. NEVER Amazon's DPD** (Amazon's partnered / Amazon-booked DPD option is never offered or confirmed, even if it shows up, even if it's cheaper). |
+| 5 | ~~Courier = our own local DPD account. NEVER Amazon's DPD.~~ **Changed 2026-11-17 (owner: "let me choose and tell me the cost for amz dpd"): the confirm box offers BOTH DPDs for the date picked, our own (Amazon charges nothing) and Amazon's with its price, and the owner chooses.** No other carrier (Amazon's UPS etc.) is offered. Nothing is pre-picked. See "Carrier choice" below. |
 | 6 | **Ready-to-ship date: we choose it** on the screen at step 4 (no default to today). |
 | 7 | **Tracking numbers: parked**, sorted later. Not part of the first build. |
 | 8 | **ONE PACK GROUP, ALWAYS.** Only a packing option with exactly one pack group is ever confirmed. If Amazon offers none, stop, confirm nothing and cancel the plan. Never pack to more than one group. |
@@ -158,7 +158,7 @@ Everything comes from the stored packed boxes (`amzshipment`). Your unpacked box
 | **1 Create plan** | `createInboundPlan`: items = Amazon SKU + qty totalled across boxes, `labelOwner` SELLER, `prepOwner` NONE (test plan), ship-from address from `.env`. Then `generatePackingOptions` → `listPackingOptions` → `confirmPackingOption`. | Replaces the .txt. **ONE PACK GROUP, ALWAYS** (owner): from `listPackingOptions` only an option with exactly one packing group is confirmed. If there is none, stop, confirm nothing and cancel the plan, with a message naming the SKUs Amazon wanted kept apart (so they can go on a separate shipment by hand). |
 | **2 Boxes** | `setPackingInformation`: per box its items, `BOX_CONTENT_PROVIDED`, dimensions in CM and weight in KG straight from `amzshipment`. | Replaces the .xlsx. Our Box 1..n = Amazon's box order. Amazon's errors are shown per box. |
 | **3 Warehouse** | `generatePlacementOptions` → `listPlacementOptions` → **only an option with exactly ONE shipment** → `confirmPlacementOption`. | **NEVER SPLIT, REGARDLESS OF PRICE** (owner, 2026-11-12). Price never decides anything here: a split is never taken, even if it's cheaper. If Amazon offers more than one single-shipment option (unlikely), take Amazon's first. If there's none, stop, confirm nothing and offer Cancel plan. The fee and the warehouse are shown before the press, for information only. **Placement fees are charged from this confirm on.** |
-| **4 Carrier + dates** | `generateTransportationOptions` (ready-to-ship date **picked on screen**) → choose `USE_YOUR_OWN_CARRIER` / `GROUND_SMALL_PARCEL` / carrier **DPD `DPDX`** → delivery window (`generateDeliveryWindowOptions` → `confirmDeliveryWindowOptions`, every shipment has one) → `confirmTransportationOptions`. | **Our local DPD only, NEVER Amazon's DPD.** Anything `AMAZON_PARTNERED_CARRIER` is filtered out in code and never confirmed, even if it's the only one or the cheapest. If no own-carrier DPDX option comes back, stop. |
+| **4 Carrier + dates** | `generateTransportationOptions` (ready-to-ship date **picked on screen**) → choose `USE_YOUR_OWN_CARRIER` / `GROUND_SMALL_PARCEL` / carrier **DPD `DPDX`** → delivery window (`generateDeliveryWindowOptions` → `confirmDeliveryWindowOptions`, every shipment has one) → `confirmTransportationOptions`. | **The DPD the owner chose** (since 2026-11-17, decision 5): own = `USE_YOUR_OWN_CARRIER` DPDX with no quote; Amazon's = `AMAZON_PARTNERED_CARRIER` DPDX with a quote, never above the price shown. The delivery window is for our own DPD only. If the chosen one doesn't come back, stop. |
 | **5 Box labels** | `getShipment` → shipment confirmation id (FBA15…); v0 `getLabels`, `PageType=PackageLabel_Thermal`, `LabelType=UNIQUE`, one per box. | PDF → `printPdfBase64` (QZ Tray → Zebra), the same path as the Royal Mail labels. Reprint any time. |
 | **6 Shipped** | The existing Mark shipped, unchanged (no FBA15 id on the archive, owner 2026-11-12). | **Tracking (`updateShipmentTrackingDetails`) is parked** (owner, 2026-11-12: sort later), entered in Seller Central meanwhile. |
 
@@ -201,10 +201,43 @@ After Confirm, Unpack / Delete / Pack on a stored box refuse until Mark shipped.
    `LabelType=UNIQUE`, `PackageLabelsToPrint` = the box ids from `listShipmentBoxes` (Amazon lists them OUT of order — sorted as text,
    U000001 first) → `DownloadURL` → a plain PDF (`%PDF-1.4`), one 306 × 432 pt (4.25 × 6 in) page per box. `NumberOfPackages` alone is
    refused (cartonIdList must not be null). Printed through the Royal Mail label's QZ Tray → Zebra path, no new set-up.
+   **Printer is a choice since 2026-11-17** (owner: "let user choose a printer"): "Labels print on" in the confirm box and on the booked
+   notice. The default is the Zebra, found by name as before. It can be any printer QZ Tray sees, or the browser's print dialog, and
+   is remembered per PC. **Every print also saves the PDF to Downloads** ("Amazon box labels FBA15….pdf"; owner: "just incase").
 4. ~~**Step 6**: the FBA15 id carried into Mark shipped's archive.~~ **Dropped** (owner, 2026-11-12: not needed). Mark shipped stays as it is.
 5. **Later**: DPD tracking per box (parked). Amazon's API has no "mark shipped" call: for our own courier, sending the tracking
    (`updateShipmentTrackingDetails`) is what tells Amazon the boxes are on their way. Proposal for then: BCWEB's Mark shipped asks
    for the DPD numbers (scan each box's label) and sends them, so one press does both. Received-per-SKU tracking is NOT wanted (owner: checked on Amazon).
+
+## Carrier choice: our own DPD or Amazon's DPD (built 2026-11-17, not yet used with Amazon's DPD)
+
+Owner, 2026-11-17: "can we build it to let me choose and tell me the cost for amz dpd". Replaces decision 5's own-DPD-only rule.
+
+- **When the date is picked** in the confirm box, `POST /amz-inbound-carriers` runs `generateTransportationOptions` for that date and
+  lists them (free, nothing confirmed). The box shows **Our own DPD** (Amazon charges nothing) and **Amazon's DPD · £x.xx** (its
+  `quote.cost`, plus `quote.voidableUntil` when given). A DPD Amazon doesn't offer for that date is greyed out. Nothing is pre-picked;
+  Confirm needs a date AND a carrier. Changing the date asks again and clears the choice.
+- **Confirm** sends the carrier and, for Amazon's DPD, the price shown (`maxCost`). The server generates the options again for the date
+  and **never books Amazon's DPD above that price**. If it's dearer before anything is confirmed, the job goes back to the confirm box
+  with a notice and the new price (plan kept, nothing charged). If it's dearer after the placement confirm (only when Amazon dropped the
+  first option), it stops and points to Seller Central, like any failure after the placement.
+- **Delivery window: our own DPD only.** Amazon's docs (read 2026-11-17, v2024-03-20 guides "Create a non-partnered carrier shipment"
+  and "Create an Amazon-partnered carrier shipment"): own-carrier options carry the precondition `CONFIRMED_DELIVERY_WINDOW` ("You must
+  generate, list, and confirm a delivery window for each shipment that you send using your own carrier"); the partnered workflow has
+  no window step and goes placement confirm → `confirmTransportationOptions`. Amazon's DPD is charged from that transport confirm.
+- **The write guard** still refuses any transportation confirm whose id wasn't vetted (`pickDpd`): own DPD with no quote, or Amazon's
+  DPD at or under the price shown. Amazon's UPS and the other carriers can never be confirmed.
+- The booked notice and the bclog line name the carrier and Amazon's price.
+
+**Not yet seen on a real shipment with Amazon's DPD. Check on the first one:**
+- **Labels.** The same `getLabels` call (`PackageLabel_Thermal`, `UNIQUE`) is used. Amazon's docs say `UNIQUE` covers "unique shipping
+  labels and carrier labels" and `PackageLabel_Thermal` "supports Amazon-partnered shipments with UPS"; they say nothing about DPD.
+  Check that the Zebra prints the DPD carrier label too, or only the FBA box label.
+- **Collection and tracking.** The docs describe no collection booking and no tracking step for partnered small parcel. Check in
+  Seller Central how DPD is told to collect and that tracking fills itself in.
+- **Voiding.** The quote has `voidableUntil` but the docs give no void call; voiding is done in Seller Central.
+- The docs also say partnered-carrier shipments are "available only in the contiguous United States" (the US guide), yet the UK test
+  plan was offered Amazon's DPD at £2.86, so it is offered here.
 
 ## Open questions
 

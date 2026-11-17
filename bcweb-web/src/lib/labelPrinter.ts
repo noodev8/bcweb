@@ -18,6 +18,10 @@ and fnskus go to the dymo"):
 Windows often keeps a duplicate install of a USB printer ("DYMO LabelWriter 450 Turbo (Copy 1)"), so a name WITHOUT "Copy" wins when
 there are two; if labels ever go to the wrong one, delete the dead duplicate in Windows' Printers & scanners.
 
+ONE CHOICE (owner, 2026-11-17: "let user choose a printer"): AMZ Shipment's box labels can go to ANY printer QZ Tray sees, picked on
+that screen and remembered per PC (listPrinters + printPdfTo below). Left on its default they go to the Zebra as above. The Royal Mail
+and FNSKU labels still find their printer by name.
+
 FALLBACK, never a lost label. printLabel() resolves true only when QZ Tray took the job. Anything else — QZ Tray not running, no such
 printer on this PC, the job refused — resolves false and the caller prints the old way (hidden iframe + window.print(): the dialog, or
 silent under the kiosk shortcut). A failed connection is not retried for a minute, so a PC without QZ Tray doesn't wait on it at every
@@ -85,7 +89,46 @@ async function printerFor(qz: Qz, kind: LabelKind): Promise<string | null> {
   return matches.find((p) => !/copy/i.test(p)) ?? matches[0] ?? null;
 }
 
+/** Every printer QZ Tray sees on this PC, or null if QZ Tray isn't running here (the screen then offers the browser's print only). */
+export async function listPrinters(): Promise<string[] | null> {
+  try {
+    const qz = await qzTray();
+    if (!qz) return null;
+    const found = await qz.printers.find();
+    return (Array.isArray(found) ? found : [found]).filter(Boolean);
+  } catch {
+    return null;
+  }
+}
+
+/** The printer this kind of label goes to by default on this PC (the name rule above), or null. For showing the default by name. */
+export async function defaultPrinter(kind: LabelKind): Promise<string | null> {
+  try {
+    const qz = await qzTray();
+    return qz ? await printerFor(qz, kind) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---- printing -----------------------------------------------------------------------------------------------------------------
+
+/** A PDF to a printer picked BY NAME (AMZ Shipment's box labels, see ONE CHOICE). Same job as the Royal Mail label: the PDF's own page
+ *  size, no scaling. True = printed; false = not there / refused, and the caller prints the browser way. */
+export async function printPdfTo(printer: string, base64: string): Promise<boolean> {
+  try {
+    const qz = await qzTray();
+    if (!qz) return false;
+    const found = await qz.printers.find();
+    if (!(Array.isArray(found) ? found : [found]).includes(printer)) return false; // unplugged / renamed since it was picked
+    await qz.print(qz.configs.create(printer, { margins: 0, scaleContent: false, colorType: 'blackwhite' }),
+      [{ type: 'pixel', format: 'pdf', flavor: 'base64', data: base64 }]);
+    return true;
+  } catch (err) {
+    console.warn('[labelPrinter] QZ Tray print failed, printing through the browser:', err);
+    return false;
+  }
+}
 
 /** Send one label to its printer through QZ Tray. True = printed; false = the caller prints it the browser way (see FALLBACK). */
 export async function printLabel(kind: LabelKind, base64: string): Promise<boolean> {

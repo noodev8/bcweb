@@ -19,21 +19,27 @@ GET /amz-inbound-status:
               None → STOP, the plan is cancelled, and the message names which SKUs Amazon wanted in which group.
   5. BOXES    setPackingInformation: every box's SKUs and quantities, CM / KG, in our box order (Amazon numbers them U000001… in that order).
   6. WAREHOUSE generatePlacementOptions → ONLY an option with exactly ONE shipment (NEVER SPLIT, REGARDLESS OF PRICE — owner). None →
-              STOP, plan cancelled. NOT confirmed yet: the job waits in state 'confirm' showing the warehouse, Amazon's fee, our DPD.
-  ── THE ONE CONFIRM BOX (owner picks the ready-to-ship date, presses Confirm; Cancel = cancelInboundPlan, free) ──
-  7. DPD      generateTransportationOptions for the chosen date → ONLY our own DPD: USE_YOUR_OWN_CARRIER / GROUND_SMALL_PARCEL / DPDX
-              with no quote. Amazon's DPD has the SAME carrier code DPDX, so the shippingSolution is checked first (test plan).
-  8. WINDOW   generateDeliveryWindowOptions → the earliest AVAILABLE window starting on or after the ready-to-ship date.
+              STOP, plan cancelled. NOT confirmed yet: the job waits in state 'confirm' showing the warehouse and Amazon's fee.
+  ── THE ONE CONFIRM BOX (owner picks the ready-to-ship date, then the carrier, presses Confirm; Cancel = cancelInboundPlan, free) ──
+     Picking a date asks Amazon for the carriers for that date (carriers(), free: generate + list only) and shows the two DPDs:
+     OUR OWN DPD (USE_YOUR_OWN_CARRIER / GROUND_SMALL_PARCEL / DPDX, no quote, Amazon charges nothing) and AMAZON'S DPD
+     (AMAZON_PARTNERED_CARRIER / GROUND_SMALL_PARCEL / DPDX, with Amazon's quote = what it charges). Both have carrier code DPDX, so
+     the shippingSolution decides (test plan). The owner chooses (owner 2026-11-17, was own DPD only); no other carrier is offered.
+  7. CARRIER  generateTransportationOptions again for the chosen date → the chosen DPD. Amazon's DPD only at or under the price shown:
+              dearer now → back to the confirm box with the new price (nothing confirmed, plan kept).
+  8. WINDOW   OUR OWN DPD ONLY (Amazon's docs: own-carrier options carry the precondition CONFIRMED_DELIVERY_WINDOW; the partnered
+              workflow has no window step): generateDeliveryWindowOptions → the earliest AVAILABLE window on or after the ready date.
               7 and 8 are worked out BEFORE anything is confirmed: if either is missing, STOP and cancel the plan, still free.
-  9. BOOK     confirmPlacementOption (placement fees are charged from here) → confirmDeliveryWindowOptions → confirmTransportationOptions.
+  9. BOOK     confirmPlacementOption (placement fees are charged from here) → [confirmDeliveryWindowOptions, own DPD only] →
+              confirmTransportationOptions (Amazon's DPD is charged from here).
               After the placement confirm nothing is ever cancelled automatically: a later failure says so and points to Seller Central.
  10. LABELS   the FBA15 id read back; the screen then fetches the box labels (labels() below: v0 getLabels, PackageLabel_Thermal,
               one 4×6 page per box in box order) and prints them on the Zebra.
 
 COSTS. Every write goes through post()/put(), which allow only the paths in ALLOWED. The two confirms that can cost money carry a second
 check on the ids themselves: a placement confirm only for an option vetted as ONE shipment, a transportation confirm only for an option
-vetted as our own DPD with no quote (vetted sets below). Amazon's partnered carriers can never be confirmed, even if they're the only
-option or the cheapest. A run that fails before the placement confirm cancels its plan (free).
+vetted at the confirm as the DPD the owner chose (own: no quote; Amazon's: priced at or under what the box showed). No other carrier,
+Amazon's UPS included, can ever be confirmed. A run that fails before the placement confirm cancels its plan (free).
 
 BOOKED = FROZEN BOXES (PLAN.md: "Boxes are frozen once a plan is CONFIRMED"). From Confirm until Mark shipped, Pack and Delete refuse
 (frozen(), checked by routes/amz-shipment-pack.js / -box-delete.js), so what Amazon booked and what we packed can't drift apart. Mark
@@ -74,12 +80,12 @@ const ALLOWED = [
   new RegExp(`${P}\\/[^/]+\\/transportationOptions$`),                          // generateTransportationOptions (free)
   new RegExp(`${P}\\/[^/]+\\/shipments\\/[^/]+\\/deliveryWindowOptions$`),      // generateDeliveryWindowOptions (free)
   new RegExp(`${P}\\/[^/]+\\/shipments\\/[^/]+\\/deliveryWindowOptions\\/[^/]+\\/confirmation$`), // confirmDeliveryWindowOptions (free)
-  new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`),           // confirmTransportationOptions — vetted own-DPD ids only
+  new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`),           // confirmTransportationOptions — vetted chosen-DPD ids only
   new RegExp(`${P}\\/[^/]+\\/cancellation$`),                                   // cancelInboundPlan (unconfirmed only)
 ];
 const PLACEMENT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/placementOptions\\/([^/]+)\\/confirmation$`);
 const TRANSPORT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`);
-// Filled ONLY by the rule checks below (onePlacement / ownDpd). The guard refuses a confirm for any id not in them.
+// Filled ONLY by the rule checks below (onePlacement / pickDpd). The guard refuses a confirm for any id not in them.
 const vettedPlacement = new Set();
 const vettedTransport = new Set();
 
@@ -90,7 +96,7 @@ function guard(path, body) {
   if (TRANSPORT_CONFIRM.test(path)) {
     const sel = (body && body.transportationSelections) || [];
     if (!sel.length || !sel.every((s) => vettedTransport.has(s.transportationOptionId))) {
-      throw new Error('BLOCKED: transportation option not checked as our own DPD');
+      throw new Error('BLOCKED: transportation option not checked as the DPD chosen');
     }
   }
 }
@@ -112,6 +118,7 @@ async function listAll(path, q, key) {
 }
 
 class Stop extends Error {} // a rule said no: shown as a plain message, not as a failure
+class Requote extends Stop {} // Amazon's DPD got dearer before anything was confirmed: back to the confirm box, plan kept
 
 // Amazon's async operations. Returns the WARNING texts; an ERROR / FAILED throws with Amazon's words.
 async function waitOp(operationId, what) {
@@ -256,14 +263,43 @@ function onePlacement(options) {
   if (o) vettedPlacement.add(o.placementOptionId);
   return o || null;
 }
-// OUR OWN DPD, never Amazon's (both are carrier DPDX — the shippingSolution decides), and never one with a quote (a charge).
-function ownDpd(options, shipmentId) {
-  const o = options.find((x) => x.shippingSolution === 'USE_YOUR_OWN_CARRIER' && x.shippingMode === 'GROUND_SMALL_PARCEL'
-    && x.carrier && x.carrier.alphaCode === 'DPDX' && !x.quote
-    && (!x.shipmentId || x.shipmentId === shipmentId));
-  if (o) vettedTransport.add(o.transportationOptionId);
-  return o || null;
+// THE TWO DPDs. Both are carrier DPDX, so the shippingSolution decides (test plan). Finders only; pickDpd vets the one chosen.
+const forShipment = (x, shipmentId) => !x.shipmentId || x.shipmentId === shipmentId;
+const isDpd = (x) => x.shippingMode === 'GROUND_SMALL_PARCEL' && x.carrier && x.carrier.alphaCode === 'DPDX';
+// Amazon's price on an option (quote.cost.amount), or null when it has none.
+function quoteOf(o) {
+  const c = o && o.quote && o.quote.cost;
+  const n = c ? Number(c.amount) : NaN;
+  return Number.isFinite(n) ? n : null;
 }
+// Our own DPD: Amazon charges nothing (an own-carrier option WITH a quote is never taken).
+function ownDpd(options, shipmentId) {
+  return options.find((x) => x.shippingSolution === 'USE_YOUR_OWN_CARRIER' && isDpd(x) && !x.quote && forShipment(x, shipmentId)) || null;
+}
+// Amazon's DPD: Amazon books and charges it, the price is its quote. One without a price is never offered.
+function amazonDpd(options, shipmentId) {
+  return options.find((x) => x.shippingSolution === 'AMAZON_PARTNERED_CARRIER' && isDpd(x) && quoteOf(x) !== null && forShipment(x, shipmentId)) || null;
+}
+// What the confirm box shows of Amazon's DPD.
+function priceOf(o) {
+  return o ? { cost: quoteOf(o), currency: (o.quote.cost && o.quote.cost.code) || 'GBP', voidableUntil: o.quote.voidableUntil || null, expires: o.quote.expiration || null } : null;
+}
+// The DPD the owner chose, vetted for the transportation confirm. Amazon's only at or under the price the box showed (maxCost).
+// Throws Stop (not offered) or Requote (Amazon's dearer than shown).
+function pickDpd(options, shipmentId, carrier, maxCost) {
+  if (carrier === 'amazon') {
+    const o = amazonDpd(options, shipmentId);
+    if (!o) throw new Stop('Amazon didn\'t offer its own DPD for this shipment any more.');
+    if (quoteOf(o) > maxCost + 0.005) throw new Requote(`Amazon's DPD now costs £${quoteOf(o).toFixed(2)}, not the £${maxCost.toFixed(2)} shown. Nothing was booked: check the price and confirm again.`);
+    vettedTransport.add(o.transportationOptionId);
+    return o;
+  }
+  const o = ownDpd(options, shipmentId);
+  if (!o) throw new Stop('Amazon didn\'t offer our own DPD for this shipment.');
+  vettedTransport.add(o.transportationOptionId);
+  return o;
+}
+const carrierName = (carrier) => (carrier === 'amazon' ? 'Amazon\'s DPD' : 'our own DPD');
 // The earliest AVAILABLE delivery window starting on or after the ready-to-ship date.
 function windowFor(options, readyDate) {
   return options
@@ -291,7 +327,7 @@ function say(text) {
 function newJob(by, totals) {
   seq += 1;
   ctx = null;
-  job = { id: seq, by, startedAt: new Date().toISOString(), finishedAt: null, state: 'running', step: 'Starting', log: [], warnings: [], message: null, totals, confirm: null, result: null };
+  job = { id: seq, by, startedAt: new Date().toISOString(), finishedAt: null, state: 'running', step: 'Starting', log: [], warnings: [], message: null, notice: null, totals, confirm: null, result: null };
 }
 
 async function cancelPlan(planId) {
@@ -300,6 +336,12 @@ async function cancelPlan(planId) {
 
 // End a run that went wrong. Before the placement confirm the plan is cancelled (free); after it, never.
 async function fail(e, planId, placed) {
+  if (e instanceof Requote && !placed) { // nothing confirmed: the plan stays, the box shows the new price
+    job.state = 'confirm';
+    job.notice = e.message;
+    say('Waiting for Confirm');
+    return;
+  }
   const stopped = e instanceof Stop;
   job.state = stopped ? 'stopped' : 'failed';
   job.message = e.message;
@@ -446,10 +488,35 @@ async function run(boxes, totals) {
   }
 }
 
-// THE CONFIRM BOX's Confirm. Returns { error } | { job }; the booking runs in the background.
-async function confirm({ id, readyDate, expect }) {
+// Transport options for the waiting plan: generate for a ready-to-ship date (free), and list.
+const listTransport = (c) => listAll(`${BASE}/inboundPlans/${c.planId}/transportationOptions`, { placementOptionId: c.placementOptionId, pageSize: 20 }, 'transportationOptions');
+async function genTransport(c, readyDate) {
+  await waitOp((await post(`${BASE}/inboundPlans/${c.planId}/transportationOptions`, {
+    placementOptionId: c.placementOptionId,
+    shipmentTransportationConfigurations: [{ shipmentId: c.shipmentId, readyToShipWindow: { start: readyStart(readyDate) } }],
+  })).operationId, 'Getting carriers');
+}
+const goodDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && d >= todayLondon();
+
+// THE CONFIRM BOX's carriers for the date picked: is our own DPD offered, and Amazon's DPD with its price. Free (generate + list).
+// Returns { error } | { carriers: { readyDate, own, amazon: { cost, currency, voidableUntil, expires } | null } }.
+async function carriers({ id, readyDate }) {
   if (!job || job.id !== Number(id) || job.state !== 'confirm' || !ctx) return { error: 'NOT_WAITING' };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(readyDate || '')) || readyDate < todayLondon()) return { error: 'BAD_DATE' };
+  if (!goodDate(readyDate)) return { error: 'BAD_DATE' };
+  const c = ctx;
+  await genTransport(c, readyDate);
+  const opts = await listTransport(c);
+  return { carriers: { readyDate, own: !!ownDpd(opts, c.shipmentId), amazon: priceOf(amazonDpd(opts, c.shipmentId)) } };
+}
+
+// THE CONFIRM BOX's Confirm. carrier 'own' | 'amazon'; for Amazon's DPD, maxCost = the price the box showed (never paid above it).
+// Returns { error } | { job }; the booking runs in the background.
+async function confirm({ id, readyDate, carrier, maxCost, expect }) {
+  if (!job || job.id !== Number(id) || job.state !== 'confirm' || !ctx) return { error: 'NOT_WAITING' };
+  if (!goodDate(readyDate)) return { error: 'BAD_DATE' };
+  if (carrier !== 'own' && carrier !== 'amazon') return { error: 'BAD_CARRIER' };
+  const cap = Number(maxCost);
+  if (carrier === 'amazon' && !(maxCost !== null && maxCost !== undefined && maxCost !== '' && Number.isFinite(cap) && cap >= 0)) return { error: 'BAD_CARRIER' };
   const boxes = await readBoxes();
   const now = skuTotals(boxes);
   const changed = !sameTotals(now, ctx.qtyBySku)
@@ -463,58 +530,61 @@ async function confirm({ id, readyDate, expect }) {
     return { job: snapshot() };
   }
   job.readyDate = readyDate;
-  book(readyDate).catch(() => {}); // never throws
+  job.notice = null;
+  book(readyDate, carrier, cap).catch(() => {}); // never throws
   return { job: snapshot() };
 }
 
-// Steps 7–10.
-async function book(readyDate) {
-  const { planId, placementOptionId, shipmentId } = ctx;
+// Steps 7–10. carrier 'own' | 'amazon'; maxCost = Amazon's DPD price the box showed.
+async function book(readyDate, carrier, maxCost) {
+  const c = ctx;
+  const { planId, placementOptionId, shipmentId } = c;
+  const name = carrierName(carrier);
+  const own = carrier !== 'amazon';
   let placed = false;
   try {
-    // 7. Our DPD, for the chosen date — before anything is confirmed
-    say('Getting our DPD');
-    const listTransport = () => listAll(`${BASE}/inboundPlans/${planId}/transportationOptions`, { placementOptionId, pageSize: 20 }, 'transportationOptions');
-    const genTransport = async () => waitOp((await post(`${BASE}/inboundPlans/${planId}/transportationOptions`, {
-      placementOptionId,
-      shipmentTransportationConfigurations: [{ shipmentId, readyToShipWindow: { start: readyStart(readyDate) } }],
-    })).operationId, 'Getting carriers');
-    await genTransport();
-    let dpd = ownDpd(await listTransport(), shipmentId);
-    if (!dpd) throw new Stop('Amazon didn\'t offer our own DPD for this shipment, and Amazon\'s carriers are never used.');
+    // 7. The chosen DPD, for the chosen date — before anything is confirmed
+    say(`Getting ${name}`);
+    await genTransport(c, readyDate);
+    let dpd = pickDpd(await listTransport(c), shipmentId, carrier, maxCost);
 
-    // 8. Delivery window — before anything is confirmed
-    say('Getting the delivery window');
+    // 8. Delivery window (our own DPD only) — before anything is confirmed
     const listWindows = () => listAll(`${BASE}/inboundPlans/${planId}/shipments/${shipmentId}/deliveryWindowOptions`, {}, 'deliveryWindowOptions');
     const genWindows = async () => waitOp((await post(`${BASE}/inboundPlans/${planId}/shipments/${shipmentId}/deliveryWindowOptions`)).operationId, 'Getting delivery windows');
-    await genWindows();
-    let win = windowFor(await listWindows(), readyDate);
-    if (!win) throw new Stop(`Amazon offered no delivery window starting on or after ${readyDate}. Try another date.`);
+    let win = null;
+    if (own) {
+      say('Getting the delivery window');
+      await genWindows();
+      win = windowFor(await listWindows(), readyDate);
+      if (!win) throw new Stop(`Amazon offered no delivery window starting on or after ${readyDate}. Try another date.`);
+    }
 
-    // 9. Book: placement (fees from here on — never cancelled automatically after this), then the window, then our DPD
+    // 9. Book: placement (fees from here on — never cancelled automatically after this), then the window, then the DPD
     say(`Booking ${job.confirm.warehouse}`);
     await waitOp((await post(`${BASE}/inboundPlans/${planId}/placementOptions/${placementOptionId}/confirmation`)).operationId, 'Booking the warehouse');
     placed = true;
     booked = { planId, shipmentId, fba: null }; // frozen from here (see BOOKED = FROZEN BOXES)
 
     // The options worked out before the confirm are used if Amazon still lists them; otherwise asked again (same rules).
-    if (!(await listWindows()).some((w) => w.deliveryWindowOptionId === win.deliveryWindowOptionId)) {
-      await genWindows();
-      win = windowFor(await listWindows(), readyDate);
-      if (!win) throw new Stop(`Amazon offered no delivery window starting on or after ${readyDate} once booked.`);
+    if (own) {
+      if (!(await listWindows()).some((w) => w.deliveryWindowOptionId === win.deliveryWindowOptionId)) {
+        await genWindows();
+        win = windowFor(await listWindows(), readyDate);
+        if (!win) throw new Stop(`Amazon offered no delivery window starting on or after ${readyDate} once booked.`);
+      }
+      say('Confirming the delivery window');
+      await waitOp((await post(`${BASE}/inboundPlans/${planId}/shipments/${shipmentId}/deliveryWindowOptions/${win.deliveryWindowOptionId}/confirmation`)).operationId, 'Confirming the delivery window');
     }
-    say('Confirming the delivery window');
-    await waitOp((await post(`${BASE}/inboundPlans/${planId}/shipments/${shipmentId}/deliveryWindowOptions/${win.deliveryWindowOptionId}/confirmation`)).operationId, 'Confirming the delivery window');
 
-    if (!(await listTransport()).some((o) => o.transportationOptionId === dpd.transportationOptionId)) {
-      await genTransport();
-      dpd = ownDpd(await listTransport(), shipmentId);
-      if (!dpd) throw new Stop('Our own DPD wasn\'t offered any more once the warehouse was booked.');
+    if (!(await listTransport(c)).some((o) => o.transportationOptionId === dpd.transportationOptionId)) {
+      await genTransport(c, readyDate);
+      dpd = pickDpd(await listTransport(c), shipmentId, carrier, maxCost); // after the placement, dearer = a stop (Seller Central)
     }
-    say('Confirming our DPD');
+    say(`Confirming ${name}`);
     await waitOp((await post(`${BASE}/inboundPlans/${planId}/transportationOptions/confirmation`, {
       transportationSelections: [{ shipmentId, transportationOptionId: dpd.transportationOptionId }],
-    })).operationId, 'Confirming our DPD');
+    })).operationId, `Confirming ${name}`);
+    const cost = own ? null : quoteOf(dpd);
 
     // 10. The FBA15 id (labels are fetched by the screen)
     say('Reading the shipment id');
@@ -525,13 +595,13 @@ async function book(readyDate) {
     }
     booked = b;
     job.state = 'done';
-    job.result = { ...b, boxes: job.totals.boxes, units: job.totals.units, readyDate, already: false };
+    job.result = { ...b, boxes: job.totals.boxes, units: job.totals.units, readyDate, already: false, carrier, carrierCost: cost };
     say('Booked');
-    logActivity({ who: job.by, section: 'AMZ Shipment', log: `Do shipment booked: ${b.fba || planId} to ${b.warehouse || '?'}, ${job.totals.boxes} boxes / ${job.totals.units} units, own DPD, ready ${readyDate}${b.window ? `, delivery ${b.window.start}–${b.window.end}` : ''}` });
+    logActivity({ who: job.by, section: 'AMZ Shipment', log: `Do shipment booked: ${b.fba || planId} to ${b.warehouse || '?'}, ${job.totals.boxes} boxes / ${job.totals.units} units, ${own ? 'own DPD' : `Amazon's DPD £${cost.toFixed(2)}`}, ready ${readyDate}${b.window ? `, delivery ${b.window.start}–${b.window.end}` : ''}` });
   } catch (e) {
     await fail(e, planId, placed);
   } finally {
-    job.finishedAt = new Date().toISOString();
+    if (job.state !== 'confirm') job.finishedAt = new Date().toISOString(); // a Requote waits at the confirm box again
   }
 }
 
@@ -620,8 +690,8 @@ async function recover() {
 }
 
 module.exports = {
-  start, confirm, cancel, labels, frozen, clearBooked, recover, status: snapshot,
+  start, carriers, confirm, cancel, labels, frozen, clearBooked, recover, status: snapshot,
   readBoxes, checkBoxes, ALLOWED,
   // rule checks, exported for a dry test
-  onePlacement, ownDpd, windowFor, readyStart, londonAt,
+  onePlacement, ownDpd, amazonDpd, quoteOf, windowFor, readyStart, londonAt,
 };

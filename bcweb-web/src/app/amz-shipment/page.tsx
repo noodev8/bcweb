@@ -83,9 +83,14 @@ DO SHIPMENT (part 1 2026-11-12, part 2 2026-11-13 — docs/amz-inbound/PLAN.md, 
 panel: ONE press sends the stored packed boxes to Amazon through the SP-API instead of the two files below. On the server, in the
 background (polled every 2 s): Amazon's unconfirmed drafts are cancelled (Seller Central's too, so every press starts clean — owner),
 prep set per SKU as Amazon allows, the plan made, ONE pack group only, every box's contents and size sent, the ONE warehouse worked out
-(never split). Then it STOPS at THE ONE CONFIRM BOX: the warehouse, Amazon's fee, our own DPD, boxes / units, and a ready-to-ship date
-picked here (no default, owner). Confirm books it (our DPD and the delivery window are worked out first, then the warehouse, window and
-DPD are confirmed) and the box labels print on the Zebra straight away (one 4 × 6 page per box, the Royal Mail label's QZ Tray path).
+(never split). Then it STOPS at THE ONE CONFIRM BOX: the warehouse, Amazon's fee, boxes / units, and a ready-to-ship date picked here
+(no default, owner). Picking the date asks Amazon for the carriers for it and shows the two DPDs to choose from (owner 2026-11-17, was our
+own DPD only): OUR OWN DPD (Amazon charges nothing) and AMAZON'S DPD with Amazon's price. No carrier is pre-picked. Confirm books it
+(the DPD, and for our own DPD the delivery window, are worked out first, then the warehouse, window and DPD are confirmed; Amazon's DPD
+is never booked above the price shown — dearer, and the box comes back with the new price) and the box labels print on the Zebra
+straight away (one 4 × 6 page per box, the Royal Mail label's QZ Tray path). The printer is a choice (owner 2026-11-17), "Labels
+print on" in the confirm box and on the booked notice: the Zebra by default, any printer QZ Tray sees, or the browser's print dialog;
+remembered per PC (BOX LABEL PRINTER below). Every print also saves the PDF to Downloads, just in case (owner 2026-11-17).
 Cancel drops the plan, free. Booked = the boxes are FROZEN (Pack / Delete refuse) until Mark shipped; the booked notice keeps Reprint
 labels. The DPD tracking still goes in Seller Central (parked, owner). Sends the boxes / units shown; a box changed on another bench →
 STALE, the boxes are re-read. Not with a refill open in your box (it would send the old contents). The two files below are KEPT as the
@@ -116,12 +121,13 @@ import AppShell from '@/components/AppShell';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, deleteAmzShipmentBox, markAmzShipmentBoxArrived,
-  startAmzInbound, getAmzInboundStatus, confirmAmzInbound, cancelAmzInbound, getAmzInboundLabels,
-  type AmzBox, type AmzShipResult, type AmzScanHit,
+  startAmzInbound, getAmzInboundStatus, getAmzInboundCarriers, confirmAmzInbound, cancelAmzInbound, getAmzInboundLabels,
+  type AmzBox, type AmzShipResult, type AmzScanHit, type AmzInboundCarriers,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { printFnskuLabel, printFnskuLabels, printFnskuTestStrip } from '@/lib/fnskuLabel';
-import { printPdfBase64 } from '@/lib/printPdf';
+import { printPdfBase64, BROWSER_PRINT } from '@/lib/printPdf';
+import { listPrinters, defaultPrinter } from '@/lib/labelPrinter';
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 import SizeDialog, { dimsComplete } from '@/components/AmzBoxSizeDialog';
 import {
@@ -183,6 +189,32 @@ function loadPrintOn(): boolean {
 }
 function savePrintOn(on: boolean) {
   try { localStorage.setItem(PRINT_KEY, on ? '1' : '0'); } catch { /* not remembered */ }
+}
+
+// BOX LABEL PRINTER (owner, 2026-11-17: "let user choose a printer"). Where Do shipment's box labels print: '' = the Zebra, found by
+// name (the default, as before); BROWSER_PRINT = the browser's print; anything else = that printer by name through QZ Tray. Remembered
+// per PC like Print labels. A picked printer that's gone falls back to the browser's print, never a lost label (lib/labelPrinter.ts).
+const BOX_PRINTER_KEY = 'amzShipment.boxLabelPrinter';
+function loadBoxPrinter(): string {
+  try { return localStorage.getItem(BOX_PRINTER_KEY) || ''; } catch { return ''; }
+}
+function saveBoxPrinter(p: string) {
+  try { if (p) localStorage.setItem(BOX_PRINTER_KEY, p); else localStorage.removeItem(BOX_PRINTER_KEY); } catch { /* not remembered */ }
+}
+
+// BOX LABELS PDF, saved too (owner, 2026-11-17: "also download the labels as pdf in downloads just incase"). Every print (and reprint)
+// also saves the same PDF to the browser's Downloads folder, named by the FBA15 id, so a jammed or lost print can be printed from the
+// file. Chrome adds " (1)" to a second copy rather than overwriting.
+function downloadBoxLabels(base64: string, fba: string) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Amazon box labels ${fba || 'shipment'}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000); // after the download has started
 }
 
 // AUTO BACK TO GOODS IN (owner, 2026-10-16: "if they working goods in they may not want to keep needing to click"). Ticked: packing a
@@ -351,9 +383,47 @@ function Packing({ initial, autoBack, onShipped }: {
   const [showFiles, setShowFiles] = useState(false);
   // THE CONFIRM BOX: the ready-to-ship date (picked, never defaulted — owner), a Confirm / Cancel in flight; the box labels' print.
   const [readyDate, setReadyDate] = useState('');
+  // The two DPDs Amazon offers for that date (asked when the date is picked), and which one is chosen (never pre-picked).
+  const [carriersAll, setCarriers] = useState<(AmzInboundCarriers & { jobId: number }) | null>(null);
+  const carriers = carriersAll && inboundJob && carriersAll.jobId === inboundJob.id ? carriersAll : null; // never a past run's price
+  const [carriersBusy, setCarriersBusy] = useState(false);
+  const [carriersError, setCarriersError] = useState<string | null>(null);
+  const [carrier, setCarrier] = useState<'own' | 'amazon' | null>(null);
   const [inboundBusy, setInboundBusy] = useState(false);
   const [labelsBusy, setLabelsBusy] = useState(false);
   const [labelsMsg, setLabelsMsg] = useState<{ ok?: string; error?: string } | null>(null);
+  // BOX LABEL PRINTER: the choice (remembered per PC), and this PC's printers — asked of QZ Tray when the picker is first opened
+  // (null = not asked yet; qz false = QZ Tray isn't running here, so only the browser's print is on offer).
+  const [boxPrinter, setBoxPrinter] = useState(loadBoxPrinter);
+  const [printers, setPrinters] = useState<{ qz: boolean; names: string[]; zebra: string | null } | null>(null);
+  async function loadPrinters() {
+    if (printers) return;
+    const names = await listPrinters();
+    setPrinters({ qz: names !== null, names: names ?? [], zebra: names ? await defaultPrinter('royalMail') : null });
+  }
+  const pickBoxPrinter = (p: string) => { setBoxPrinter(p); saveBoxPrinter(p); };
+  const boxPrinterLabel = boxPrinter === BROWSER_PRINT ? 'the browser’s print' : boxPrinter || 'the Zebra';
+  // The picker: shown in the confirm box (labels print straight after Confirm) and on the booked notice (Reprint).
+  const printerPicker = (
+    <label className="flex items-center gap-1.5">
+      <span className="shrink-0 text-slate-500">Labels print on</span>
+      <select
+        value={boxPrinter}
+        onFocus={() => void loadPrinters()}
+        onMouseDown={() => void loadPrinters()}
+        onChange={(e) => pickBoxPrinter(e.target.value)}
+        className="h-7 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+      >
+        <option value="">The Zebra{printers?.zebra ? ` (${printers.zebra})` : ''}</option>
+        {printers?.names.filter((n) => n !== printers.zebra || boxPrinter === n).map((n) => <option key={n} value={n}>{n}</option>)}
+        {boxPrinter && boxPrinter !== BROWSER_PRINT && !printers?.names.includes(boxPrinter) && (
+          <option value={boxPrinter}>{boxPrinter}{printers ? ' (not found on this PC)' : ''}</option>
+        )}
+        <option value={BROWSER_PRINT}>Browser print dialog</option>
+        {printers && !printers.qz && <option disabled value="__noqz__">QZ Tray isn’t running: no printer list</option>}
+      </select>
+    </label>
+  );
 
   const refocus = () => scanRef.current?.focus();
   const shown: Box | null = view === 'mine' ? null : boxes.find((b) => b.id === view) ?? null;
@@ -611,13 +681,33 @@ function Packing({ initial, autoBack, onShipped }: {
     return null;
   }
 
+  // THE CONFIRM BOX's carriers: picking a date asks Amazon which DPDs it offers for it, and Amazon's price. The choice is cleared,
+  // so a price is never confirmed for a date it wasn't shown for. A slower answer for an older date is dropped.
+  const carriersFor = useRef('');
+  async function loadCarriers(date: string) {
+    carriersFor.current = date;
+    setCarriers(null);
+    setCarrier(null);
+    setCarriersError(null);
+    if (!inboundJob || !date) return;
+    const jobId = inboundJob.id;
+    setCarriersBusy(true);
+    const res = await getAmzInboundCarriers(jobId, date);
+    if (carriersFor.current !== date) return;
+    setCarriersBusy(false);
+    if (!res.success || !res.data?.carriers) { setCarriersError(res.error || 'Couldn’t get the carriers from Amazon'); return; }
+    setCarriers({ ...res.data.carriers, jobId });
+  }
+
   // THE CONFIRM BOX's Confirm: books it, then prints the box labels on the Zebra as soon as it's booked.
   async function confirmInbound() {
-    if (!inboundJob || !readyDate) return;
+    if (!inboundJob || !readyDate || !carrier || !carriers || carriers.readyDate !== readyDate) return;
+    const maxCost = carrier === 'amazon' ? carriers.amazon?.cost ?? null : null;
+    if (carrier === 'amazon' && maxCost === null) return;
     setInboundBusy(true);
     setInboundError(null);
     setLabelsMsg(null);
-    const res = await confirmAmzInbound(inboundJob.id, readyDate, boxes.length, totalUnits);
+    const res = await confirmAmzInbound(inboundJob.id, readyDate, carrier, maxCost, boxes.length, totalUnits);
     if (!res.success) {
       setInboundBusy(false);
       setInboundError(res.error || 'Couldn’t confirm');
@@ -626,7 +716,10 @@ function Packing({ initial, autoBack, onShipped }: {
     }
     const j = await waitForInbound();
     setInboundBusy(false);
+    if (j?.state === 'confirm') { await loadCarriers(readyDate); return; } // Amazon's DPD got dearer: the new price, choose again
     setReadyDate('');
+    setCarriers(null);
+    setCarrier(null);
     if (j?.state === 'done' && j.result?.fba) await printBoxLabels();
   }
 
@@ -636,6 +729,9 @@ function Packing({ initial, autoBack, onShipped }: {
     setInboundError(null);
     const res = await cancelAmzInbound(inboundJob.id);
     setInboundBusy(false);
+    setReadyDate('');
+    setCarriers(null);
+    setCarrier(null);
     if (!res.success) setInboundError(res.error || 'Couldn’t cancel');
     await inbound.refresh();
   }
@@ -647,8 +743,9 @@ function Packing({ initial, autoBack, onShipped }: {
     const res = await getAmzInboundLabels();
     setLabelsBusy(false);
     if (!res.success || !res.data) { setLabelsMsg({ error: res.error || 'Couldn’t get the box labels' }); return; }
-    printPdfBase64(res.data.pdf, refocus);
-    setLabelsMsg({ ok: `${res.data.boxes} box ${res.data.boxes === 1 ? 'label' : 'labels'} sent to the Zebra` });
+    downloadBoxLabels(res.data.pdf, res.data.fba);
+    printPdfBase64(res.data.pdf, refocus, boxPrinter || undefined);
+    setLabelsMsg({ ok: `${res.data.boxes} box ${res.data.boxes === 1 ? 'label' : 'labels'} sent to ${boxPrinterLabel}, and saved to Downloads` });
   }
 
   // AMAZON UPLOAD (see the header). Fills from the stored boxes and downloads.
@@ -870,8 +967,6 @@ function Packing({ initial, autoBack, onShipped }: {
                       <span key={f.text} className="block font-normal">{f.text}: {money(f.amount)}</span>
                     ))}
                   </dd>
-                  <dt className="text-slate-500">Carrier</dt>
-                  <dd>Our own DPD</dd>
                   <dt className="text-slate-500">Sending</dt>
                   <dd>{inboundJob.totals.boxes} {inboundJob.totals.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.totals.units} units</dd>
                 </dl>
@@ -881,14 +976,51 @@ function Packing({ initial, autoBack, onShipped }: {
                     type="date"
                     value={readyDate}
                     min={inboundJob.confirm.today}
-                    onChange={(e) => setReadyDate(e.target.value)}
+                    disabled={inboundBusy}
+                    onChange={(e) => { setReadyDate(e.target.value); void loadCarriers(e.target.value); }}
                     className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                 </label>
-                <div className="text-slate-500">Once booked the boxes can’t change until Mark shipped. The box labels print on the Zebra.</div>
+                {/* CARRIER — the two DPDs for the date picked (owner 2026-11-17). Never pre-picked. */}
+                <fieldset className="space-y-1" disabled={inboundBusy}>
+                  <legend className="mb-0.5 font-medium text-slate-900">Carrier</legend>
+                  {inboundJob.notice && <div className="font-semibold text-amber-800">{inboundJob.notice}</div>}
+                  {!readyDate && <div className="text-slate-500">Pick the date first: Amazon prices its DPD for that day.</div>}
+                  {readyDate && carriersBusy && <div className="text-slate-500">Asking Amazon…</div>}
+                  {readyDate && !carriersBusy && carriersError && (
+                    <div className="text-red-700">{carriersError} <button type="button" onClick={() => loadCarriers(readyDate)} className="font-semibold underline">Try again</button></div>
+                  )}
+                  {readyDate && !carriersBusy && !carriersError && !carriers && (
+                    <button type="button" onClick={() => loadCarriers(readyDate)} className="font-semibold text-brand-700 underline">Get the carriers for {dayLabel(readyDate)}</button>
+                  )}
+                  {carriers && carriers.readyDate === readyDate && !carriersBusy && (
+                    <>
+                      <label className={`flex items-start gap-2 rounded border px-2 py-1.5 ${carrier === 'own' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'} ${carriers.own ? 'cursor-pointer' : 'opacity-50'}`}>
+                        <input type="radio" name="amz-carrier" className="mt-0.5" checked={carrier === 'own'} disabled={!carriers.own} onChange={() => setCarrier('own')} />
+                        <span>
+                          <span className="font-semibold text-slate-900">Our own DPD</span>
+                          <span className="block text-slate-500">{carriers.own ? 'Our DPD account. Amazon charges nothing.' : 'Amazon didn’t offer it for this date.'}</span>
+                        </span>
+                      </label>
+                      <label className={`flex items-start gap-2 rounded border px-2 py-1.5 ${carrier === 'amazon' ? 'border-brand-500 bg-brand-50' : 'border-slate-200'} ${carriers.amazon ? 'cursor-pointer' : 'opacity-50'}`}>
+                        <input type="radio" name="amz-carrier" className="mt-0.5" checked={carrier === 'amazon'} disabled={!carriers.amazon} onChange={() => setCarrier('amazon')} />
+                        <span>
+                          <span className="font-semibold text-slate-900">Amazon’s DPD{carriers.amazon && <> · {money(carriers.amazon.cost)}</>}</span>
+                          <span className="block text-slate-500">
+                            {carriers.amazon
+                              ? <>Amazon books it and charges this to the account.{carriers.amazon.voidableUntil && <> Can be voided in Seller Central until {new Date(carriers.amazon.voidableUntil).toLocaleString('en-GB', { timeZone: 'Europe/London', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}.</>}</>
+                              : 'Amazon didn’t offer it for this date.'}
+                          </span>
+                        </span>
+                      </label>
+                    </>
+                  )}
+                </fieldset>
+                {printerPicker}
+                <div className="text-slate-500">Once booked the boxes can’t change until Mark shipped. The box labels print straight away.</div>
                 <div className="flex gap-2">
-                  <button type="button" disabled={!readyDate || inboundBusy} onClick={confirmInbound}
-                    title={readyDate ? `Book ${inboundJob.confirm.warehouse}, our own DPD, ready ${dayLabel(readyDate)}` : 'Pick the ready-to-ship date first'}
+                  <button type="button" disabled={!readyDate || !carrier || !carriers || carriers.readyDate !== readyDate || carriersBusy || inboundBusy} onClick={confirmInbound}
+                    title={!readyDate ? 'Pick the ready-to-ship date first' : !carrier ? 'Pick the carrier' : `Book ${inboundJob.confirm.warehouse}, ${carrier === 'amazon' ? `Amazon’s DPD (${money(carriers?.amazon?.cost ?? 0)})` : 'our own DPD'}, ready ${dayLabel(readyDate)}`}
                     className="rounded bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-40">
                     {inboundBusy ? 'Working…' : 'Confirm'}
                   </button>
@@ -906,7 +1038,10 @@ function Packing({ initial, autoBack, onShipped }: {
                   {inboundJob.result.warehouse ? ` to ${inboundJob.result.warehouse}` : ''}{inboundJob.result.town ? ` · ${inboundJob.result.town}` : ''}
                 </div>
                 <div>
-                  {inboundJob.result.boxes} {inboundJob.result.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.result.units} units · our own DPD
+                  {inboundJob.result.boxes} {inboundJob.result.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.result.units} units
+                  {inboundJob.result.carrier === 'amazon'
+                    ? <> · Amazon’s DPD{inboundJob.result.carrierCost != null && <> ({money(inboundJob.result.carrierCost)})</>}</>
+                    : inboundJob.result.carrier === 'own' ? <> · our own DPD</> : null}
                   {inboundJob.result.readyDate && <> · ready {dayLabel(inboundJob.result.readyDate)}</>}
                   {inboundJob.result.window && <> · delivery {dayLabel(inboundJob.result.window.start)} – {dayLabel(inboundJob.result.window.end)}</>}
                 </div>
@@ -917,9 +1052,14 @@ function Packing({ initial, autoBack, onShipped }: {
                   className="flex items-center gap-1.5 rounded border border-emerald-300 bg-white px-2.5 py-1 font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40">
                   <PrinterIcon className="h-4 w-4" />{labelsBusy ? 'Getting labels…' : labelsMsg?.ok ? 'Reprint labels' : 'Print labels'}
                 </button>
+                {printerPicker}
                 {labelsMsg?.ok && <div>{labelsMsg.ok}.</div>}
                 {labelsMsg?.error && <div className="font-semibold text-red-700">{labelsMsg.error}</div>}
-                <div className="text-emerald-700">When DPD collects: Mark shipped here, and put the DPD tracking in Seller Central.</div>
+                <div className="text-emerald-700">
+                  {inboundJob.result.carrier === 'amazon'
+                    ? 'Amazon’s DPD: check the collection and tracking in Seller Central. When DPD collects: Mark shipped here.'
+                    : 'When DPD collects: Mark shipped here, and put the DPD tracking in Seller Central.'}
+                </div>
                 <a href={inboundJob.result.sellerCentral} target="_blank" rel="noreferrer" className="font-semibold underline">Open in Seller Central</a>
               </div>
             )}
