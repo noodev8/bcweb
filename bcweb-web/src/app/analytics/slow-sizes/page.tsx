@@ -6,7 +6,8 @@ Page: /analytics/slow-sizes  (RANGE on screen — the route and the code keep "s
 Purpose: THE STOCK LADDER (owner, 2026-11-15 — "adapt Range" rather than build a second screen; design docs/stock-ladder.md, the chart
          is the PDF in the owner's Downloads). Every SKU we hold on exactly ONE of five steps, left to right like the chart:
            STEP 1 Arrived · STEP 2 Sold 90 · STEP 3 Unsold 90 · STEP 4 Unsold 180 · STEP 5 Clearance
-         and OVERSTOCKED hanging under step 2 — a LABEL, not a step: its SKUs are inside step 2's count, so the five still add up to
+         and OVERSTOCKED hanging under step 2 — a LABEL, not a step: its SKUs are inside step 2's count (and step 1's, for a size unsold 30+
+         days holding 2+ pairs, owner 2026-11-17), so the five still add up to
          the total. Rules: bcweb-server/utils/stockLadder.js (THE copy) — this page only draws GET /analytics-stock-ladder.
 
 THE LAYOUT, top to bottom: the total (SKUs held, units under it), then the five step boxes with arrows between them (each: STEP n, its

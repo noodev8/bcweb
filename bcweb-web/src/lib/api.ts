@@ -631,7 +631,7 @@ export interface AmzPriceCard extends AmzWinnerRow {
   sales_rank?: number | null;   // Amazon Fashion Best Sellers Rank (the parent's — a family figure), latest Buy Box read
   last_change?: AmzLastChange | null;
   // A Stock ladder list's sizes (?step=) also carry these (server utils/stockLadderList.js).
-  when?: LadderWhen; ladder_idle_days?: number; ladder_over?: number; ladder_units?: number;
+  when?: LadderWhen; ladder_idle_days?: number; ladder_over?: number; ladder_over_why?: 'cover' | 'unsold' | null; ladder_units?: number;
 }
 export function getAmzDueCards() {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
@@ -1870,7 +1870,7 @@ export function getStockLadder() {
 export type LadderListKey = LadderStepKey | 'overstocked';
 export type LadderWhen = 'due' | 'week' | 'later' | 'buybox';
 export interface LadderListRow extends AmzWinnerRow {
-  when: LadderWhen; ladder_idle_days: number; ladder_over: number; ladder_units: number;
+  when: LadderWhen; ladder_idle_days: number; ladder_over: number; ladder_over_why?: 'cover' | 'unsold' | null; ladder_units: number;
 }
 export function getLadderList(step: LadderListKey) {
   return request<{ total: number; truncated: boolean; stepSkus: number; rows: LadderListRow[] }>(

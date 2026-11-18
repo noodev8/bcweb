@@ -4,7 +4,7 @@ API Route: analytics_stock_ladder
 =======================================================================================================================================
 Method: GET
 Purpose: THE STOCK LADDER's front figures (owner, 2026-11-15; design docs/stock-ladder.md) — every SKU we hold on exactly one of five
-         steps (Arrived · Sold 90 · Unsold 90 · Unsold 180 · Clearance), with the Overstocked label on step 2. Drawn on Range's front
+         steps (Arrived · Sold 90 · Unsold 90 · Unsold 180 · Clearance), with the Overstocked label on steps 1–2 (step 1 since 2026-11-17). Drawn on Range's front
          screen (/analytics/slow-sizes). Counts only: each box's list is GET /amz-all-list ?step= (utils/stockLadderList.js).
          Rules: utils/stockLadder.js (THE copy) — read its header.
 
@@ -22,7 +22,7 @@ Success Response:
     …
     { "step": 5, "key": "clearance", "skus": 166, "units": 480 }
   ],
-  "overstocked": { "skus": 41, "units": 410, "over": 230 },   // step 2 SKUs only (inside step 2's count);
+  "overstocked": { "skus": 41, "units": 410, "over": 230 },   // steps 1–2 SKUs (inside those steps' counts);
                                                               // units = all they hold, over = pairs beyond 4 months' worth
   "rule": { "over_cover_days": 122 }
 }

@@ -343,7 +343,7 @@ function Card({ mode, step, card, n, of, busy, done, review, onReview, onSet, on
   const changed = valid && (now === null || Math.round(price * 100) !== Math.round(now * 100));
   // The Buy Box lead's price to match (postage included) — only when someone else leads.
   const matchAt = card.bb_lead !== null && card.bb_lead !== undefined && !['US', 'US_SHARED'].includes(card.bb_holder ?? '') ? Number(card.bb_lead) : null;
-  const suggest = mode === 'search' ? card.bb_suggest ?? null : null;
+  const suggest = mode === 'search' || mode === 'step' ? card.bb_suggest ?? null : null;   // step: its Buy Box sizes (2026-11-17)
   const usedSuggestion = suggest !== null && valid && Math.round(price * 100) === Math.round(suggest * 100);
   // A not-due search card is only looked at (header): its Leave is Next — nothing written, its review date kept.
   const lookOnly = mode !== 'due' && card.parked;   // search and step cards
@@ -353,8 +353,8 @@ function Card({ mode, step, card, n, of, busy, done, review, onReview, onSet, on
     { days: SEASON.days, label: SEASON.label, title: SEASON.title }];
   const pill = 'inline-flex h-9 min-w-[3.25rem] items-center justify-center rounded-md border px-2 text-sm font-medium tabular-nums';
   const status = mode !== 'due' ? statusOf(card) : null;
-  // STEP CARDS (header): the step's aim is the reason line — no suggestion.
-  const aim = mode === 'step' && step ? stepAim(step, card.ladder_idle_days ?? 0, card.ladder_over ?? 0) : null;
+  // STEP CARDS (header): the step's aim is the reason line; a Buy Box size shows the Buy Box suggestion instead.
+  const aim = mode === 'step' && step ? stepAim(step, card.ladder_idle_days ?? 0, card.ladder_over ?? 0, card.ladder_over_why) : null;
 
   return (
     <AmzCardFrame

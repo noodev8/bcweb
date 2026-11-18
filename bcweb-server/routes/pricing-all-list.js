@@ -45,7 +45,7 @@ Request: GET /pricing-all-list[?parked=include][&limit=N][&cards=1][&step=<ladde
            `benchmark_day`, the last Google read. Same rows, same order, so the cards walk exactly what the list shows.
 
   step=overstocked   THE OVERSTOCK CARDS (owner, 2026-11-15, docs/overstock/PLAN.md): the styles holding an OVERSTOCKED size (the
-           ladder's label on step 2 — any other size may be selling, that's the point: the overstocked ones get a SIZE price, never the
+           ladder's label on steps 1–2 — any other size may be selling, that's the point: the overstocked ones get a SIZE price, never the
            style). step_skus = the overstocked codes; each row also carries `over_sizes` (utils/overstockCards.js — held, at Amazon,
            pairs over, sold 90d per overstocked size, size order).
   cards=1 also marks, on each size with a size price in force, `own_kind` (clearance | overstock) and — only when an overstock one is
@@ -87,7 +87,7 @@ router.get('/', async (req, res) => {
     const includeParked = req.query.parked === 'include';
     const withCards = req.query.cards === '1';
     // STEP (header): the styles with a SKU on that ladder step, or null = no narrowing.
-    // 'overstocked' is the ladder's LABEL on step 2, not a step: its own membership (header).
+    // 'overstocked' is the ladder's LABEL on steps 1–2, not a step: its own membership (header); stepOf only feeds the stuck-step test.
     const overMode = req.query.step === 'overstocked';
     const stepKey = overMode ? 'overstocked' : STEPS.some((s) => s.key === req.query.step) ? req.query.step : null;
     const stepOf = overMode ? 2 : stepKey ? STEPS.find((s) => s.key === stepKey).step : null;

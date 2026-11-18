@@ -15,7 +15,7 @@ import type { LadderListKey, LadderWhen } from '@/lib/api';
 export const LIST_TEXT: Record<LadderListKey, { name: string; rule: string }> = {
   arrived: { name: 'Arrived', rule: 'came in from 0 stock' },
   sold: { name: 'Sold 90', rule: 'sold in 90 days' },
-  overstocked: { name: 'Overstocked', rule: "sold in 90 days · over 4 months' worth" },
+  overstocked: { name: 'Overstocked', rule: "over 4 months' worth · or unsold 30+ days with 2+ pairs" },
   unsold90: { name: 'Unsold 90', rule: '91 to 180 days' },
   unsold180: { name: 'Unsold 180', rule: 'to 9 months' },
   clearance: { name: 'Clearance', rule: '9 months + · until sold out' },
@@ -27,9 +27,13 @@ export const CARD_LISTS: LadderListKey[] = ['overstocked', 'unsold90', 'unsold18
 export const isLadderList = (v: string | null): v is LadderListKey => !!v && v in LIST_TEXT;
 
 // The step's aim for one size — the card's reason line.
-export function stepAim(key: LadderListKey, idleDays: number, over: number): string {
+// Overstocked has two ways on (server utils/stockLadder.js → over_why): 'cover' = over 4 months' worth at its pace; 'unsold' = step 1,
+// no sale for 30+ days with 2+ pairs held (owner, 2026-11-17) — then the pairs over are all but one.
+export function stepAim(key: LadderListKey, idleDays: number, over: number, overWhy?: 'cover' | 'unsold' | null): string {
   switch (key) {
-    case 'overstocked': return `Overstocked — ${over} pair${over === 1 ? '' : 's'} over 4 months' worth · sell down`;
+    case 'overstocked': return overWhy === 'unsold'
+      ? `Overstocked — no sale in ${idleDays} days since it came in · keep 1, sell down ${over}`
+      : `Overstocked — ${over} pair${over === 1 ? '' : 's'} over 4 months' worth · sell down`;
     case 'unsold90': return `Unsold ${idleDays} days — a gentle cut`;
     case 'unsold180': return `Unsold ${idleDays} days — a firmer cut`;
     case 'clearance': return `Clearance — no sale for ${idleDays} days · clear the lot, a loss is OK`;
@@ -50,8 +54,9 @@ const STUCK_AIM: Partial<Record<LadderListKey, string>> = {
 export function shopifyStepReason(key: LadderListKey, f: ShopifyStepFacts): string {
   const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
   if (key === 'arrived') return `Arrived — ${plural(f.onStep, 'size')} waiting for a first sale`;
-  // Overstocked (docs/overstock/PLAN.md decision 4): the sizes and the pairs beyond 4 months' worth — what needs to sell.
-  if (key === 'overstocked') return `Overstocked — ${plural(f.onStep, 'size')}, ${plural(f.over ?? 0, 'pair')} over 4 months' worth`;
+  // Overstocked (docs/overstock/PLAN.md decision 4): the sizes and the pairs over — what needs to sell. "Over" is beyond 4 months'
+  // worth, or for a size not sold since it came in (30+ days, 2+ held) all but one pair (2026-11-17); the card's table says which.
+  if (key === 'overstocked') return `Overstocked — ${plural(f.onStep, 'size')}, ${plural(f.over ?? 0, 'pair')} over`;
   const aim = STUCK_AIM[key];
   if (!aim) return `${LIST_TEXT[key].name} — ${plural(f.onStep, 'size')}`;
   const days = f.heldIdle ?? 0;

@@ -73,12 +73,12 @@ export default function LadderListPage() {
   const q = useApiQuery(key ? ['ladder-list', key] : null, () => getLadderList(key as LadderListKey));
   const rows = q.data?.rows ?? [];
   const shown = rows.filter((r) => inChip(r.when, chip));
-  const cardable = shown.filter((r) => r.when !== 'buybox');
+  const cardable = shown;   // every row, Buy Box sizes included (owner 2026-11-17: "I want to price in cards")
   const count = (c: LadderChip) => rows.filter((r) => inChip(r.when, c)).length;
   const selfHref = key ? stepListHref(key, chip) : '/analytics/slow-sizes';
   const cardsHref = (at?: string) => `/amz/step-cards?step=${key}&when=${chip}${at ? `&at=${encodeURIComponent(at)}` : ''}`;
   const priceScreenHref = (code: string) => `/amz/sku/${encodeURIComponent(code)}?from=${encodeURIComponent(selfHref)}`;
-  const rowHref = (r: LadderListRow) => (carded && r.when !== 'buybox' ? cardsHref(r.code) : priceScreenHref(r.code));
+  const rowHref = (r: LadderListRow) => (carded ? cardsHref(r.code) : priceScreenHref(r.code));
   const t = key ? LIST_TEXT[key] : null;
 
   return (
@@ -211,13 +211,13 @@ function StepChoice({ step, amzRows, amzLoaded }: { step: LadderListKey; amzRows
   const shop = useApiQuery(['pricing-all-list', step], () => getAllList(step));
   if (!text) return null;
   const self = stepChoiceHref(step);
-  // The SKUs this choice is about: a step's box, or (Overstocked, a label on step 2) the ladder's overstocked count.
+  // The SKUs this choice is about: a step's box, or (Overstocked, a label on steps 1–2) the ladder's overstocked count.
   const onStep = step === 'overstocked'
     ? (ladder.data ? { skus: ladder.data.overstocked.skus } : undefined)
     : ladder.data?.steps.find((s) => s.key === step);
   const shopDue = shop.data ? shop.data.rows.filter((r) => !r.parked).length : null;
   const amzDue = amzRows.filter((r) => r.when === 'due').length;
-  const amzCardable = amzRows.filter((r) => r.when !== 'buybox').length;   // Buy Box sizes are never step-carded
+  const amzCardable = amzRows.length;   // Buy Box sizes are step-carded too (owner 2026-11-17)
   // The tally (above): only once all three reads are in.
   const amzCodes = new Set(amzRows.map((r) => r.code));
   const shopOnly = shop.data ? shop.data.rows.flatMap((r) => r.step_skus ?? []).filter((c) => !amzCodes.has(c)).length : null;

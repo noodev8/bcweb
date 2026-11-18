@@ -47,13 +47,18 @@ pricing, and pick a bucket and price it.
 
 ## Overstocked (a label, not a bucket)
 
-Agreed 2026-11-15. Sits on top of step 2 (Sold 90).
+Agreed 2026-11-15. Sits on top of step 2 (Sold 90) — and since 2026-11-17 on step 1 too (below).
 
 - **Ideal = 90 days' worth of stock; buffer = 1 more month. More than 4 months' worth = Overstocked.**
 - Worth = the SKU's average selling rate (12-month pace, so summer sellers aren't judged on a winter rate).
 - Even 1 pair over counts. The old "3 pairs over" minimum (`utils/deepSizes.js` MIN_OVER) was never approved by the owner:
   dropped. The code still has it until this is built.
-- Only on step 2 because it needs a selling rate: step 1 hasn't had time to show one, and steps 3–5 aren't selling, so they're
+- **Step 1 too (owner, 2026-11-17):** a SKU **unsold for more than 30 days since it came in, holding 2+ pairs**, is Overstocked;
+  pairs over = held − 1 ("having 1 isn't overstocked, but 2 might be, 5 certainly is"). 60 days was set aside as too close to 90.
+  Judged per SKU, not per style (owner: "I don't think we should move to style judgement"). The case: D0772-14-40, 2 held, 75 days,
+  never sold. First count: 47 SKUs, 26 styles, 69 pairs over. A sale moves it to step 2 (the 4 months' test); none moves it to
+  step 3 on day 91, which has no label — one place at a time.
+- The 4 months' test is only on step 2 because it needs a selling rate: step 1 hasn't had time to show one, and steps 3–5 aren't selling, so they're
   being cleared anyway. At step 5 (Clearance) the aim is to get rid of the lot, at next to nothing if need be (owner).
 - The label goes by stock level only. Sell pairs off (at a loss or not) until we hold 4 months' worth or less, and it drops off.
 
@@ -103,7 +108,7 @@ was most of the stock on Overstocked (60 of 71), Unsold 90 (303 of 365) and Clea
     showing, with the step's aim on the reason line. A single size can be opened from its row.
   - **Due = `utils/amzDue.js`, unchanged.** Pricing early from Within a week / Later is the owner's choice and sets a new review date
     as normal. The step changes no rule (Season parks still hold on Due, e.g. a sandal in November).
-  - A Buy Box size on the step (sold on Amazon in 30 days) shows under All only, marked "Buy Box", and is never carded here.
+  - A Buy Box size on the step (sold on Amazon in 30 days) shows under All only, marked "Buy Box", and is carded here too with the Buy Box cards' suggestion (owner 2026-11-17: "I want to price in cards"; was never carded).
 - Sizes that day (live at FBA, Birkenstock left out): Overstocked 10, Unsold 90 50, Unsold 180 6, Clearance 25. None were due.
 
 ## Still to decide

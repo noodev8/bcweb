@@ -90,3 +90,8 @@ price (`utils/sizePrice.js`).
    held, at Amazon, over, sold 90d, size price in force); one write route saving style price + size prices + review date in one
    transaction, then one Shopify push (decision 5); the card's overstock table (decision 4); the Overstocked choice (decision 7).
 3. **The reminder on the normal Shopify cards** — "no longer overstocked" + Back to style price (decision 6).
+
+## 2026-11-17 — unsold sizes on step 1
+
+The label now also covers a size **not sold in the 30+ days since it came in, holding 2+ pairs** (pairs over = held − 1), per SKU —
+see `docs/stock-ladder.md` → Overstocked. The overstock cards take these sizes unchanged (their Sold 90d reads 0).

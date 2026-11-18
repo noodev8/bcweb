@@ -3,7 +3,8 @@
 Util: overstockCards   (THE copy of what an OVERSTOCK card shows per size — owner 2026-11-15, docs/overstock/PLAN.md)
 =======================================================================================================================================
 Purpose: The overstock cards are the Shopify price cards narrowed to the styles holding an OVERSTOCKED size (the Stock ladder's label —
-         utils/stockLadder.js: sold in 90 days, holding more than 4 months' worth at its 12-month pace). Decision 1: one card per STYLE,
+         utils/stockLadder.js: sold in 90 days and holding more than 4 months' worth at its 12-month pace, or — 2026-11-17 — not sold in
+         the 30+ days since it came in, holding 2+ pairs). Decision 1: one card per STYLE,
          with a size price box for each overstocked size beside the style price. This builds those rows (decision 4), for many styles in
          a fixed number of queries. Read by routes/pricing-all-list.js ?step=overstocked.
 
@@ -11,8 +12,8 @@ Per overstocked size, size order:
   code, size
   held      pairs we hold — the ladder's number: local free + Amazon total (utils/slowSizes.js)
   fba       of those, live at Amazon (amzfeed.amzlive) — shown as "n at Amazon"
-  over      pairs beyond 4 months' worth — what needs to sell (the ladder's `over`)
-  sold90    units sold in the last 90 days, ANY channel, net of returns — shows it IS selling
+  over      pairs over — what needs to sell (the ladder's `over`: beyond 4 months' worth, or all but one for an unsold size)
+  sold90    units sold in the last 90 days, ANY channel, net of returns — shows it IS selling (0 = the unsold kind)
 
 The size price in force (own_price / own_kind) is on the card's own size list (utils/shopifyCards.js) — not repeated here.
 ONLY sizes overstocked NOW (decision 6): a size that sold down to 4 months' worth drops off, its markdown (if any) stays, and the normal

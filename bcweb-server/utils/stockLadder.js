@@ -25,18 +25,23 @@ CLEARANCE HOLDS (step 5): a SKU is on step 5 when, at ANY point while we have he
          pair's arrival is not seen (the run may have started earlier), so the test can only under-count, never wrongly mark.
          9 months = calendar months, utils/onShelf.js → clearanceCutoff.
 
-OVERSTOCKED — a LABEL on step 2 only, never a step (owner, 2026-11-15): we hold MORE than 4 months' worth at its selling rate (90
+OVERSTOCKED — a LABEL on steps 1 and 2, never a step. Two ways on (`over_why`):
+  'cover'  (step 2, owner 2026-11-15): we hold MORE than 4 months' worth at its selling rate (90
          days' ideal + one month's buffer). Even 1 pair over counts (the Deep sellers 3-pair minimum was never approved — dropped here;
          Deep sellers itself is unchanged until it is replaced). Rate = THE pace rule, utils/deepSizes.js → keepFor (12-month pace over
          the days it has been here). Judged only once a SKU is past its first 90 days here, as Deep sellers — before that it has no
          fair rate. over = held − 4 months' worth: the pairs to sell off.
+  'unsold' (step 1, owner 2026-11-17 — "if not sold in 30 days and we have a number of items in stock"): MORE than 30 days here
+         with no sale and 2+ pairs held. 1 pair is never overstocked; over = held − 1. A first sale moves it to step 2 (the 'cover'
+         test then judges it); no sale moves it to step 3 on day 91, where no label is worked out — one place at a time.
 
 STOCK = local #FREE not deleted + amzfeed.amztotal, one number (utils/slowSizes.js). Computed live; nothing stored. READ-ONLY.
 =======================================================================================================================================
 Exports:
   STEPS                                  [{ step: 1, key: 'arrived' }, … { step: 5, key: 'clearance' }]
   OVER_COVER_DAYS                        days of cover before Overstocked (4 months)
-  readStockLadder() -> { today, skus: [{ code, groupid, units, step, idle_days, last_sale, overstocked, over }] }
+  ARRIVED_OVER_DAYS, ARRIVED_OVER_UNITS   step 1's Overstocked test: more than 30 days, 2+ pairs
+  readStockLadder() -> { today, skus: [{ code, groupid, units, step, idle_days, last_sale, overstocked, over, over_why }] }
 =======================================================================================================================================
 */
 
@@ -55,6 +60,8 @@ const STEPS = [
 const WINDOW_DAYS = 90;                         // steps 1 and 2
 const UNSOLD_180_DAYS = 180;                    // step 3 ends here
 const OVER_COVER_DAYS = Math.round((365 / 12) * 4);   // 4 months' worth = 122 days
+const ARRIVED_OVER_DAYS = 30;                   // step 1: unsold MORE than this many days …
+const ARRIVED_OVER_UNITS = 2;                   // … holding at least this many pairs = Overstocked (held − 1 over)
 
 const day = (x) => { const [y, m, d] = x.split('-').map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
 
@@ -101,15 +108,21 @@ async function readStockLadder() {
     else step = 4;
 
     let over = 0;
+    let overWhy = null;
+    if (step === 1 && s.idle_days > ARRIVED_OVER_DAYS && s.units >= ARRIVED_OVER_UNITS) {
+      over = s.units - 1;
+      overWhy = 'unsold';
+    }
     if (step === 2) {
       const firstSeen = first.get(s.code) || null;
       const daysHere = firstSeen ? t - day(firstSeen) : null;   // null = before the log, i.e. old
       if (daysHere === null || daysHere > NEW_DAYS) over = Math.max(0, s.units - keepFor(sold12.get(s.code) || 0, daysHere, OVER_COVER_DAYS));
+      if (over > 0) overWhy = 'cover';
     }
-    return { code: s.code, groupid: s.groupid, units: s.units, step, idle_days: s.idle_days, last_sale: s.last_sale, overstocked: over > 0, over };
+    return { code: s.code, groupid: s.groupid, units: s.units, step, idle_days: s.idle_days, last_sale: s.last_sale, overstocked: over > 0, over, over_why: overWhy };
   });
 
   return { today, skus };
 }
 
-module.exports = { STEPS, OVER_COVER_DAYS, readStockLadder };
+module.exports = { STEPS, OVER_COVER_DAYS, ARRIVED_OVER_DAYS, ARRIVED_OVER_UNITS, readStockLadder };

@@ -45,8 +45,8 @@ Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=
            on it (arrived · sold · overstocked · unsold90 · unsold180 · clearance — live at Amazon, Birkenstock left out), in ITS order
            (styles together, longest wait first), due or not (parked=include implied). Each row also carries `when` (due · week · later
            · buybox — whenOf, the list's chips) and ladder_idle_days / ladder_over / ladder_units; the response carries step_skus
-           (every SKU on the step, any channel). With cards=1 the Buy Box sizes are left out — never carded from a step (they have
-           the Buy Box cards). Range's step lists and the step cards (/amz/step-cards).
+           (every SKU on the step, any channel). With cards=1 the Buy Box sizes are carded too, with the Buy Box cards' suggestion
+           (owner 2026-11-17: "I want to price in cards" — was left out). Range's step lists and the step cards (/amz/step-cards).
   when     with step: due | week | later | buybox | all (default all) — only that chip's rows.
   cards    1 = PRICE CARDS (components/AmzPriceCards — Due cards and search cards, owner 2026-11-13: "the usual price change screen but
            reduced to cards"): each row also carries what a card shows — imagename, u12 (Amazon pairs, 12 months), breakeven, walk
@@ -163,10 +163,10 @@ router.get('/', async (req, res) => {
       .filter((x) => !reviewHalf || x.d.by === 'review')
       .filter((x) => includeParked || ladder || x.d.due)
       .filter((x) => matchesSearch(x.r, q) && matchesStyle(x.r, g))
-      // STOCK LADDER (header, ?step=): the step's sizes only, each with its chip; ?when= narrows; cards never take a Buy Box size.
+      // STOCK LADDER (header, ?step=): the step's sizes only, each with its chip; ?when= narrows; Buy Box sizes are carded too (2026-11-17).
       .filter((x) => !ladder || ladder.members.has(x.r.code))
       .map((x) => (ladder ? { ...x, when: whenOf(x.d.due, x.d.by, x.r.next_review, ladder.today) } : x))
-      .filter((x) => !ladder || ((when === 'all' || x.when === when) && !(withCards && x.when === 'buybox')));
+      .filter((x) => !ladder || when === 'all' || x.when === when);
     // Due before not-due, so the safety cap can only ever trim not-due rows: with the status rows the list passed 500 (2026-10-28)
     // and the 0-stock due SKUs, sorting last, were cut — Daily counted them, the list didn't show them. Stable: stock order kept.
     // A Stock ladder list keeps the step's own order (utils/stockLadderList.js — a step holds far fewer than the cap).
@@ -204,7 +204,8 @@ router.get('/', async (req, res) => {
       ...(ladder ? {
         when: w,
         ladder_idle_days: ladder.members.get(r.code).idle_days,   // days without a sale (utils/stockLadder.js, Range's idle clock)
-        ladder_over: ladder.members.get(r.code).over,             // pairs over 4 months' worth (Overstocked only, else 0)
+        ladder_over: ladder.members.get(r.code).over,             // pairs over (Overstocked only, else 0)
+        ladder_over_why: ladder.members.get(r.code).over_why,     // 'cover' (4 months' worth) | 'unsold' (step 1: 30+ days, 2+ held) | null
         ladder_units: ladder.members.get(r.code).units,           // local + FBA, one number (the ladder's stock)
       } : {}),
     }));
@@ -237,8 +238,9 @@ router.get('/', async (req, res) => {
         row.profit_line = profitLine(ec);
         row.profit_now = row.price === null ? null : amzProfit({ ...ec, price: row.price }).profit;
       }
-      // The Buy Box cards' suggestion for the search's sizes (header) — the deck read narrowed to the same search.
-      if (q || g) {
+      // The Buy Box cards' suggestion for the search's sizes (header) — the deck read narrowed to the same search — and for a
+      // Stock ladder step's Buy Box sizes (owner 2026-11-17).
+      if (q || g || ladder) {
         const deck = await readDeck(pool, { mood, q, groupid: g });
         const cardOf = Object.fromEntries(deck.cards.map((c) => [c.code, c]));
         for (const row of rows) {

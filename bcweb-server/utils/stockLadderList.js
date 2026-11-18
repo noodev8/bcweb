@@ -7,7 +7,7 @@ Purpose: Range's step boxes (and the Overstocked tag) each open a list; four of 
          screen), and that route asks this util which sizes belong and in what order. Steps themselves: utils/stockLadder.js.
 
 WHO IS ON A LIST (owner, 2026-11-15: "leave Birkenstock and Shopify out of these decisions for now"):
-         a SKU on the step (Overstocked = step 2 SKUs carrying the label; Sold 90 = ALL of step 2, labelled or not)
+         a SKU on the step (Overstocked = step 1 or 2 SKUs carrying the label; Sold 90 = ALL of step 2, labelled or not)
          AND live at Amazon (amzfeed.amzlive > 0) AND not Birkenstock (brand ILIKE 'birk%', as eBay and AMZ loaded).
          `step_skus` = every SKU on the step, any channel — the screen says how many of them the list shows.
 
@@ -28,7 +28,7 @@ READ ONLY.
 =======================================================================================================================================
 Exports:
   LIST_KEYS, CARD_KEYS, WHEN_KEYS
-  stepMembers(key) -> { today, step_skus, members: Map(code -> { idle_days, over, units, order }) }   (null for an unknown key)
+  stepMembers(key) -> { today, step_skus, members: Map(code -> { idle_days, over, over_why, units, order }) }   (null for an unknown key)
   whenOf(due, dueBy, nextReview, today) -> 'due' | 'week' | 'later' | 'buybox'
 =======================================================================================================================================
 */
@@ -40,7 +40,7 @@ const LIST_KEYS = ['arrived', 'sold', 'overstocked', 'unsold90', 'unsold180', 'c
 const CARD_KEYS = ['overstocked', 'unsold90', 'unsold180', 'clearance'];
 const WHEN_KEYS = ['due', 'week', 'later', 'buybox', 'all'];
 const WEEK_DAYS = 7;
-const STEP_OF = { arrived: 1, sold: 2, overstocked: 2, unsold90: 3, unsold180: 4, clearance: 5 };
+const STEP_OF = { arrived: 1, sold: 2, unsold90: 3, unsold180: 4, clearance: 5 };   // overstocked: the label, any step carrying it
 
 const sizeKey = (code) => {
   const s = code.slice(code.lastIndexOf('-') + 1);
@@ -56,7 +56,7 @@ function addDays(ymd, n) {
 async function stepMembers(key) {
   if (!LIST_KEYS.includes(key)) return null;
   const { today, skus } = await readStockLadder();
-  const onStep = skus.filter((s) => s.step === STEP_OF[key] && (key !== 'overstocked' || s.overstocked));
+  const onStep = skus.filter((s) => (key === 'overstocked' ? s.overstocked : s.step === STEP_OF[key]));
   const live = new Set((await query(
     `SELECT a.code FROM amzfeed a JOIN skusummary sk ON sk.groupid = a.groupid
       WHERE a.code = ANY($1::text[]) AND COALESCE(a.amzlive, 0) > 0 AND COALESCE(sk.brand, '') NOT ILIKE 'birk%'`,
@@ -72,7 +72,7 @@ async function stepMembers(key) {
   rows.sort((a, b) => (weight.get(b.groupid) - weight.get(a.groupid)) || a.groupid.localeCompare(b.groupid)
     || (sizeKey(a.code) - sizeKey(b.code)) || a.code.localeCompare(b.code));
 
-  const members = new Map(rows.map((s, i) => [s.code, { idle_days: s.idle_days, over: s.over, units: s.units, order: i }]));
+  const members = new Map(rows.map((s, i) => [s.code, { idle_days: s.idle_days, over: s.over, over_why: s.over_why, units: s.units, order: i }]));
   return { today, step_skus: onStep.length, members };
 }
 
