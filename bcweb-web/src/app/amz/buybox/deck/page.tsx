@@ -57,7 +57,6 @@ import Link from 'next/link';
 import { ArrowPathIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzCardFrame, { LastChangeLine } from '@/components/AmzCardFrame';
-import { MoodBadge } from '@/components/MoodSwitch';
 import { applyAmzPrice, getAmzBuyBoxDeck, leaveAmzBuyBox, type AmzDeckCard, type AmzDeckKind, type AmzMood, type AmzSendOutcome } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
@@ -66,8 +65,8 @@ import { useAuth } from '@/contexts/AuthContext';
 // `dot` / `tag` = the answer's colour (LAYOUT, header) — the tab dot and the solid reason tag.
 const DECKS: { key: AmzDeckKind; label: string; verb: string; tagText: string; rule: string; dot: string; tag: string }[] = [
   { key: 'new', label: 'New', verb: 'New', tagText: 'New · cut', rule: 'Landed at Amazon in the last 30 days, no Amazon sale yet — a penny under the lead to get the first sale (up to it when a dearer seller is shown, never over the RRP), never below break-even', dot: 'bg-violet-500', tag: 'bg-violet-600' },
-  { key: 'raise', label: 'Raise', verb: 'Raise', tagText: 'Raise', rule: 'We have the Buy Box and the next rival is more than 2% above — a small step up (Chilled 5%, Climb 8%). Sold in 30 days', dot: 'bg-emerald-500', tag: 'bg-emerald-600' },
-  { key: 'cut', label: 'Cut', verb: 'Cut', tagText: 'Cut', rule: 'A rival has the Buy Box at a price that still keeps us £3 a pair — a penny under it (Chilled: 2% over a self-poster)', dot: 'bg-rose-500', tag: 'bg-rose-600' },
+  { key: 'raise', label: 'Raise', verb: 'Raise', tagText: 'Raise', rule: 'We have the Buy Box and the next rival is more than 2% above — a small step up (at most 5%). Sold in 30 days', dot: 'bg-emerald-500', tag: 'bg-emerald-600' },
+  { key: 'cut', label: 'Cut', verb: 'Cut', tagText: 'Cut', rule: 'A rival has the Buy Box at a price that still keeps us £3 a pair — a penny under it (2% over a self-poster)', dot: 'bg-rose-500', tag: 'bg-rose-600' },
 ];
 
 // REVIEW (header): a Set or Leave moves the Due date to today + REVIEW_DAYS SERVER-SIDE (a later date kept). Worked out here only to
@@ -257,8 +256,8 @@ export default function AmzBuyBoxDeckPage() {
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
         {/* 1 TOOLBAR — tabs · mood badge · how old the reading is. No result message here any more (it sits under the card). */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          {/* Back to the mood + tiles — worded "Back", not "Amazon Pricing", so it isn't read as the nav button (owner, 2026-11-13). */}
-          <Link href="/amz" title="Back to the mood and the New / Raise / Cut tiles"
+          {/* Back to the tiles — worded "Back", not "Amazon Pricing", so it isn't read as the nav button (owner, 2026-11-13). */}
+          <Link href="/amz" title="Back to the New / Raise / Cut tiles"
             className="inline-flex h-9 shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50">
             ← Back
           </Link>
@@ -271,11 +270,8 @@ export default function AmzBuyBoxDeckPage() {
               </Link>
             ))}
           </div>
-          <span className="inline-flex shrink-0 items-center gap-2 sm:ml-auto">
-            <MoodBadge mood={mood} />
-            <Link href="/amz" title="The mood is chosen on Amazon Pricing" className="text-xs text-brand-700 hover:underline">Change</Link>
-          </span>
-          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm text-slate-400 sm:ml-0" title="Read every hour by the cron">
+          {/* The mood badge + Change were here — taken off (owner, 2026-11-18: always Chilled). */}
+          <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm text-slate-400" title="Read every hour by the cron">
             Read {ago(readMs, now)}{data?.running ? ' · a read is running' : ''}
             <button type="button" onClick={reload} aria-label="Refresh"
               title="Reload the deck — sizes set or left since have gone; anything else comes back"
@@ -303,7 +299,7 @@ export default function AmzBuyBoxDeckPage() {
             </div>
             <span className="shrink-0 whitespace-nowrap text-sm tabular-nums text-slate-400">
               {index >= 0 ? `${index + 1} of ${cards.length}` : `${cards.length}`} · {setCount} set · {leftCount} left
-              {deck === 'new' && <span className="hidden md:inline" title="New sizes only — a penny under the lead to get the first sale, never below break-even"> · no raises here, the mood doesn’t apply</span>}
+              {deck === 'new' && <span className="hidden md:inline" title="New sizes only — a penny under the lead to get the first sale, never below break-even"> · no raises here</span>}
             </span>
             <button type="button" onClick={() => setListOpen((o) => !o)} title="Every card in this tab (Q)"
               className="ml-auto hidden h-7 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-600 hover:bg-slate-50 lg:inline-flex">

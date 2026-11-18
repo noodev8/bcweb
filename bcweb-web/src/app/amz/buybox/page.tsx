@@ -50,7 +50,6 @@ import { useSearchParams } from 'next/navigation';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBuyBoxReading, { toMs } from '@/components/AmzBuyBoxReading';
-import { MoodBadge } from '@/components/MoodSwitch';
 import { getAmzBuyBox, getAmzBuyBoxDeck, startAmzBuyBoxRead, type AmzAnswer, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzMood } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { ANSWERS, reasonLabel } from '@/lib/buyboxAnswers';
@@ -164,9 +163,8 @@ function BuyBoxBySize() {
 
       {data && (
         <section>
-          {/* The mood (chosen on the home), the answer tabs, the in-stock count, search on the right. */}
+          {/* The answer tabs (the mood badge taken off, owner 2026-11-18), the in-stock count, search on the right. */}
           <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <span title="The mood is chosen on Amazon Pricing"><MoodBadge mood={mood} /></span>
             <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
               {ANSWERS.map((a) => {
                 const on = !search && shown === a.key;

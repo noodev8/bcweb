@@ -260,7 +260,6 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
           ) : (
             <span className="text-sm font-semibold text-slate-900">{title}</span>
           )}
-          {mode === 'search' && <span className="text-xs text-slate-400" title="The mood chosen on Amazon Pricing">Buy Box suggestions in {mood[0].toUpperCase() + mood.slice(1)}</span>}
           <span className="ml-auto inline-flex shrink-0 items-center gap-2 text-sm text-slate-500">
             {cards.length > 0 && (
               <span className="tabular-nums">{mode === 'due' ? `${setCount} set · ${leftCount} left · ${open.length} to go` : `${cards.length} sizes · ${setCount} set · ${leftCount} left`}</span>

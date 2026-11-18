@@ -17,14 +17,14 @@ THE LAYOUT — the order the job is done in:
   Title row     "Amazon Pricing"; the headline Buy Box % and the reading's age (components/AmzBuyBoxReading); Send to Amazon
                 (components/AmzBasketBar — moved here with the home, the basket of prices not yet on Amazon) + its confirm banner.
   Team week     one collapsed line, laptop only (components/AmzTeamWeek).
-  1 Today's mood  three big mood cards (components/MoodSwitch → MoodCards). Starts on Chilled every load, nothing stored; the Price
-                buttons carry it (?mood=). It changes the card tiles only — Daily always counts Chilled (decision 23).
-  2 Price       THE DAILY JOB, four tiles worked to zero, each one big "Price →" (the count is in the tile — owner, 2026-11-13: "No
+  (The mood step is gone — owner, 2026-11-18: "I always use calm". The home is always Chilled; no faces, no choice. The links still
+  carry ?mood=chilled, and the Fierce / Climb rules stay on the server, unused. components/MoodSwitch is kept for a way back.)
+  1 Price       THE DAILY JOB, four tiles worked to zero, each one big "Price →" (the count is in the tile — owner, 2026-11-13: "No
                 need to have Price X on the buttons. We have the count inside the box"): New · Raise · Cut — the cards ready in this
                 mood (/amz/buybox/deck — on screen "Pricing"); NOT SELLING · DUE — the review half's due sizes, into the DUE CARDS
                 (/amz/due-cards — owner, 2026-11-13: "the usual price change screen but reduced to cards to make it easier and more fun
                 … to go through DUE"). Nothing small under or beside them.
-  3 Look up     THE SPECIALITIES, the same tile look (owner, 2026-11-13: "Maybe the search card box is a speciality. So is the 'or the
+  2 Look up     THE SPECIALITIES, the same tile look (owner, 2026-11-13: "Maybe the search card box is a speciality. So is the 'or the
                 list' and the '299 items' maybe they need their own card under the main cards"; named "Look up"):
                   Search            any text (brand, name, groupid, SKU — server utils/amzBuyBoxDeck.js → matchesSearch) typed where
                                     the tile's name goes; how many sizes match and how they split (due · Buy Box · not due); "Price →"
@@ -48,7 +48,6 @@ import AppShell from '@/components/AppShell';
 import AmzTeamWeek from '@/components/AmzTeamWeek';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import AmzBuyBoxReading from '@/components/AmzBuyBoxReading';
-import { MoodCards } from '@/components/MoodSwitch';
 import { getAmzBuyBox, getAmzBuyBoxDeck, getAmzNotSellingDue, getAmzSearchSummary, type AmzAnswer, type AmzMood } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useDebounced } from '@/lib/useDebounced';
@@ -68,7 +67,8 @@ export default function AmazonPricingHome() {
     revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
     refreshInterval: (d) => (d?.running ? 3000 : 0),
   });
-  const [mood, setMood] = useState<AmzMood>('chilled');
+  // Always Chilled (owner, 2026-11-18 — the mood choice was taken off).
+  const mood: AmzMood = 'chilled';
   // SEARCH (header): the search card beside the box; nothing stored. Counted once typing settles, so each key press isn't a server
   // read. Starts from ?q= when coming Back from the search cards (their Back carries it); typing takes over.
   const urlQ = useUrlParam('q');
@@ -109,33 +109,27 @@ export default function AmazonPricingHome() {
             bottom margin, taken back here so the steps space evenly.) */}
         <div className="-mb-4 hidden sm:block"><AmzTeamWeek /></div>
 
-        {/* STEP 1 — THE MOOD. */}
+        {/* STEP 1 — PRICE: every size that needs pricing is behind exactly one of these four tiles. */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <StepHead n={1} title="Today's mood" hint="Starts on Chilled every time — pick the one that fits the day." />
-          <MoodCards mood={mood} onChange={setMood} />
-        </section>
-
-        {/* STEP 2 — PRICE: every size that needs pricing is behind exactly one of these four tiles. */}
-        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <StepHead n={2} title="Price" hint="Cards one at a time — Set or Leave. Not selling goes by review date." />
+          <StepHead n={1} title="Price" hint="Cards one at a time — Set or Leave. Not selling goes by review date." />
           <div className={GRID}>
             {ANSWERS.filter((a) => DECK_ANSWERS.includes(a.key)).map((a) => {
               const s = answers?.[a.key];
               const ready = s?.ready ?? 0;
               return (
                 <Tile key={a.key} dot={a.dot} label={a.label} n={s ? ready : null}
-                  under={`of ${s?.total ?? 0} in ${a.label}${a.key === 'new' ? ' · the mood doesn’t change it' : ''}`}
+                  under={`of ${s?.total ?? 0} in ${a.label}`}
                   href={ready > 0 ? `/amz/buybox/deck?g=${a.key}&mood=${mood}` : null} btn="Price →" />
               );
             })}
-            <Tile dot="bg-slate-400" label="Not selling · due" n={notSelling ?? null} under="by review date — in any mood"
+            <Tile dot="bg-slate-400" label="Not selling · due" n={notSelling ?? null} under="by review date"
               href={notSelling ? '/amz/due-cards' : null} btn="Price →" />
           </div>
         </section>
 
-        {/* STEP 3 — LOOK UP: the specialities (header), the same tiles under the daily ones. */}
+        {/* STEP 2 — LOOK UP: the specialities (header), the same tiles under the daily ones. */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-          <StepHead n={3} title="Look up" hint="Search anything, the whole not-selling list, or who Amazon shows." />
+          <StepHead n={2} title="Look up" hint="Search anything, the whole not-selling list, or who Amazon shows." />
           <div className={GRID}>
             <SearchTile search={search} onSearch={setSearch} found={found ?? null} counting={counting}
               href={found && found.total > 0 ? `/amz/search-cards?q=${encodeURIComponent(found.q)}&mood=${mood}` : null} />
@@ -214,7 +208,7 @@ function SearchTile({ search, onSearch, found, counting, href }: {
   );
 }
 
-// A numbered step heading: the number is the order the job is done in — mood, then price, then look up.
+// A numbered step heading: the number is the order the job is done in — price, then look up.
 function StepHead({ n, title, hint }: { n: number; title: string; hint?: string }) {
   return (
     <div className="mb-3 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
