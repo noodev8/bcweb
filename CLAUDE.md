@@ -52,6 +52,7 @@ Start the API first. Seed/reset a user: `node scripts/seed-user.js <username> <p
   - Portfolio does **not** link to the order screens.
 - **Selling | Stuck**: Selling = in stock, un-parked, ≥2 units in 30d AND ≥£2 avg net profit/unit → price up. Stuck = in stock, un-parked, nothing sold in 30d → price down. Same bars on both channels, named constants in the route files. A style that sells 1 unit or sells on thin margin is on neither — deliberate, don't loosen a bar. The old LOSERS machinery was removed knowingly — read the route headers before reinstating any of it. Lists are the whole set; `limit` is only a safety cap (`utils/listLimit.js`).
 - **Drill:** header + pricing timeline (one row per price, pace `/wk` computed app-side) + size curve showing ALL sizes.
+- **Style price** (`/pricing/style-price?g=`, read `routes/style-price.js`; owner 2026-11-18): ONE style, every size, Shopify | Amazon | eBay side by side, one price typed applies to the ticked channels, any cell adjustable, ONE review chip for all; nothing is sent until "Send prices", which calls the channels' own writes (W1 / W-S1 / W-A1 / `/ebay-size-price` / `/ebay-list`) — no pricing rule lives in it. No Buy Box suggestion, no clearance, no List on Amazon (owner: other screens).
 - **Seasons** (`/seasons`) now feed only Inventory's WINTER/SUMMER commands and the Google Ads season filter.
 
 ## Shopify size prices (`utils/sizePrice.js`, THE copy)

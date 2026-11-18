@@ -160,6 +160,7 @@ app.use('/amz-list', require('./routes/amz-list'));               // List on Ama
 // decide which screen you actually want, then jump there with the groupid already in hand. Deliberately NOT a replacement for
 // pricing-find / amz-find, which answer "which SKU am I repricing"; these answer "which product am I working on at all".
 app.use('/product-variants', require('./routes/product-variants')); // one style opened out to its sizes + barcode (named for product-sizes, the WRITE)
+app.use('/style-price', require('./routes/style-price'));               // GET: READ ONLY — the Style price screen: one style, every size, every channel's price
 
 // Amazon Pricing module (SKU-grain; mirrors the Shopify Pricing flow — segment picker -> WINNERS|LOSERS lists -> per-SKU drill).
 // Read side + the one write. All routes require verifyToken, applied inside each router. Amazon has no park/review concept and no live

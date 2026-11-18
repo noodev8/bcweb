@@ -5430,6 +5430,29 @@ export function listOnEbay(groupid: string, prices: Record<string, number>, styl
     (b) => ({ item_id: b.item_id, url: b.url, sizes: b.sizes, pairs: b.pairs, warnings: b.warnings || [] })
   );
 }
+// The Style price screen (/pricing/style-price, server routes/style-price.js — READ ONLY): one style, every size, every channel. open =
+// the screen may set a price in that cell (else grey). Commits go through each channel's own write (applyPrice, setSizePrice /
+// clearSizePrice, applyAmzPrice, markAmzReviewed, parkStyle, setEbaySizePrice, listOnEbay).
+export interface StylePriceRow {
+  code: string; size: string; local: number; fba: number;
+  shopify: { open: boolean; size_price: number | null; kind: string | null };
+  amazon: { open: boolean; price: number | null; fbafee: number | null; review: string | null };
+  ebay: { state: 'never' | 'on' | 'style' | 'could'; open: boolean; price: number | null };
+}
+export interface StylePriceHeader {
+  groupid: string; title: string | null; imagename: string | null; brand: string | null; birk: boolean;
+  cost: number | null; rrp: number | null;
+  shopify: { live: boolean; price: number | null; review: string | null };
+  ebay: { item_id: string | null; uplift: number };
+  ebay_list: { status: 'ready' | 'todo' | 'missing'; missing: EbayMissing[]; style: string; material: string | null; sizes: Record<string, number | null> } | null;
+}
+export function getStylePrice(groupid: string) {
+  return request<{ header: StylePriceHeader; rows: StylePriceRow[] }>(
+    { url: '/style-price', method: 'GET', params: { groupid } },
+    (b) => ({ header: b.header, rows: (b.rows || []) as StylePriceRow[] })
+  );
+}
+
 // The eBay profit at a typed price, free postage (server routes/ebay-profit-preview.js — THE EBY formula).
 export function getEbayProfitPreview(groupid: string, price: number) {
   return request<number | null>(

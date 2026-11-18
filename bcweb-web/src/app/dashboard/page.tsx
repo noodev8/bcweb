@@ -67,7 +67,7 @@ import {
   ShoppingCartIcon, TagIcon, Squares2X2Icon, SignalIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
-  ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon,
+  ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, CurrencyPoundIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
   RectangleStackIcon, LightBulbIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon, MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
@@ -119,6 +119,8 @@ const GROUPS: Group[] = [
     blurb: 'Groups, rules and price checks',
     icon: TagIcon,
     tiles: [
+      // Style price (owner, 2026-11-18): one style, every size, every channel — set one price, adjust any cell, commit once.
+      { title: 'Style price', subtitle: 'One style, every channel', description: 'Find a style, set one price on Shopify, Amazon and eBay, adjust any size, then send.', href: '/pricing/style-price', icon: CurrencyPoundIcon },
       { title: 'Shopify vs Amazon', subtitle: 'Shopify never under Amazon', description: 'Every style live on Amazon — Shopify price against Amazon’s per-size spread.', href: '/pricing/vs-amazon', icon: ScaleIcon },
       { title: 'Collections', subtitle: 'Shopify collection tags', description: 'Put styles in Shopify collections, or take them out — up to 3 per style.', href: '/collections', icon: RectangleStackIcon },
       { title: 'Price Changes', subtitle: 'Recent moves, and what shifted', description: 'The latest price moves across Shopify & Amazon — before → after, who & when, and units sold since.', href: '/analytics/price-changes', icon: ArrowsRightLeftIcon },

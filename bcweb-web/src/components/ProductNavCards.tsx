@@ -92,6 +92,14 @@ const TARGETS: (NavTarget & { group: Group })[] = [
     icon: TagIcon,
     build: (g, from, back) => `/products?groupid=${encodeURIComponent(g)}&from=${from}&back=${back}`,
   },
+  // STYLE PRICE (owner, 2026-11-18): every channel's price for this style on one screen — one price, any size, one commit.
+  {
+    group: 'general',
+    label: 'All prices',
+    hint: 'Style price — Shopify, Amazon and eBay prices for every size, set and sent from one screen',
+    icon: CurrencyPoundIcon,
+    build: (g, from) => `/pricing/style-price?g=${encodeURIComponent(g)}&from=${from}`,
+  },
   {
     group: 'Shopify',
     label: 'Order',
