@@ -208,6 +208,7 @@ app.use('/amz-import-preview', require('./routes/amz-import-preview')); // stage
 app.use('/amz-import-commit', require('./routes/amz-import-commit'));   // stage 2: ingest -> derive -> project, one transaction
 app.use('/amz-import-last', require('./routes/amz-import-last'));       // when was this last run — READ ONLY
 app.use('/backup-last', require('./routes/backup-last'));               // has the nightly DB backup worked — READ ONLY (dashboard warning)
+app.use('/brand-price-requests', require('./routes/brand-price-requests')); // brands that asked for RRP on a channel — READ ONLY (a reminder)
 app.use('/amz-delete-file', require('./routes/amz-delete-file')); // build the Seller Central .xlsm that de-lists dead SKUs — WRITES NOTHING
 app.use('/amz-shipment-boxes', require('./routes/amz-shipment-boxes')); // AMZ Shipment: boxes packed so far (amzshipment) — READ ONLY
 app.use('/amz-shipment-scan', require('./routes/amz-shipment-scan'));   // AMZ Shipment: resolve a scan (code/EAN/FNSKU) + its FNSKU — READ ONLY

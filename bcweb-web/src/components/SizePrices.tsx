@@ -15,11 +15,13 @@
 import { useState } from 'react';
 import { setSizePrice, clearSizePrice, type SizeRow } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import BrandRrpNote from '@/components/BrandRrpNote';
 
 interface SizePricesProps {
   sizes: SizeRow[];
   stylePrice: number | null;
   rrp: number | null;            // crossed out beside a size price, as on Shopify
+  brand?: string | null;         // a brand that asked for RRP on Shopify gets a reminder (components/BrandRrpNote) — never a block
   cost: number | null;
   defaultPrice: number | null;   // 50% of RRP (server)
   onChanged: () => Promise<void> | void;
@@ -27,7 +29,7 @@ interface SizePricesProps {
 
 const gbp = (n: number) => `£${n.toFixed(2)}`;
 
-export default function SizePrices({ sizes, stylePrice, rrp, cost, defaultPrice, onChanged }: SizePricesProps) {
+export default function SizePrices({ sizes, stylePrice, rrp, brand, cost, defaultPrice, onChanged }: SizePricesProps) {
   const { logout } = useAuth();
   const [open, setOpen] = useState<string | null>(null);        // code of the size being edited
   const [priceStr, setPriceStr] = useState('');
@@ -112,6 +114,8 @@ export default function SizePrices({ sizes, stylePrice, rrp, cost, defaultPrice,
       </button>
 
       {panelOpen && (<div className="mt-3">
+      {/* The brand asked for RRP on Shopify — a size price is under RRP by design, so this is a reminder only (owner, 2026-11-18) */}
+      <BrandRrpNote brand={brand} channel="SHP" rrp={rrp} price={open && valid ? price : null} className="mb-2" />
       {notice && (
         <div className={'mb-3 rounded-md px-3 py-1.5 text-sm ' + (notice.kind === 'warn' ? 'bg-amber-50 text-amber-800' : 'bg-red-50 text-red-700')}>
           {notice.text}

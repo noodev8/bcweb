@@ -231,6 +231,7 @@ export interface AmzApplyResult { log_id: number; code: string; amz_sku: string;
 
 export interface DrillHeader {
   groupid: string; title: string | null;
+  brand?: string | null;                // the brand's RRP request reminder (components/BrandRrpNote)
   now: number | null; cost: number | null; rrp: number | null; minp: number | null; maxp: number | null;
   margin: number | null; margin_pct: number | null;   // GROSS (now - cost); net reasoning lives in the timeline profit/wk
   stock: number; colour: string | null; width: string | null; season: string | null;
@@ -3421,6 +3422,13 @@ export function getBackupLast() {
     lastFailed: (b.lastFailed as BackupStatus['lastFailed']) || null,
     stale: b.stale === true,
   }));
+}
+
+// Brands that asked for RRP on a channel (GET /brand-price-requests, READ ONLY; rules bcweb-server/utils/brandPriceRequest.js).
+// A reminder only — shown by components/BrandRrpNote, never a rule.
+export interface BrandPriceRequest { brand: string; channel: 'SHP' | 'AMZ'; request: 'RRP'; note: string | null }
+export function getBrandPriceRequests() {
+  return request<BrandPriceRequest[]>({ url: '/brand-price-requests', method: 'GET' }, (b) => (b.requests as BrandPriceRequest[]) || []);
 }
 
 // AMZ Shipment — the Amazon boxes packed so far (amzshipment), with each box's contents and measurements. READ ONLY.

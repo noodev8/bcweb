@@ -244,6 +244,7 @@ function DrillContent() {
               sizes={data.sizes}
               stylePrice={data.header.now}
               rrp={data.header.rrp}
+              brand={data.header.brand ?? null}
               cost={data.header.cost}
               defaultPrice={data.header.size_price_default ?? null}
               onChanged={async () => { await refresh(); }}

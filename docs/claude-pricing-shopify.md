@@ -44,7 +44,7 @@ The owner's intention (2026-10-02): once comfortable, Claude reprices the whole 
 - **New styles: hands off for 4 weeks** (2026-10-02). Listed (`created_at`) under 4 weeks ago → don't reprice: same-price apply, note "New, listed <date>.", review date = the day it turns 4 weeks. Why: in Sep 2026 new styles were cut weekly before a fair run (RAMSES £85 → £60 in 5 weeks; Arizona EVA Pink Clay £50 → £32 for 14p profit; a Caprice boot cut after 6 days). Playbook only, no screen change.
 - Stock on order (owner, 2026-10-02): Birkenstock orders are in `birktracker` (one row per size; outstanding = `requested - arrived`; style = `code` minus the size suffix; `due` is the expected month). Other brands are in `orderstatus` (`shopifysku` → `skumap.code`; `ordertype` 2/3; `orderdate=''` to place, else on order). Check both before treating a style as "this is all we'll have", or when pricing an out-of-stock style.
 - Out-of-stock styles on a status list: if nothing is on order, reset clearance/loss prices to the last profitable price that sold (so returning stock isn't sold cheap), hold the rest, review 1 Mar (2026-10-02). Clearance handling in general is NOT settled: owner said it's more complex than first thought; don't build rules for it yet, and ask on any style noted as clearance.
-- A brand's own pricing request stands (e.g. Free Spirit asked for RRP).
+- A brand's own pricing request stands — the list is the `brand_price_request` table (Free Spirit asked for RRP on Shopify; Strive on Amazon).
 
 ## Instructions (how Claude should work)
 

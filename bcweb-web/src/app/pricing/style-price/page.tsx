@@ -51,6 +51,7 @@ import {
 import { REVIEW_PERIODS, seasonPark } from '@/lib/reviewPeriods';
 import { prettyPathLabel } from '@/lib/nav';
 import { useApiQuery } from '@/lib/useApiQuery';
+import BrandRrpNote from '@/components/BrandRrpNote';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
 const NOTE = 'Style price';
@@ -368,6 +369,10 @@ function Editor({ header: h, rows, onCommitted, onReset }: {
         <div className="min-w-0 flex-1">
           <div className="truncate font-medium text-slate-900">{h.title || h.groupid}</div>
           <div className="font-mono text-xs text-slate-500">{h.groupid}</div>
+          {/* The brand asked for RRP on a channel — a reminder only (owner, 2026-11-18). Shopify against its style price; Amazon
+              prices per size, so that one stays a plain reminder. */}
+          <BrandRrpNote brand={h.brand} channel="SHP" rrp={h.rrp} price={h.shopify.price} className="mt-0.5 text-xs" />
+          <BrandRrpNote brand={h.brand} channel="AMZ" rrp={h.rrp} price={null} className="mt-0.5 text-xs" />
         </div>
         <div className="flex gap-6">
           <Stat label="Cost" value={money(h.cost)} />

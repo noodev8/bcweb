@@ -31,6 +31,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { money, type CardButton } from '@/components/AmzCardFrame';
+import BrandRrpNote from '@/components/BrandRrpNote';
 
 const IMAGE_BASE = 'https://images.brookfieldcomfort.com/';
 const NUDGES = [-5, -2, -1, 1, 2, 5];   // decision 3
@@ -112,6 +113,8 @@ export default function ShopifyCardFrame(p: ShopifyCardFrameProps) {
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
+            {/* Which channel this card prices — Shopify and Amazon cards look alike (owner, 2026-11-18) */}
+            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-emerald-800">Shopify</span>
             <span className="font-mono text-base font-semibold text-slate-900">{p.groupid}</span>
             {p.counter && <span className="text-xs tabular-nums text-slate-400">{p.counter}</span>}
           </div>
@@ -124,6 +127,8 @@ export default function ShopifyCardFrame(p: ShopifyCardFrameProps) {
               </button>
             </div>
           )}
+          {/* The brand asked for RRP here — a reminder, amber when the box isn't RRP (owner, 2026-11-18) */}
+          <BrandRrpNote brand={p.brand} channel="SHP" rrp={p.rrp} price={valid ? price : p.now} className="mt-0.5" />
           {p.status && <div className="mt-1 text-sm font-medium">{p.status}</div>}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-0.5 text-sm sm:flex-row sm:gap-4">

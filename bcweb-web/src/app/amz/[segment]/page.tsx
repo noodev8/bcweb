@@ -68,6 +68,7 @@ const AMZ_NUDGES: Nudge[] = [
   { label: '+30p', delta: 0.3 }, { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 },
 ];
 import { REVIEW_PERIODS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
+import { BrandRrpTag } from '@/components/BrandRrpNote';
 
 // The bulk result's Amazon half (2026-11-11 — each Apply is sent to Amazon by the server): how many didn't reach it.
 const amazonNote = (notSent: number) => (notSent ? ` · ${notSent} NOT sent to Amazon — press Send to Amazon` : ' · sent to Amazon');
@@ -570,7 +571,11 @@ function ListTable({ rows: listRows, queued, onOpen, selected, onToggle, onToggl
                   {r.code}
                   {!!queued[r.code] && <span title="Saved but not on Amazon yet — press Send to Amazon at the top" className="ml-2 rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-medium text-red-700">not sent</span>}
                 </td>
-                <td className={'truncate px-4 py-2 ' + tone}>{r.brand || <span className="text-slate-400">—</span>}</td>
+                <td className={'truncate px-4 py-2 ' + tone}>
+                  {r.brand || <span className="text-slate-400">—</span>}
+                  {/* The brand asked for RRP on Amazon — a reminder only (owner, 2026-11-18) */}
+                  <span className="ml-2 align-middle"><BrandRrpTag brand={r.brand} channel="AMZ" rrp={r.rrp} price={r.price} /></span>
+                </td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + (r.parked ? 'text-slate-400' : 'font-medium text-slate-800')}>{money(r.price)}</td>
                 <td className={'px-4 py-2 text-right tabular-nums ' + tone}>{r.fba}{r.fba_inbound > 0 && <span className="ml-1 text-xs font-normal text-sky-600" title="On its way into FBA">+{r.fba_inbound}</span>}</td>
                 <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums"><BuyBoxCell r={r} /></td>

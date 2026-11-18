@@ -69,6 +69,7 @@ const SHP_NUDGES: Nudge[] = [
   { label: '+50p', delta: 0.5 }, { label: '+£1', delta: 1 }, { label: '+£2', delta: 2 },
 ];
 import { REVIEW_PERIODS } from '@/lib/reviewPeriods';   // THE pricing review periods (both channels)
+import { BrandRrpTag } from '@/components/BrandRrpNote';
 
 // Stable "nothing ticked" identity for useScopedState (it requires a stable initial — see that module's header). Never mutated:
 // every toggle builds a new Set from the previous one.
@@ -580,6 +581,8 @@ function ListTable({ rows: listRows, onOpen, selected, onToggle, onToggleAll }: 
                 </td>
                 <td className={'truncate px-4 py-2 ' + tone}>
                   {r.brand || <span className="text-slate-400">—</span>}
+                  {/* The brand asked for RRP on Shopify — a reminder only (owner, 2026-11-18) */}
+                  <span className="ml-2 align-middle"><BrandRrpTag brand={r.brand} channel="SHP" rrp={r.rrp} price={r.price} /></span>
                   {/* Amazon-match badge: the autopilot is retired (CLAUDE.md) but the badge stays for when it is revived. */}
                   {r.match_amazon && (
                     <span className="ml-2 inline-flex items-center rounded bg-emerald-50 px-1.5 py-0.5 align-middle text-[10px] font-medium text-emerald-700" title="Auto-matched to Amazon lowest — review only (manual price locked)">

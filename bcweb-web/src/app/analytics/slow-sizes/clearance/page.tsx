@@ -40,6 +40,7 @@ import { ArrowPathIcon } from '@heroicons/react/20/solid';
 import { useRouter } from 'next/navigation';
 import AppShell from '@/components/AppShell';
 import { money } from '@/components/AmzCardFrame';
+import BrandRrpNote from '@/components/BrandRrpNote';
 import RrpStepper from '@/components/RrpStepper';
 import { allocateAmazonPick, amazonList, getClearanceList, getLadderList, lookupOnAmazon, setEbaySizePrice, setSizePrice, type AmzBarcodeHit, type ClearanceRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
@@ -249,6 +250,9 @@ function StyleLine({ row: h, rows, onSet }: { row: ClearanceRow; rows: Clearance
         <div className="max-w-[28rem] truncate text-xs text-slate-500" title={h.title}>
           {h.title}{h.brand ? ` · ${h.brand}` : ''} · cost {money(h.cost)} · RRP {money(h.rrp)}
         </div>
+        {/* The brand asked for RRP on a channel — clearance prices are under RRP by design, so a quiet reminder (owner, 2026-11-18) */}
+        <BrandRrpNote brand={h.brand} channel="SHP" rrp={h.rrp} price={null} className="text-xs" />
+        <BrandRrpNote brand={h.brand} channel="AMZ" rrp={h.rrp} price={null} className="text-xs" />
       </td>
       <td className="px-3 pb-1 pt-3 align-bottom">
         {settable.length > 1 && (

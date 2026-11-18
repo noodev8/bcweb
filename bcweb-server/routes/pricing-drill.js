@@ -140,6 +140,7 @@ router.get('/', async (req, res) => {
         COALESCE((SELECT SUM(COALESCE(a.amzlive,0)) FROM amzfeed a
           WHERE a.groupid = ss.groupid AND COALESCE(a.amzlive,0) > 0),0) AS amazon_live_total,
         t.shopifytitle,
+        ss.brand,
         COALESCE((SELECT SUM(l.qty) FROM localstock l
                   WHERE l.groupid=ss.groupid AND l.ordernum='#FREE'
                     AND COALESCE(l.deleted,0)=0 AND l.qty>0),0) AS stock
@@ -169,6 +170,7 @@ router.get('/', async (req, res) => {
     const header = {
       groupid,
       title: h.shopifytitle || null,
+      brand: h.brand || null,   // for the brand's RRP request reminder (utils/brandPriceRequest.js)
       now,
       cost,
       rrp: num(h.rrp),
