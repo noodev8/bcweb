@@ -71,7 +71,6 @@ Start the API first. Seed/reset a user: `node scripts/seed-user.js <username> <p
 ## Writes (wrap each in `withTransaction`)
 
 - **W1 Shopify price / W-A1 Amazon price:** `utils/priceWrite.js` (THE copy). **Do NOT set `shopifychange`.** Pushes happen after commit and never roll back. BCWEB's push is the only Shopify price path; drift is checked monthly with `node scripts/shopify-price-check.js`. Google is decoupled (`scripts/google-jobs.js`).
-- **W2 park:** sets the review date only — no price change, no log row.
 - **W-C1 collection tags** (`utils/collectionTags.js`): the DB is the record; never read tags back from Shopify.
 - **W-O1 Update Orders** (`utils/orderSync.js`, the only copy of the order rules): the button shows one total of new orders, nothing per channel. Shopify stock edited in Shopify admin is overwritten — change stock in BCWEB. New channel: `docs/order-sync.md`. New Shopify permissions go on the Dev Dashboard app, never the legacy `shpat_` apps.
 

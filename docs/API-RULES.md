@@ -1,249 +1,31 @@
 # API Rules
 
-This document defines the architecture and conventions for all API development.
+The conventions for all API work in BCWEB. Short on purpose — for a worked example, copy an existing route (`bcweb-server/routes/pricing-park.js` for a write, `routes/login.js` for auth) and the client (`bcweb-web/src/lib/api.ts`, whose header restates the client rules).
 
----
+## Backend
 
-## Backend API Design
-
-### Response Structure
-- **Always return HTTP 200** status code
-- Even for errors, return 200 with an error `return_code`
-- **Never** use HTTP error codes (4xx, 5xx) for API-level errors
-
-### Return Code Pattern
-Every API response must include a `return_code` field:
-
-```json
-{
-  "return_code": "SUCCESS",  // or an error code
-  "message": "Optional message",
-  "data": {}  // Optional data fields
-}
-```
-
-**Success Response:**
-```json
-{
-  "return_code": "SUCCESS",
-  "user": { ... },
-  "token": "..."
-}
-```
-
-**Error Response:**
-```json
-{
-  "return_code": "INVALID_CREDENTIALS",
-  "message": "Invalid email or password"
-}
-```
-
-### Standard Return Codes
-Use descriptive, machine-readable return codes:
-- `SUCCESS` - Operation completed successfully
-- `MISSING_FIELDS` - Required fields are missing
-- `INVALID_*` - Validation failed (e.g., `INVALID_EMAIL`, `INVALID_PASSWORD`)
-- `NOT_FOUND` - Resource not found (e.g., `USER_NOT_FOUND`, `EVENT_NOT_FOUND`)
-- `UNAUTHORIZED` - Authentication required or failed
-- `FORBIDDEN` - User doesn't have permission
-- `SERVER_ERROR` - Unexpected server error
-
-### API Logging
-- Add API logging to every route using `utils/apiLogger.js`
-- Log requests, responses, and timing information
-
-### File Headers
-Every API route file must include a structured header:
-
-```javascript
-/*
-=======================================================================================================================================
-API Route: login_user
-=======================================================================================================================================
-Method: POST
-Purpose: Authenticates a user using their email and password. Returns a token and basic user details upon success.
-=======================================================================================================================================
-Request Payload:
-{
-  "email": "user@example.com",         // string, required
-  "password": "securepassword123"      // string, required
-}
-
-Success Response:
-{
-  "return_code": "SUCCESS",
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...", // string, JWT token for auth
-  "user": {
-    "id": 123,                         // integer, unique user ID
-    "name": "Andreas",                 // string, user's name
-    "email": "user@example.com"        // string, user's email
-  }
-}
-=======================================================================================================================================
-Return Codes:
-"SUCCESS"
-"MISSING_FIELDS"
-"INVALID_CREDENTIALS"
-"SERVER_ERROR"
-=======================================================================================================================================
-*/
-```
-
-### Code Comments
-- Use extensive comments to explain what is happening
-- Comment each major section of logic
-- Explain WHY, not just WHAT
-
----
+- **Always HTTP 200 + a `return_code`.** `SUCCESS` or a descriptive, machine-readable error code; optional `message`. Never 4xx/5xx for API-level errors. Exception: an endpoint called by an outside service answers in that service's format (e.g. `routes/ebay-account-deletion.js` returns eBay's `{ challengeResponse }`).
+- **Common codes:** `SUCCESS`, `MISSING_FIELDS`, `INVALID_*` (e.g. `INVALID_PRICE`), `NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `SERVER_ERROR`. A route may add its own (`STALE`, `TOO_MANY`, …) — list every one in its header.
+- **Validate every field server-side** — never trust the client. Missing → `MISSING_FIELDS`, bad value → `INVALID_*`, before anything is written.
+- **One route file per endpoint** in `routes/` (kebab verb-noun), logged via `utils/apiLogger.js`.
+- **Every route file has the structured header block:** API Route · Method · Purpose (the WHY, owner decisions with dates) · Request Payload · Success Response (fields commented) · Return Codes. Utils marked "THE copy" carry the same style of header — it is where a rule is documented. **Update the header in the same change as the code.**
+- **Comments explain WHY, not just what.** Comment each major section of logic.
 
 ## Authentication
 
-### JWT Authentication
-- Use JWT (JSON Web Tokens) throughout the application
-- Store auth configuration in `config/config.js`
-- Only store the App_user ID in the JWT Token. use the database to find anything else you might need from there
+- JWT, config in `bcweb-server/config/config.js`. The token carries **only the user id**; look everything else up in the DB.
+- One `verifyToken` in `middleware/verifyToken.js` — never a second copy.
 
-### Middleware
-- Use `/middleware/verifyToken.js` for authentication middleware
-- **Always use a single `verifyToken` function** - no duplicates
-- Use standard router pattern for authentication:
-  - `verifyToken` - for routes requiring authentication
-  - `optionalAuth` - for routes that work with or without auth
+## Frontend client
 
----
-
-## Frontend API Client Design
-
-### Error Handling Philosophy
-- **API Client functions should NEVER throw errors for API-level failures**
-- Only throw errors for network/connection failures (fetch failures, timeouts, server unreachable)
-- Return structured response objects that let the caller decide how to handle errors
-
-### Response Structure
-API Client functions should return structured objects:
-
-**For SUCCESS:**
-```typescript
-// Return the data directly
-return response.guests;
-
-// OR return with success flag
-return { success: true, data: response.guests };
-```
-
-**For API Errors (non-SUCCESS return_code):**
-```typescript
-return {
-  success: false,
-  error: response.message || 'Operation failed',
-  return_code: response.return_code
-};
-```
-
-**For Network Errors:**
-```typescript
-// It's OK to throw for genuine network failures
-throw new Error('Network request failed');
-```
-
-### Caller Responsibility
-- The calling code decides how to handle API errors:
-  - Show toast notification
-  - Display inline error message
-  - Redirect to login
-  - Log and continue
-  - etc.
-- API client should NOT make these decisions
-
-### Example Pattern
-
-**Bad (throws on API error):**
-```typescript
-export const getGuests = async (eventId: number): Promise<Guest[]> => {
-  const response = await apiCall('/api/guests/get_guests', { event_id: eventId });
-
-  if (response.return_code !== 'SUCCESS') {
-    throw new Error(response.message); // ❌ Don't throw!
-  }
-
-  return response.guests;
-};
-```
-
-**Good (returns error info):**
-```typescript
-export const getGuests = async (eventId: number): Promise<{ success: boolean, guests?: Guest[], error?: string }> => {
-  try {
-    const response = await apiCall('/api/guests/get_guests', { event_id: eventId });
-
-    if (response.return_code !== 'SUCCESS') {
-      return {
-        success: false,
-        error: response.message || 'Failed to retrieve guests'
-      };
-    }
-
-    return { success: true, guests: response.guests || [] };
-  } catch (error) {
-    // Only network errors reach here
-    return {
-      success: false,
-      error: 'Network error - please check your connection'
-    };
-  }
-};
-
-// Usage in component:
-const result = await getGuests(eventId);
-if (result.success) {
-  setGuests(result.guests);
-} else {
-  showToast(result.error); // Caller decides what to do
-}
-```
-
----
+- **Client functions never throw on a non-SUCCESS `return_code`** — they return `{ success, data?, error?, return_code? }` and the caller decides what to show (toast, inline message, redirect). Only genuine network failures throw.
 
 ## Database
 
-### Technology
-- Use direct PostgreSQL (no ORM)
-- Always use central database pooling with `/database.js`
-- Single environment file `/.env`
+- Direct PostgreSQL, no ORM. Central pool in `bcweb-server/database.js`.
+- Writes through `utils/transaction.js → withTransaction`. Parameterised queries only. **No N+1** — JOINs or set-based batches.
+- The schema is the live DB (legacy; landmines in CLAUDE.md) — read it with `information_schema` or the migration headers in `bcweb-server/migrations/`.
 
-### Schema
-- Reference `/docs/DB-Schema.sql` for table and field definitions
+## Secrets
 
-### Query Best Practices
-- **Do not use N+1 queries** - use JOINs or batch queries
-- Use transaction wrapper for atomic operations
-- Use destructured database import:
-  ```javascript
-  const { query } = require('../database');
-  const { withTransaction } = require('../utils/transaction');
-  ```
-
----
-
-## Tech Stack
-
-- **Backend:** Node.js, Express.js
-- **Frontend:** Next.js, React, TypeScript
-- **Database:** PostgreSQL
-- **Development:** Windows
-- **Testing:** Postman
-
----
-
-## General
-
-**Backend:** Always return HTTP 200 with `return_code`. Document all codes. Never throw HTTP errors.
-
-**Frontend:** Never throw on non-SUCCESS return codes. Return structured objects. Let caller handle errors.
-
-**Result:** Clean separation of concerns, predictable error handling, no red console errors.
-
-**Passwords:** Do not hard code passwords. Always use values in the .env file and inform me if you need to add a new one
-
-
+- Never hard-code a password, key or token. Everything via `.env` (`bcweb-server/.env`, `bcweb-web/.env`) — say so when a new variable is needed.
