@@ -92,7 +92,9 @@ straight away (one 4 × 6 page per box, the Royal Mail label's QZ Tray path). Th
 print on" in the confirm box and on the booked notice: the Zebra by default, any printer QZ Tray sees, or the browser's print dialog;
 remembered per PC (BOX LABEL PRINTER below). Every print also saves the PDF to Downloads, just in case (owner 2026-11-17).
 Cancel drops the plan, free. Booked = the boxes are FROZEN (Pack / Delete refuse) until Mark shipped; the booked notice keeps Reprint
-labels. The DPD tracking still goes in Seller Central (parked, owner). Sends the boxes / units shown; a box changed on another bench →
+labels. BOOK DPD (2026-11-19, its own button on the booked notice, our own DPD only): one DPD Parcel Next Day consignment to the
+warehouse, the DPD labels on the DPD printer (raw through QZ Tray — never the Zebra; printer + EPL/CLP remembered per PC), and the
+tracking sent to Amazon straight away (server utils/amzInbound.js → BOOK DPD). Sends the boxes / units shown; a box changed on another bench →
 STALE, the boxes are re-read. Not with a refill open in your box (it would send the old contents). The two files below are KEPT as the
 backup, behind a "Backup: files" link (owner).
 
@@ -122,12 +124,13 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   getAmzShipmentBoxes, shipAmzShipment, lookupAmzShipmentScan, packAmzShipmentBox, deleteAmzShipmentBox, markAmzShipmentBoxArrived,
   startAmzInbound, getAmzInboundStatus, getAmzInboundCarriers, confirmAmzInbound, cancelAmzInbound, getAmzInboundLabels,
-  type AmzBox, type AmzShipResult, type AmzScanHit, type AmzInboundCarriers,
+  bookAmzDpd, getAmzDpdLabel, testDpdLabel,
+  type AmzBox, type AmzShipResult, type AmzScanHit, type AmzInboundCarriers, type DpdTestLabel,
 } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { printFnskuLabel, printFnskuLabels, printFnskuTestStrip } from '@/lib/fnskuLabel';
 import { printPdfBase64, BROWSER_PRINT } from '@/lib/printPdf';
-import { listPrinters, defaultPrinter } from '@/lib/labelPrinter';
+import { listPrinters, defaultPrinter, defaultDpdPrinter, printRawTo, isZebra } from '@/lib/labelPrinter';
 import { fillAmazonBoxFile } from '@/lib/amzBoxUpload';
 import SizeDialog, { dimsComplete } from '@/components/AmzBoxSizeDialog';
 import {
@@ -216,6 +219,36 @@ function downloadBoxLabels(base64: string, fba: string) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10000); // after the download has started
 }
+
+// DPD LABEL PRINTER + FORMAT (owner, 2026-11-19: "dpd labels need to go to the dpd printer NOT zebra"). '' = the DPD printer found by
+// name (TSC / DA200, lib/labelPrinter.ts); anything else = that printer by name. A Zebra is never offered and is refused if picked.
+// Format: EPL (tried first on the TSC) or CLP, for whichever the label test proves. Both remembered per PC.
+const DPD_PRINTER_KEY = 'amzShipment.dpdLabelPrinter';
+const DPD_FORMAT_KEY = 'amzShipment.dpdLabelFormat';
+function loadDpdPrinter(): string {
+  try { return localStorage.getItem(DPD_PRINTER_KEY) || ''; } catch { return ''; }
+}
+function saveDpdPrinter(p: string) {
+  try { if (p) localStorage.setItem(DPD_PRINTER_KEY, p); else localStorage.removeItem(DPD_PRINTER_KEY); } catch { /* not remembered */ }
+}
+function loadDpdFormat(): 'epl' | 'clp' {
+  try { return localStorage.getItem(DPD_FORMAT_KEY) === 'clp' ? 'clp' : 'epl'; } catch { return 'epl'; }
+}
+function saveDpdFormat(f: 'epl' | 'clp') {
+  try { localStorage.setItem(DPD_FORMAT_KEY, f); } catch { /* not remembered */ }
+}
+// A file to Downloads (the DPD label commands, and the test's JSON for DPD's sign-off pack).
+function saveFile(data: BlobPart, name: string, type = 'application/octet-stream') {
+  const url = URL.createObjectURL(new Blob([data], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+const fromBase64 = (b64: string) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 
 // AUTO BACK TO GOODS IN (owner, 2026-10-16: "if they working goods in they may not want to keep needing to click"). Ticked: packing a
 // box goes straight back there. Unticked: the Packed panel offers it. Remembered per browser like Print labels — it's the bench's way
@@ -395,11 +428,60 @@ function Packing({ initial, autoBack, onShipped }: {
   // BOX LABEL PRINTER: the choice (remembered per PC), and this PC's printers — asked of QZ Tray when the picker is first opened
   // (null = not asked yet; qz false = QZ Tray isn't running here, so only the browser's print is on offer).
   const [boxPrinter, setBoxPrinter] = useState(loadBoxPrinter);
-  const [printers, setPrinters] = useState<{ qz: boolean; names: string[]; zebra: string | null } | null>(null);
+  const [printers, setPrinters] = useState<{ qz: boolean; names: string[]; zebra: string | null; dpd: string | null } | null>(null);
   async function loadPrinters() {
     if (printers) return;
     const names = await listPrinters();
-    setPrinters({ qz: names !== null, names: names ?? [], zebra: names ? await defaultPrinter('royalMail') : null });
+    setPrinters({
+      qz: names !== null, names: names ?? [],
+      zebra: names ? await defaultPrinter('royalMail') : null, dpd: names ? await defaultDpdPrinter() : null,
+    });
+  }
+  // BOOK DPD (owner, 2026-11-19 — server utils/amzInbound.js → BOOK DPD): the booking in flight and what it said; the DPD labels' print.
+  const [dpdPrinter, setDpdPrinter] = useState(loadDpdPrinter);
+  const [dpdFormat, setDpdFormat] = useState(loadDpdFormat);
+  const [dpdBusy, setDpdBusy] = useState(false);
+  const [dpdMsg, setDpdMsg] = useState<{ error?: string; test?: string } | null>(null);
+  const [dpdLabelBusy, setDpdLabelBusy] = useState(false);
+  const [dpdPrintMsg, setDpdPrintMsg] = useState<{ ok?: string; error?: string } | null>(null);
+  // TEMP (2026-11-19): the DPD label test panel at the bottom of the screen — remove with routes/dpd-test-label.js once signed off.
+  const [testParcels, setTestParcels] = useState(2);
+  const [testConfirm, setTestConfirm] = useState(false);
+  const [testBusy, setTestBusy] = useState(false);
+  const [testResult, setTestResult] = useState<DpdTestLabel | null>(null);
+  const [testMsg, setTestMsg] = useState<{ ok?: string; error?: string } | null>(null);
+  // The DPD printer + format picker: on the booked notice (Book DPD) and in the test panel. Never lists a Zebra.
+  const dpdPicker = (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="shrink-0 text-slate-500">DPD labels print on</span>
+      <select
+        value={dpdPrinter}
+        onFocus={() => void loadPrinters()}
+        onMouseDown={() => void loadPrinters()}
+        onChange={(e) => { setDpdPrinter(e.target.value); saveDpdPrinter(e.target.value); }}
+        className="h-7 min-w-0 flex-1 rounded border border-slate-300 bg-white px-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+      >
+        <option value="">The DPD printer{printers?.dpd ? ` (${printers.dpd})` : printers?.qz ? ' (not found by name: pick it)' : ''}</option>
+        {printers?.names.filter((n) => !isZebra(n) && (n !== printers.dpd || dpdPrinter === n)).map((n) => <option key={n} value={n}>{n}</option>)}
+        {dpdPrinter && !printers?.names.includes(dpdPrinter) && (
+          <option value={dpdPrinter}>{dpdPrinter}{printers ? ' (not found on this PC)' : ''}</option>
+        )}
+        {printers && !printers.qz && <option disabled value="__noqz__">QZ Tray isn’t running: no printer list</option>}
+      </select>
+      <select
+        value={dpdFormat}
+        onChange={(e) => { const f = e.target.value === 'clp' ? 'clp' : 'epl'; setDpdFormat(f); saveDpdFormat(f); }}
+        title="DPD's label language: EPL (Eltron) or CLP (Citizen) — whichever the DPD printer prints"
+        className="h-7 rounded border border-slate-300 bg-white px-1.5 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500"
+      >
+        <option value="epl">EPL</option>
+        <option value="clp">CLP</option>
+      </select>
+    </div>
+  );
+  // The printer DPD labels go to now: the one picked, else the DPD printer found by name. Null = none on this PC.
+  async function dpdTarget(): Promise<string | null> {
+    return dpdPrinter || printers?.dpd || (await defaultDpdPrinter());
   }
   const pickBoxPrinter = (p: string) => { setBoxPrinter(p); saveBoxPrinter(p); };
   const boxPrinterLabel = boxPrinter === BROWSER_PRINT ? 'the browser’s print' : boxPrinter || 'the Zebra';
@@ -748,6 +830,72 @@ function Packing({ initial, autoBack, onShipped }: {
     setLabelsMsg({ ok: `${res.data.boxes} box ${res.data.boxes === 1 ? 'label' : 'labels'} sent to ${boxPrinterLabel}, and saved to Downloads` });
   }
 
+  // BOOK DPD: our own DPD consignment + the tracking to Amazon (server), then the DPD labels on the DPD printer.
+  async function bookDpd() {
+    setDpdBusy(true);
+    setDpdMsg(null);
+    setDpdPrintMsg(null);
+    const res = await bookAmzDpd();
+    setDpdBusy(false);
+    await inbound.refresh();
+    if (!res.success || !res.data) { setDpdMsg({ error: res.error || 'Couldn’t book DPD' }); return; }
+    if (res.data.test) {
+      setDpdMsg({ test: `Test mode: DPD accepted the details (${res.data.boxes} parcels, ${res.data.kg} kg), but nothing was booked and no tracking was sent. DPD_LIVE=true in the server .env turns booking on.` });
+      return;
+    }
+    if (res.data.trackingError) setDpdMsg({ error: res.data.trackingError });
+    if (res.data.dpd?.canReprint) await printDpdLabels();
+  }
+
+  // The DPD labels → the DPD printer (QZ Tray, raw), and a copy to Downloads. Never the Zebra.
+  async function printDpdLabels() {
+    setDpdLabelBusy(true);
+    setDpdPrintMsg(null);
+    const res = await getAmzDpdLabel(dpdFormat);
+    if (!res.success || !res.data) { setDpdLabelBusy(false); setDpdPrintMsg({ error: res.error || 'Couldn’t get the DPD labels' }); return; }
+    const { data, consignment, parcels } = res.data;
+    saveFile(fromBase64(data), `DPD labels ${consignment}.${dpdFormat}`);
+    const printer = await dpdTarget();
+    const err = printer ? await printRawTo(printer, data) : 'No DPD printer found on this PC: pick it under "DPD labels print on"';
+    setDpdLabelBusy(false);
+    setDpdPrintMsg(err
+      ? { error: `${err}. The label file is in Downloads.` }
+      : { ok: `${parcels} DPD ${parcels === 1 ? 'label' : 'labels'} sent to ${printer}, and saved to Downloads. DPD label 1 goes on Box 1, label 2 on Box 2, and so on.` });
+  }
+
+  // TEMP — the DPD label test (see the panel at the bottom). Books a REAL consignment to our own address; asks first.
+  async function runDpdTest() {
+    if (!testConfirm) { setTestConfirm(true); return; }
+    setTestConfirm(false);
+    setTestBusy(true);
+    setTestMsg(null);
+    const res = await testDpdLabel({ parcels: testParcels, format: dpdFormat });
+    setTestBusy(false);
+    if (!res.success || !res.data) { setTestMsg({ error: res.error || 'The DPD test didn’t work' }); return; }
+    const t = res.data;
+    setTestResult(t);
+    saveFile(JSON.stringify(t.request, null, 2), `DPD test ${t.consignment} request.json`, 'application/json');
+    if (!t.label) { setTestMsg({ error: `Booked ${t.consignment}, but DPD sent no label: ${t.labelError || 'no reason given'}. Void it in MyDPD.` }); return; }
+    await sendTestLabel(t.label, t.consignment || String(t.shipmentId), t.format);
+  }
+  async function sendTestLabel(base64: string, name: string, format: 'epl' | 'clp') {
+    saveFile(fromBase64(base64), `DPD test ${name}.${format}`);
+    const printer = await dpdTarget();
+    const err = printer ? await printRawTo(printer, base64) : 'No DPD printer found on this PC: pick it under "DPD labels print on"';
+    setTestMsg(err
+      ? { error: `${err}. The label file is in Downloads.` }
+      : { ok: `Sent to ${printer} as ${format.toUpperCase()}. Label file and the JSON sent are in Downloads (DPD's sign-off pack). Void ${name} in MyDPD when done.` });
+  }
+  async function printTestAgain() {
+    if (!testResult) return;
+    setTestBusy(true);
+    setTestMsg(null);
+    const res = await testDpdLabel({ shipmentId: testResult.shipmentId, format: dpdFormat });
+    setTestBusy(false);
+    if (!res.success || !res.data?.label) { setTestMsg({ error: res.error || 'DPD sent no label' }); return; }
+    await sendTestLabel(res.data.label, testResult.consignment || String(testResult.shipmentId), dpdFormat);
+  }
+
   // AMAZON UPLOAD (see the header). Fills from the stored boxes and downloads.
   async function onUploadFile(file: File | undefined) {
     if (uploadRef.current) uploadRef.current.value = '';   // so picking the same file again still fires
@@ -1055,10 +1203,50 @@ function Packing({ initial, autoBack, onShipped }: {
                 {printerPicker}
                 {labelsMsg?.ok && <div>{labelsMsg.ok}.</div>}
                 {labelsMsg?.error && <div className="font-semibold text-red-700">{labelsMsg.error}</div>}
+                {/* BOOK DPD — our own DPD only (Amazon's DPD makes its own labels; the server checks the carrier on Amazon too). */}
+                {inboundJob.result.carrier !== 'amazon' && (() => {
+                  const r = inboundJob.result;
+                  if (!r) return null;
+                  const d = r.dpd ?? null;
+                  const tracked = r.tracking?.length ?? 0;
+                  return (
+                    <div className="space-y-1.5 border-t border-emerald-200 pt-1.5">
+                      {d ? (
+                        <div className={d.trackingSent ? '' : 'font-semibold text-amber-800'}>
+                          DPD {d.consignment} booked, {d.parcels.length} {d.parcels.length === 1 ? 'parcel' : 'parcels'}
+                          {d.trackingSent ? ' · tracking sent to Amazon' : ' · the tracking is NOT on Amazon yet'}
+                        </div>
+                      ) : tracked > 0 && (
+                        <div>Amazon has the tracking for {tracked} {tracked === 1 ? 'box' : 'boxes'}. DPD labels: reprint from MyDPD.</div>
+                      )}
+                      <div className="flex flex-wrap gap-1.5">
+                        {(tracked === 0 || (d && !d.trackingSent)) && (
+                          <button type="button" disabled={dpdBusy} onClick={bookDpd}
+                            title={d ? 'The DPD consignment is booked: this sends its tracking to Amazon again (never books twice)'
+                              : 'Books our own DPD (Parcel Next Day) to this warehouse, prints the DPD labels and sends the tracking to Amazon'}
+                            className="flex items-center gap-1.5 rounded border border-emerald-300 bg-white px-2.5 py-1 font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40">
+                            <TruckIcon className="h-4 w-4" />{dpdBusy ? 'Booking DPD…' : d ? 'Send tracking to Amazon again' : 'Book DPD'}
+                          </button>
+                        )}
+                        {d?.canReprint && (
+                          <button type="button" disabled={dpdLabelBusy} onClick={printDpdLabels}
+                            className="flex items-center gap-1.5 rounded border border-emerald-300 bg-white px-2.5 py-1 font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-40">
+                            <PrinterIcon className="h-4 w-4" />{dpdLabelBusy ? 'Getting DPD labels…' : dpdPrintMsg?.ok ? 'Reprint DPD labels' : 'Print DPD labels'}
+                          </button>
+                        )}
+                      </div>
+                      {dpdPicker}
+                      {dpdMsg?.test && <div className="font-semibold text-amber-800">{dpdMsg.test}</div>}
+                      {dpdMsg?.error && <div className="font-semibold text-red-700">{dpdMsg.error}</div>}
+                      {dpdPrintMsg?.ok && <div>{dpdPrintMsg.ok}</div>}
+                      {dpdPrintMsg?.error && <div className="font-semibold text-red-700">{dpdPrintMsg.error}</div>}
+                    </div>
+                  );
+                })()}
                 <div className="text-emerald-700">
                   {inboundJob.result.carrier === 'amazon'
                     ? 'Amazon’s DPD: check the collection and tracking in Seller Central. When DPD collects: Mark shipped here.'
-                    : 'When DPD collects: Mark shipped here, and put the DPD tracking in Seller Central.'}
+                    : 'Book DPD prints the DPD labels on the DPD printer and sends the tracking to Amazon. When DPD collects: Mark shipped here.'}
                 </div>
                 <a href={inboundJob.result.sellerCentral} target="_blank" rel="noreferrer" className="font-semibold underline">Open in Seller Central</a>
               </div>
@@ -1446,6 +1634,53 @@ function Packing({ initial, autoBack, onShipped }: {
             </table>
           )}
         </div>
+      </div>
+
+      {/* TEMP (2026-11-19, owner: "add a temp button at the bottom of the screen for ur test ... we will remove the button once we know
+          it works"). Books a REAL DPD consignment to our own address and prints its labels on the DPD printer: does the TSC print DPD's
+          label (EPL, else CLP), and with 2 parcels, is label n clearly for box n? Saves the label file + the JSON sent (DPD's sign-off
+          pack). Remove this panel, its state/functions above and routes/dpd-test-label.js once the label is signed off. */}
+      <div className="mt-6 space-y-2 rounded-lg border-2 border-dashed border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+        <div className="font-semibold">TEMP · DPD label test</div>
+        <div>
+          Books a <span className="font-semibold">REAL</span> DPD consignment from our address to our address (Parcel Next Day, ref
+          BCWEB LABEL TEST) and prints its labels on the DPD printer. Void it in MyDPD afterwards. The label file and the JSON sent are
+          saved to Downloads for DPD’s sign-off.
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-1.5">
+            <span className="text-slate-500">Parcels</span>
+            <select value={testParcels} onChange={(e) => setTestParcels(Number(e.target.value))}
+              className="h-7 rounded border border-slate-300 bg-white px-1.5 text-xs text-slate-800">
+              {[1, 2, 3].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <div className="min-w-0 flex-1">{dpdPicker}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={testBusy} onClick={runDpdTest}
+            className={'rounded px-3 py-1.5 text-xs font-semibold disabled:opacity-40 '
+              + (testConfirm ? 'bg-red-600 text-white hover:bg-red-700' : 'border border-amber-400 bg-white text-amber-900 hover:bg-amber-100')}>
+            {testBusy ? 'Working…' : testConfirm ? `Book a REAL ${testParcels}-parcel consignment? Click again` : 'Book test label'}
+          </button>
+          {testConfirm && !testBusy && (
+            <button type="button" onClick={() => setTestConfirm(false)}
+              className="rounded border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
+          )}
+          {testResult && (
+            <button type="button" disabled={testBusy} onClick={printTestAgain}
+              className="rounded border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-40">
+              Print again as {dpdFormat.toUpperCase()}
+            </button>
+          )}
+        </div>
+        {testResult && (
+          <div className="font-mono">
+            Consignment {testResult.consignment} · parcels {(testResult.parcels || []).join(', ')} · DPD shipment {String(testResult.shipmentId)}
+          </div>
+        )}
+        {testMsg?.ok && <div className="text-emerald-800">{testMsg.ok}</div>}
+        {testMsg?.error && <div className="font-semibold text-red-700">{testMsg.error}</div>}
       </div>
     </>
   );

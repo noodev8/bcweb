@@ -41,6 +41,17 @@ Booking starts from an AMZ Shipment booked with **our own DPD** (Amazon's DPD pr
    Amazon then holds the numbers, so nothing new is stored (no new table); the consignment number also goes in the bclog line.
 5. **Collections: not now.**
 
-Still to prove: one real label (to our own address, void in MyDPD) for the print test and DPD's sign-off pack.
+## Built 2026-11-19 (not yet used)
+- `utils/dpdApi.js` — THE one place BCWEB calls DPD. Every booking is sent with `?test=true` first; it books for real only when
+  `DPD_LIVE=true` in `.env` (left `false` until DPD signs the label off).
+- `utils/amzInbound.js → BOOK DPD` + `POST /amz-dpd-book`, `GET /amz-dpd-label`: the Book DPD button on AMZ Shipment's booked notice.
+  Weight = Amazon's box weights (same as `amzshipment`). Delivery contact phone = ours (Amazon gives none, DPD requires one).
+  Tracking sent = DPD's 14-digit parcel number per box. (Past shipments have the 27-character DPD barcode typed in instead,
+  e.g. `0SA18QX15976564750699812826` = 0 + postcode + parcel number + service/country; the parcel number is the tracking number.)
+- **TEMP** `POST /dpd-test-label` + the dashed panel at the bottom of AMZ Shipment: books a REAL 1–3 parcel consignment to our own
+  address, prints it on the DPD printer, saves the label + JSON to Downloads. Remove both once signed off.
+
+Still to prove (with the temp panel): the TSC prints DPD's label (EPL, else CLP); with 2 parcels, label n is clearly box n
+("1 of 2"); Amazon accepts the 14-digit parcel number as tracking. Then DPD's sign-off pack, then `DPD_LIVE=true` (VPS too).
 
 Not in this spec: tracking, cancel/void, collections — ask DPD Customer Integration for those.

@@ -39,8 +39,10 @@ GET /amz-inbound-status:
               After the placement confirm nothing is ever cancelled automatically: a later failure says so and points to Seller Central.
  10. LABELS   the FBA15 id read back; the screen then fetches the box labels (labels() below: v0 getLabels, PackageLabel_Thermal,
               one 4×6 page per box in box order) and prints them on the Zebra.
+ 11. BOOK DPD its own button after Confirm, our own DPD only (2026-11-19): DPD consignment + labels on the DPD printer, and the tracking
+              sent to Amazon straight away. See BOOK DPD below.
 
-COSTS. Every write goes through post()/put(), which allow only the paths in ALLOWED. The two confirms that can cost money carry a second
+COSTS. Every write goes through post()/put(), which allow only the paths in ALLOWED (the tracking PUT only with DPD parcel numbers). The two confirms that can cost money carry a second
 check on the ids themselves: a placement confirm only for an option vetted as ONE shipment, a transportation confirm only for an option
 vetted at the confirm as the DPD the owner chose (own: no quote; Amazon's: priced at or under what the box showed). No other carrier,
 Amazon's UPS included, can ever be confirmed. A run that fails before the placement confirm cancels its plan (free).
@@ -56,6 +58,7 @@ half-made draft (or finds the booked shipment) and carries on from there.
 */
 
 const sp = require('./amzSpApi');
+const dpdApi = require('./dpdApi');
 const { query } = require('../database');
 const { logActivity } = require('./bclog');
 const logger = require('./logger');
@@ -91,9 +94,12 @@ const ALLOWED = [
   new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`),           // confirmTransportationOptions — vetted chosen-DPD ids only
   new RegExp(`${P}\\/[^/]+\\/cancellation$`),                                   // cancelInboundPlan (unconfirmed only)
   LISTING,                                                                      // patchListingsItem — package size / weight ONLY (fillPackageSize)
+  new RegExp(`${P}\\/[^/]+\\/shipments\\/[^/]+\\/trackingDetails$`),            // updateShipmentTrackingDetails — DPD parcel numbers only (bookDpd)
 ];
 const PLACEMENT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/placementOptions\\/([^/]+)\\/confirmation$`);
 const TRANSPORT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`);
+const TRACKING = new RegExp(`${P}\\/[^/]+\\/shipments\\/[^/]+\\/trackingDetails$`);
+const DPD_PARCEL = /^\d{14}$/; // DPD's parcel number (spec v3.2: "the 14 digit number used to track the parcel")
 // Filled ONLY by the rule checks below (run()'s kept one-shipment options / pickDpd). The guard refuses a confirm for any id not in them.
 const vettedPlacement = new Set();
 const vettedTransport = new Set();
@@ -112,6 +118,13 @@ function guard(path, body) {
     const sel = (body && body.transportationSelections) || [];
     if (!sel.length || !sel.every((s) => vettedTransport.has(s.transportationOptionId))) {
       throw new Error('BLOCKED: transportation option not checked as the DPD chosen');
+    }
+  }
+  if (TRACKING.test(path)) { // small-parcel tracking only, every id a DPD parcel number — never LTL, never anything else
+    const t = (body && body.trackingDetails) || {};
+    const items = (t.spdTrackingDetail && t.spdTrackingDetail.spdTrackingItems) || [];
+    if (t.ltlTrackingDetail || !items.length || !items.every((x) => x.boxId && DPD_PARCEL.test(String(x.trackingId)))) {
+      throw new Error('BLOCKED: tracking here may only be DPD parcel numbers, one per box');
     }
   }
 }
@@ -239,8 +252,15 @@ async function describeBooked(plan) {
     warehouse: d.warehouseId || null, town: titleCase(d.address && d.address.city),
     carrierSet: !!(sh && sh.selectedTransportationOptionId),
     window: w ? { start: String(w.startDate || '').slice(0, 10), end: String(w.endDate || '').slice(0, 10) } : null,
+    tracking: trackingOf(sh), // the tracking Amazon holds per box (Book DPD sends it), in box order
     sellerCentral: sellerCentral(plan.inboundPlanId),
   };
+}
+// [{ boxId, trackingId }] from a getShipment reply, U000001 first (read 2026-11-19 on FBA15MY3PC4M: spdTrackingDetail.spdTrackingItems).
+function trackingOf(sh) {
+  const items = (sh && sh.trackingDetails && sh.trackingDetails.spdTrackingDetail && sh.trackingDetails.spdTrackingDetail.spdTrackingItems) || [];
+  return items.filter((x) => x.boxId && x.trackingId).map((x) => ({ boxId: x.boxId, trackingId: String(x.trackingId) }))
+    .sort((a, b) => a.boxId.localeCompare(b.boxId));
 }
 
 // A booked plan whose items are exactly these boxes' SKU totals = this shipment, already booked.
@@ -408,7 +428,13 @@ let seq = 0;
 let booked = null;     // the booked shipment while its boxes are frozen: { planId, shipmentId, fba, … } (see BOOKED = FROZEN BOXES)
 let recovered = false; // recover() has asked Amazon once since this process started
 
-function snapshot() { return job ? JSON.parse(JSON.stringify(job)) : null; }
+// The job as the screen sees it, with this process's DPD booking (BOOK DPD below) on the booked result.
+function snapshot() {
+  if (!job) return null;
+  const s = JSON.parse(JSON.stringify(job));
+  if (s.result && dpd && dpd.amzShipmentId === s.result.shipmentId) s.result.dpd = dpdView();
+  return s;
+}
 
 function say(text) {
   job.step = text;
@@ -787,12 +813,106 @@ async function labels() {
   return { pdf, fba: b.fba, boxes: ids.length };
 }
 
+// ---- BOOK DPD: our own DPD for the booked shipment (owner, 2026-11-19 — docs/dpd/NOTES.md) ------------------------------------------
+// Its own button on the booked notice, after Confirm (owner: "for now do it as a different button"). Only for a shipment booked with OUR
+// OWN DPD (Amazon's DPD makes its own labels): the selected transportation option is read back from Amazon and must be
+// USE_YOUR_OWN_CARRIER / DPDX. One press:
+//   1. DPD  one consignment, Parcel Next Day (owner), from our address to Amazon's warehouse (getShipment's destination; Amazon gives no
+//           phone and DPD requires one, so the contact phone is ours). Parcels = Amazon's boxes, weight = their kg added up, ref 1 =
+//           the FBA15 id, ref 2 = the warehouse. Validated with ?test=true first; booked for real only when DPD_LIVE=true (utils/dpdApi.js).
+//   2. AMAZON  the tracking straight away (owner: "send the tracking to amz right away"): box U00000n → DPD parcel n, in order.
+//           Amazon then holds the numbers, so nothing is stored here (no table); a restart reads them back (describeBooked.tracking).
+//   The screen then prints DPD's labels on the DPD printer (never the Zebra, owner) — dpdLabel().
+// NEVER BOOKED TWICE: a shipment Amazon already has tracking for is refused, and a booking this process made whose tracking didn't
+// reach Amazon is re-sent on the next press, not booked again. Held in memory until Mark shipped (clearBooked).
+let dpd = null;        // { amzShipmentId, fba, dpdShipmentId, consignment, parcels: ['15976…'], trackingSent }
+let dpdBusy = false;
+
+const dpdView = () => (dpd ? { consignment: dpd.consignment, parcels: dpd.parcels, trackingSent: dpd.trackingSent, canReprint: !!dpd.dpdShipmentId } : null);
+const kgOf = (w) => { const v = Number((w && w.value) || 0); return w && /^lb/i.test(String(w.unit || '')) ? v * 0.45359237 : v; };
+
+// Returns { error: 'BUSY' | 'NOT_BOOKED' | 'NOT_OWN_DPD' | 'ALREADY' | 'PARCEL_COUNT', … } | { test: true, … } | { dpd, trackingError? }.
+async function bookDpd({ by }) {
+  if (dpdBusy) return { error: 'BUSY' };
+  dpdBusy = true;
+  try {
+    let b = booked && booked.fba ? booked : null;
+    if (!b) {
+      b = await findBooked();
+      if (b) booked = b;
+    }
+    if (!b || !b.fba) return { error: 'NOT_BOOKED' };
+    const sh = await get(`${BASE}/inboundPlans/${b.planId}/shipments/${b.shipmentId}`);
+    const opts = await listAll(`${BASE}/inboundPlans/${b.planId}/transportationOptions`, { shipmentId: b.shipmentId, pageSize: 20 }, 'transportationOptions');
+    const sel = opts.find((o) => o.transportationOptionId === sh.selectedTransportationOptionId);
+    if (!sel || sel.shippingSolution !== 'USE_YOUR_OWN_CARRIER' || !isDpd(sel)) return { error: 'NOT_OWN_DPD' };
+    const have = trackingOf(sh);
+    if (have.length) return { error: 'ALREADY', tracking: have };
+    const boxes = (await listAll(`${BASE}/inboundPlans/${b.planId}/shipments/${b.shipmentId}/boxes`, { pageSize: 100 }, 'boxes'))
+      .filter((x) => x.boxId).sort((x, y) => x.boxId.localeCompare(y.boxId)); // Amazon lists them out of order; U000001 first
+    if (!boxes.length) throw new Error(`Amazon has no boxes on ${b.fba}`);
+    const kg = boxes.reduce((n, x) => n + kgOf(x.weight), 0);
+
+    let d = dpd && dpd.amzShipmentId === b.shipmentId ? dpd : null;
+    if (!d) {
+      const a = (sh.destination && sh.destination.address) || {};
+      const wh = (sh.destination && sh.destination.warehouseId) || b.warehouse || '';
+      const r = await dpdApi.book({
+        delivery: {
+          organisation: a.name || a.companyName || `Amazon ${wh}`, street: a.addressLine1, locality: a.addressLine2 || '',
+          town: a.city, county: a.stateOrProvinceCode || '', postcode: a.postalCode,
+          contactName: `Amazon ${wh}`.trim(), telephone: process.env.DPD_COLLECT_PHONE,
+        },
+        parcels: boxes.length, totalKg: kg,
+        collectionDate: dpdApi.collectionDate(job && job.result && job.result.shipmentId === b.shipmentId ? job.result.readyDate : null),
+        refs: [b.fba, wh],
+      }, { live: dpdApi.isLive() });
+      if (r.test) {
+        logActivity({ who: by, section: 'AMZ Shipment', log: `Book DPD (test mode, nothing booked): ${b.fba} to ${wh}, ${boxes.length} parcels, ${kg.toFixed(1)} kg — DPD accepted the details` });
+        return { test: true, boxes: boxes.length, kg: Math.round(kg * 10) / 10 };
+      }
+      d = { amzShipmentId: b.shipmentId, fba: b.fba, dpdShipmentId: r.shipmentId, consignment: r.consignment, parcels: r.parcels, trackingSent: false };
+      dpd = d;
+      logActivity({ who: by, section: 'AMZ Shipment', log: `Book DPD: ${b.fba} to ${wh}, consignment ${r.consignment}, ${r.parcels.length} parcels (${r.parcels.join(', ')}), ${kg.toFixed(1)} kg, Parcel Next Day` });
+    }
+    if (d.parcels.length !== boxes.length || !d.parcels.every((p) => DPD_PARCEL.test(p))) {
+      return { error: 'PARCEL_COUNT', dpd: dpdView(), message: `DPD gave ${d.parcels.length} parcel numbers for ${boxes.length} boxes, so no tracking was sent to Amazon. Put it in Seller Central by hand.` };
+    }
+
+    const items = boxes.map((x, i) => ({ boxId: x.boxId, trackingId: d.parcels[i] }));
+    try {
+      await waitOp((await put(`${BASE}/inboundPlans/${b.planId}/shipments/${b.shipmentId}/trackingDetails`, {
+        trackingDetails: { spdTrackingDetail: { spdTrackingItems: items } },
+      })).operationId, 'Sending the DPD tracking to Amazon');
+    } catch (e) {
+      logger.error('[amzInbound] DPD tracking to Amazon failed:', e.message);
+      return { dpd: dpdView(), trackingError: `${e.message}. The DPD consignment IS booked: press Book DPD again to resend the tracking (it won't book twice).` };
+    }
+    d.trackingSent = true;
+    booked.tracking = items;
+    if (job && job.result && job.result.shipmentId === b.shipmentId) job.result.tracking = items;
+    logActivity({ who: by, section: 'AMZ Shipment', log: `Book DPD: tracking sent to Amazon for ${b.fba}, ${items.length} boxes (consignment ${d.consignment})` });
+    return { dpd: dpdView() };
+  } finally {
+    dpdBusy = false;
+  }
+}
+
+// The DPD labels of this process's booking (raw printer commands, base64), or { none } (nothing booked here, or the server restarted
+// since: reprint from MyDPD). format 'epl' | 'clp'.
+async function dpdLabel({ format }) {
+  if (!dpd || !dpd.dpdShipmentId) return { none: true };
+  const buf = await dpdApi.label(dpd.dpdShipmentId, format);
+  return { data: buf.toString('base64'), consignment: dpd.consignment, parcels: dpd.parcels.length, fba: dpd.fba };
+}
+
 // Pack / Delete ask this. Null = boxes may change.
 const frozen = () => (booked ? { fba: booked.fba, warehouse: booked.warehouse || null } : null);
 
 // Mark shipped: the boxes have gone, the freeze ends and the booked notice clears.
 function clearBooked() {
   booked = null;
+  dpd = null;
   if (job && job.state === 'done') job = null;
 }
 
@@ -818,7 +938,7 @@ async function recover() {
 }
 
 module.exports = {
-  start, carriers, confirm, cancel, labels, frozen, clearBooked, recover, status: snapshot,
+  start, carriers, confirm, cancel, labels, bookDpd, dpdLabel, frozen, clearBooked, recover, status: snapshot,
   readBoxes, checkBoxes, ALLOWED,
   // rule checks, exported for a dry test
   onePlacements, ownDpd, amazonDpd, quoteOf, windowFor, readyStart, londonAt,

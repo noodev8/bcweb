@@ -3498,6 +3498,38 @@ export interface AmzInboundBooked {
   carrierSet: boolean; window: { start: string; end: string } | null; readyDate?: string;
   boxes: number; units: number; already: boolean; sellerCentral: string;
   carrier?: 'own' | 'amazon'; carrierCost?: number | null;   // set when booked by this run (not after a restart)
+  tracking?: { boxId: string; trackingId: string }[];        // the tracking Amazon holds per box (Book DPD sends it)
+  dpd?: AmzDpdBooking | null;                                // Book DPD's booking, since the server last started
+}
+// BOOK DPD (owner, 2026-11-19 — server utils/amzInbound.js → BOOK DPD): our own DPD consignment for the booked shipment, the tracking
+// sent to Amazon straight away, the labels for the DPD printer.
+export interface AmzDpdBooking { consignment: string; parcels: string[]; trackingSent: boolean; canReprint: boolean; }
+export function bookAmzDpd() {
+  // DPD's check + booking, then Amazon's tracking operation: can run well past the shared 15s timeout.
+  return request<{ test: boolean; boxes: number; kg: number; dpd: AmzDpdBooking | null; trackingError: string | null }>(
+    { url: '/amz-dpd-book', method: 'POST', data: {}, timeout: 300000 },
+    (b) => ({
+      test: !!b.test, boxes: Number(b.boxes || 0), kg: Number(b.kg || 0),
+      dpd: (b.dpd as AmzDpdBooking) || null, trackingError: (b.trackingError as string) || null,
+    }));
+}
+// The DPD labels as raw printer commands (base64) for the DPD printer — never the Zebra.
+export function getAmzDpdLabel(format: 'epl' | 'clp') {
+  return request<{ data: string; consignment: string; parcels: number; fba: string }>(
+    { url: '/amz-dpd-label', method: 'GET', params: { format }, timeout: 60000 },
+    (b) => ({ data: String(b.data || ''), consignment: String(b.consignment || ''), parcels: Number(b.parcels || 0), fba: String(b.fba || '') }));
+}
+// TEMP (2026-11-19): the DPD label test — books a REAL consignment to our own address (void it in MyDPD), or with shipmentId just the
+// label again. Remove with routes/dpd-test-label.js once the label is signed off.
+export interface DpdTestLabel {
+  shipmentId: number | string; consignment?: string; parcels?: string[]; request?: unknown;
+  label: string | null; labelError?: string | null; format: 'epl' | 'clp';
+}
+export function testDpdLabel(args: { parcels?: number; shipmentId?: number | string; format: 'epl' | 'clp' }) {
+  return request<DpdTestLabel>({ url: '/dpd-test-label', method: 'POST', data: args, timeout: 120000 }, (b) => ({
+    shipmentId: b.shipmentId as number, consignment: b.consignment as string | undefined, parcels: b.parcels as string[] | undefined,
+    request: b.request, label: (b.label as string) || null, labelError: (b.labelError as string) || null, format: (b.format as 'epl' | 'clp') || 'epl',
+  }));
 }
 export interface AmzInboundJob {
   id: number; by: string; startedAt: string; finishedAt: string | null;

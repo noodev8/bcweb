@@ -22,6 +22,8 @@ ONE CHOICE (owner, 2026-11-17: "let user choose a printer"): AMZ Shipment's box 
 that screen and remembered per PC (listPrinters + printPdfTo below). Left on its default they go to the Zebra as above. The Royal Mail
 and FNSKU labels still find their printer by name.
 
+DPD LABELS (2026-11-19): raw printer commands to the DPD printer (TSC DA200), never the Zebra — see printRawTo below.
+
 FALLBACK, never a lost label. printLabel() resolves true only when QZ Tray took the job. Anything else — QZ Tray not running, no such
 printer on this PC, the job refused — resolves false and the caller prints the old way (hidden iframe + window.print(): the dialog, or
 silent under the kiosk shortcut). A failed connection is not retried for a minute, so a PC without QZ Tray doesn't wait on it at every
@@ -127,6 +129,45 @@ export async function printPdfTo(printer: string, base64: string): Promise<boole
   } catch (err) {
     console.warn('[labelPrinter] QZ Tray print failed, printing through the browser:', err);
     return false;
+  }
+}
+
+// ---- DPD labels: RAW printer commands to the DPD printer (owner, 2026-11-19 — docs/dpd/NOTES.md) -------------------------------------
+// DPD sends its labels as printer commands (Eltron EPL / Citizen CLP), not a PDF. A browser can't send those to a printer; QZ Tray can
+// (type 'raw'), so they go through it to the DPD printer — the TSC DA200 (name has TSC or DA200), NEVER the Zebra (owner: "dpd labels
+// need to go to the dpd printer NOT zebra"). No browser fallback exists for raw commands: false = not printed, and the screen says so
+// (the file is saved to Downloads either way).
+const DPD_PRINTER = /tsc|da200/i;
+/** A printer name that is the Zebra — DPD labels are refused there. */
+export const isZebra = (name: string) => PRINTER_NAME.royalMail.test(name);
+
+/** The DPD printer on this PC found by name (TSC / DA200), or null. */
+export async function defaultDpdPrinter(): Promise<string | null> {
+  try {
+    const qz = await qzTray();
+    if (!qz) return null;
+    const found = await qz.printers.find();
+    const matches = (Array.isArray(found) ? found : [found]).filter((p) => DPD_PRINTER.test(p) && !isZebra(p));
+    return matches.find((p) => !/copy/i.test(p)) ?? matches[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** DPD's raw label commands (base64) to a printer by name. Never a Zebra. Resolves an error text, or null when QZ Tray took the job. */
+export async function printRawTo(printer: string, base64: string): Promise<string | null> {
+  if (!printer) return 'No DPD printer picked';
+  if (isZebra(printer)) return 'DPD labels never go to the Zebra. Pick the DPD printer.';
+  try {
+    const qz = await qzTray();
+    if (!qz) return 'QZ Tray isn’t running on this PC, so the DPD labels can’t print here';
+    const found = await qz.printers.find();
+    if (!(Array.isArray(found) ? found : [found]).includes(printer)) return `${printer} isn’t on this PC`;
+    await qz.print(qz.configs.create(printer), [{ type: 'raw', format: 'command', flavor: 'base64', data: base64 }]);
+    return null;
+  } catch (err) {
+    console.warn('[labelPrinter] QZ Tray raw print failed:', err);
+    return `The DPD printer refused the job (${err instanceof Error ? err.message : String(err)})`;
   }
 }
 
