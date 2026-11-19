@@ -22,6 +22,8 @@ GET /amz-inbound-status:
   5. BOXES    setPackingInformation: every box's SKUs and quantities, CM / KG, in our box order (Amazon numbers them U000001… in that order).
   6. WAREHOUSE generatePlacementOptions → ONLY an option with exactly ONE shipment (NEVER SPLIT, REGARDLESS OF PRICE — owner). None →
               STOP, plan cancelled. NOT confirmed yet: the job waits in state 'confirm' showing the warehouse and Amazon's fee.
+              Amazon may offer several one-shipment options, one for our own carriers and one for its partnered ones (2026-11-19):
+              all to the same warehouse at the same fee are kept, and the DPD chosen picks which is booked (onePlacements).
   ── THE ONE CONFIRM BOX (owner picks the ready-to-ship date, then the carrier, presses Confirm; Cancel = cancelInboundPlan, free) ──
      Picking a date asks Amazon for the carriers for that date (carriers(), free: generate + list only) and shows the two DPDs:
      OUR OWN DPD (USE_YOUR_OWN_CARRIER / GROUND_SMALL_PARCEL / DPDX, no quote, Amazon charges nothing) and AMAZON'S DPD
@@ -92,7 +94,7 @@ const ALLOWED = [
 ];
 const PLACEMENT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/placementOptions\\/([^/]+)\\/confirmation$`);
 const TRANSPORT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`);
-// Filled ONLY by the rule checks below (onePlacement / pickDpd). The guard refuses a confirm for any id not in them.
+// Filled ONLY by the rule checks below (run()'s kept one-shipment options / pickDpd). The guard refuses a confirm for any id not in them.
 const vettedPlacement = new Set();
 const vettedTransport = new Set();
 
@@ -226,7 +228,9 @@ const isBooked = (plan) => (plan.placementOptions || []).some((o) => o.status ==
 
 // What the screen shows of a booked shipment (and what labels() needs).
 async function describeBooked(plan) {
-  const sid = ((plan.shipments || [])[0] || {}).shipmentId;
+  // The ACCEPTED placement's shipment: a plan can carry one shipment per placement option offered (see onePlacements).
+  const acc = (plan.placementOptions || []).find((o) => o.status === 'ACCEPTED');
+  const sid = (acc && (acc.shipmentIds || [])[0]) || ((plan.shipments || [])[0] || {}).shipmentId;
   const sh = sid ? await get(`${BASE}/inboundPlans/${plan.inboundPlanId}/shipments/${sid}`).catch(() => null) : null;
   const d = (sh && sh.destination) || {};
   const w = (sh && sh.selectedDeliveryWindow) || null;
@@ -342,11 +346,13 @@ async function fillPackageSize(mskus) {
 const DIMENSIONS_REFUSED = /dimensions need to be provided|missing necessary information/i;
 
 // ---- the rules on Amazon's options ------------------------------------------------------------------------------------------------
-// NEVER SPLIT: an option with exactly one shipment, whatever it costs (price never decides). Amazon's first if there are several.
-function onePlacement(options) {
-  const o = options.find((x) => (x.shipmentIds || []).length === 1);
-  if (o) vettedPlacement.add(o.placementOptionId);
-  return o || null;
+// NEVER SPLIT: an option with exactly one shipment, whatever it costs (price never decides). Finder only: run() vets the ones it keeps.
+// SEVERAL ONE-SHIPMENT OPTIONS, ONE PER CARRIER KIND (read 2026-11-19 on wff955e362…): Amazon offered two, both CWL1 and £0 — one
+// listing only our own carriers, the other only its partnered ones (its DPD £59.14). Taking just the first hid Amazon's DPD (Seller
+// Central shows both). So every one-shipment option to the SAME warehouse at the SAME fee as Amazon's first is kept (the confirm box
+// is then true for any of them), and the carrier chosen decides which one is booked.
+function onePlacements(options) {
+  return options.filter((x) => (x.shipmentIds || []).length === 1);
 }
 // THE TWO DPDs. Both are carrier DPDX, so the shippingSolution decides (test plan). Finders only; pickDpd vets the one chosen.
 const forShipment = (x, shipmentId) => !x.shipmentId || x.shipmentId === shipmentId;
@@ -565,13 +571,21 @@ async function run(boxes, totals) {
     say('Getting the warehouse');
     await waitOp((await post(`${BASE}/inboundPlans/${planId}/placementOptions`)).operationId, 'Getting warehouses');
     const places = await listAll(`${BASE}/inboundPlans/${planId}/placementOptions`, {}, 'placementOptions');
-    const place = onePlacement(places);
-    if (!place) throw new Stop(`Amazon only offers to SPLIT this shipment over ${Math.min(...places.map((o) => (o.shipmentIds || []).length)) || 'several'} warehouses. We never split.`);
+    const singles = onePlacements(places);
+    if (!singles.length) throw new Stop(`Amazon only offers to SPLIT this shipment over ${Math.min(...places.map((o) => (o.shipmentIds || []).length)) || 'several'} warehouses. We never split.`);
+    const place = singles[0];
     const shipmentId = place.shipmentIds[0];
     const sh = await get(`${BASE}/inboundPlans/${planId}/shipments/${shipmentId}`);
     const dest = sh.destination || {};
+    const options = [{ placementOptionId: place.placementOptionId, shipmentId }];
+    for (const o of singles.slice(1)) { // same warehouse, same fee as the first, or left out (see onePlacements)
+      if (feeTotal(o.fees) !== feeTotal(place.fees)) continue;
+      const s2 = await get(`${BASE}/inboundPlans/${planId}/shipments/${o.shipmentIds[0]}`);
+      if ((s2.destination || {}).warehouseId === dest.warehouseId) options.push({ placementOptionId: o.placementOptionId, shipmentId: o.shipmentIds[0] });
+    }
+    for (const o of options) vettedPlacement.add(o.placementOptionId);
 
-    ctx = { planId, placementOptionId: place.placementOptionId, shipmentId, qtyBySku };
+    ctx = { planId, options, qtyBySku };
     job.state = 'confirm';
     job.confirm = {
       warehouse: dest.warehouseId || '?', town: titleCase(dest.address && dest.address.city),
@@ -588,7 +602,7 @@ async function run(boxes, totals) {
   }
 }
 
-// Transport options for the waiting plan: generate for a ready-to-ship date (free), and list.
+// Transport options for one kept placement option c = { planId, placementOptionId, shipmentId }: generate for a ready date (free), list.
 const listTransport = (c) => listAll(`${BASE}/inboundPlans/${c.planId}/transportationOptions`, { placementOptionId: c.placementOptionId, pageSize: 20 }, 'transportationOptions');
 async function genTransport(c, readyDate) {
   await waitOp((await post(`${BASE}/inboundPlans/${c.planId}/transportationOptions`, {
@@ -597,16 +611,28 @@ async function genTransport(c, readyDate) {
   })).operationId, 'Getting carriers');
 }
 const goodDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || '')) && d >= todayLondon();
+const finderFor = (carrier) => (carrier === 'amazon' ? amazonDpd : ownDpd);
+
+// Every kept placement option (see onePlacements), each with its transport options for the date: [{ c, opts }]. Free.
+async function transportByPlacement(readyDate) {
+  const out = [];
+  for (const o of ctx.options) {
+    const c = { planId: ctx.planId, ...o };
+    await genTransport(c, readyDate);
+    out.push({ c, opts: await listTransport(c) });
+  }
+  return out;
+}
 
 // THE CONFIRM BOX's carriers for the date picked: is our own DPD offered, and Amazon's DPD with its price. Free (generate + list).
 // Returns { error } | { carriers: { readyDate, own, amazon: { cost, currency, voidableUntil, expires } | null } }.
 async function carriers({ id, readyDate }) {
   if (!job || job.id !== Number(id) || job.state !== 'confirm' || !ctx) return { error: 'NOT_WAITING' };
   if (!goodDate(readyDate)) return { error: 'BAD_DATE' };
-  const c = ctx;
-  await genTransport(c, readyDate);
-  const opts = await listTransport(c);
-  return { carriers: { readyDate, own: !!ownDpd(opts, c.shipmentId), amazon: priceOf(amazonDpd(opts, c.shipmentId)) } };
+  const all = await transportByPlacement(readyDate);
+  const own = all.some(({ c, opts }) => ownDpd(opts, c.shipmentId));
+  const amz = all.map(({ c, opts }) => amazonDpd(opts, c.shipmentId)).find(Boolean) || null;
+  return { carriers: { readyDate, own, amazon: priceOf(amz) } };
 }
 
 // THE CONFIRM BOX's Confirm. carrier 'own' | 'amazon'; for Amazon's DPD, maxCost = the price the box showed (never paid above it).
@@ -637,16 +663,18 @@ async function confirm({ id, readyDate, carrier, maxCost, expect }) {
 
 // Steps 7–10. carrier 'own' | 'amazon'; maxCost = Amazon's DPD price the box showed.
 async function book(readyDate, carrier, maxCost) {
-  const c = ctx;
-  const { planId, placementOptionId, shipmentId } = c;
+  const planId = ctx.planId;
   const name = carrierName(carrier);
   const own = carrier !== 'amazon';
   let placed = false;
   try {
-    // 7. The chosen DPD, for the chosen date — before anything is confirmed
+    // 7. The chosen DPD, for the chosen date — before anything is confirmed. The kept placement option that offers it is the one booked.
     say(`Getting ${name}`);
-    await genTransport(c, readyDate);
-    let dpd = pickDpd(await listTransport(c), shipmentId, carrier, maxCost);
+    const all = await transportByPlacement(readyDate);
+    const hit = all.find(({ c: x, opts }) => finderFor(carrier)(opts, x.shipmentId)) || all[0];
+    const c = hit.c;
+    const { placementOptionId, shipmentId } = c;
+    let dpd = pickDpd(hit.opts, shipmentId, carrier, maxCost); // none offered anywhere → Stop; Amazon's dearer → Requote
 
     // 8. Delivery window (our own DPD only) — before anything is confirmed
     const listWindows = () => listAll(`${BASE}/inboundPlans/${planId}/shipments/${shipmentId}/deliveryWindowOptions`, {}, 'deliveryWindowOptions');
@@ -793,5 +821,5 @@ module.exports = {
   start, carriers, confirm, cancel, labels, frozen, clearBooked, recover, status: snapshot,
   readBoxes, checkBoxes, ALLOWED,
   // rule checks, exported for a dry test
-  onePlacement, ownDpd, amazonDpd, quoteOf, windowFor, readyStart, londonAt,
+  onePlacements, ownDpd, amazonDpd, quoteOf, windowFor, readyStart, londonAt,
 };
