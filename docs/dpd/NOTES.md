@@ -30,10 +30,17 @@ Windows user (env is case-insensitive and dotenv doesn't override), giving a 401
 - **Sign-off:** before live use DPD wants a test pack (labels BCWEB produced + the shipment JSON),
   ~48 h feedback, then one final pack with live details. MyDPD dispatching does NOT count.
 
-## Open decisions (owner)
-1. Where booking starts: per order, or a daily dispatch list.
-2. Default service + weight, or chosen each time.
-3. Store consignment number against the order (new table) — enables Shopify tracking later.
-4. Print route (see above) — needs one real label test (void it afterwards).
+## Decisions (owner, 2026-11-19) — Amazon shipments first
+Booking starts from an AMZ Shipment booked with **our own DPD** (Amazon's DPD prints its own labels — none of this applies).
+1. **Its own button** ("Book DPD") on the booked notice, after Confirm — not inside Confirm (for now).
+2. **Parcel Next Day `2^12`**, always. One consignment: delivery = Amazon's warehouse (`getShipment` destination),
+   `numberOfParcels` = box count, `totalWeight` = the boxes' kg from `amzshipment`, `shippingRef1` = FBA15 id.
+3. **DPD labels print on the DPD printer (TSC DA200), NEVER the Zebra.** Raw printer string (EPL first) through QZ Tray, which
+   already runs on the dispatch PC — untested whether the TSC takes EPL.
+4. **Tracking goes to Amazon straight away** after booking (`updateShipmentTrackingDetails`, box U00000n → DPD parcel n).
+   Amazon then holds the numbers, so nothing new is stored (no new table); the consignment number also goes in the bclog line.
+5. **Collections: not now.**
+
+Still to prove: one real label (to our own address, void in MyDPD) for the print test and DPD's sign-off pack.
 
 Not in this spec: tracking, cancel/void, collections — ask DPD Customer Integration for those.
