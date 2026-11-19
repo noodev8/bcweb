@@ -1,7 +1,7 @@
 # DPD Local API — handover notes (throwaway, 2026-11-19)
 
 Goal: book DPD parcels and print labels from BCWEB, built into the AMZ Shipment page area.
-Spec: "DPD Local API Domestic Specification v3.2.pdf" (owner has it — ask for a copy).
+Spec: `docs/DPD Local API Domestic Specification v3.2.pdf`.
 
 ## Proven so far (scratch node scripts, nothing built yet)
 - **Login** works: `POST https://api.dpdlocal.co.uk/user/?action=login`, header
