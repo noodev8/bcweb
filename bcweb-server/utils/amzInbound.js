@@ -13,6 +13,8 @@ GET /amz-inbound-status:
               press starts clean (owner: "dont want to send wrong info - can it not clear any drafts and then go?").
   2. PREP     Amazon decides prep per SKU (prepDetails). Each SKU gets the owner Amazon allows: NONE, or SELLER for the ~57 "textile"
               ones (they go in shoe boxes as always, owner). AMAZON-only prep or labelling would cost money, so it STOPS.
+     2b. SIZE  a SKU Amazon's catalogue has no package size / weight for gets 30 × 15 × 10 cm / 1 kg on our listing, only what is
+              missing (fillPackageSize, owner 2026-11-19); without it Amazon refuses the plan.
   3. PLAN     createInboundPlan from the stored packed boxes (amzshipment, read at the press; "your box" never goes), our Welshpool address.
               "WARNING: Address was unable to be verified" comes every time and is harmless (Amazon's docs: warnings "can be ignored").
   4. PACK     generatePackingOptions → ONLY an option with exactly ONE pack group and no fee is confirmed (owner: never more than one).
@@ -69,6 +71,9 @@ function shipFrom() {
   };
 }
 
+const LISTING = /^\/listings\/2021-08-01\/items\/[^/]+\/[^/]+$/;
+const PACKAGE_ATTRS = ['/attributes/item_package_dimensions', '/attributes/item_package_weight'];
+
 // The ONLY writes this util may send to Amazon.
 const ALLOWED = [
   new RegExp(`${P}$`),                                                          // createInboundPlan
@@ -83,6 +88,7 @@ const ALLOWED = [
   new RegExp(`${P}\\/[^/]+\\/shipments\\/[^/]+\\/deliveryWindowOptions\\/[^/]+\\/confirmation$`), // confirmDeliveryWindowOptions (free)
   new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`),           // confirmTransportationOptions — vetted chosen-DPD ids only
   new RegExp(`${P}\\/[^/]+\\/cancellation$`),                                   // cancelInboundPlan (unconfirmed only)
+  LISTING,                                                                      // patchListingsItem — package size / weight ONLY (fillPackageSize)
 ];
 const PLACEMENT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/placementOptions\\/([^/]+)\\/confirmation$`);
 const TRANSPORT_CONFIRM = new RegExp(`${P}\\/[^/]+\\/transportationOptions\\/confirmation$`);
@@ -94,6 +100,12 @@ function guard(path, body) {
   if (!ALLOWED.some((re) => re.test(path))) throw new Error(`BLOCKED: ${path} is not an allowed Amazon write`);
   const pm = path.match(PLACEMENT_CONFIRM);
   if (pm && !vettedPlacement.has(pm[1])) throw new Error('BLOCKED: placement option not checked as ONE shipment');
+  if (LISTING.test(path)) { // a listing patch may touch the package size / weight and nothing else (never price, stock, title…)
+    const patches = (body && body.patches) || [];
+    if (!patches.length || !patches.every((x) => x.op === 'replace' && PACKAGE_ATTRS.includes(x.path))) {
+      throw new Error('BLOCKED: a listing patch here may only set the package size / weight');
+    }
+  }
   if (TRANSPORT_CONFIRM.test(path)) {
     const sel = (body && body.transportationSelections) || [];
     if (!sel.length || !sel.every((s) => vettedTransport.has(s.transportationOptionId))) {
@@ -105,6 +117,7 @@ const pace = () => sp.sleep(550); // most inbound operations allow ~2 a second
 async function get(path, q) { const r = await sp.spGet(path, q); await pace(); return r; }
 async function post(path, body) { guard(path, body); const r = await sp.spPost(path, body); await pace(); return r; }
 async function put(path, body) { guard(path, body); const r = await sp.spPut(path, body); await pace(); return r; }
+async function patch(path, body, q) { guard(path, body); const r = await sp.spPatch(path, body, q); await pace(); return r; }
 
 // Every page of a list call. `key` is the array in the reply.
 async function listAll(path, q, key) {
@@ -283,6 +296,51 @@ async function prepFor(mskus) {
   return { owners, sellerPrep: textile };
 }
 
+// PACKAGE SIZE (owner 2026-11-19: "can it be 30, 15, 10 cm and 1kg weight ( for skus that need dimensions )"). Amazon refuses the plan
+// for a SKU its catalogue has no package dimensions for: "This product is missing necessary information; dimensions need to be
+// provided in the manufacturer's original packaging" (2026-11-19: FLE030-IVES-BLACKSOLE-09-2611 had none, FLE030-IVES-GREY-03-2611
+// only a weight). Each SKU's package is read from the catalogue (by SKU, 20 a call); a missing size gets 30 × 15 × 10 cm, a missing
+// weight 1 kg, set on OUR listing (patchListingsItem item_package_dimensions / item_package_weight — Amazon answered VALID in a
+// validation preview on both SKUs). Only what is missing is sent: a weight Amazon already has is never replaced with the guess.
+// Amazon may take a while to take them in, so the plan is still tried; if it refuses for dimensions, the run says to press again.
+const FILL_CM = { length: 30, width: 15, height: 10 };
+const FILL_KG = 1;
+async function fillPackageSize(mskus) {
+  const mkt = sp.marketplaceId();
+  const found = new Map();
+  for (let i = 0; i < mskus.length; i += 20) {
+    const r = await get('/catalog/2022-04-01/items', {
+      identifiers: mskus.slice(i, i + 20), identifiersType: 'SKU', sellerId: sp.sellerId(), marketplaceIds: mkt,
+      includedData: 'dimensions,identifiers,productTypes', pageSize: 20,
+    });
+    for (const it of r.items || []) {
+      for (const g of it.identifiers || []) for (const id of g.identifiers || []) if (id.identifierType === 'SKU') found.set(id.identifier, it);
+    }
+  }
+  const has = (v) => v && Number(v.value) > 0;
+  const sent = [];
+  for (const m of mskus) {
+    const it = found.get(m);
+    if (!it) continue; // a SKU the catalogue can't find by SKU: left to Amazon's own answer on the plan
+    const pkg = (((it.dimensions || []).find((d) => d.marketplaceId === mkt) || (it.dimensions || [])[0]) || {}).package || {};
+    const needSize = !(has(pkg.length) && has(pkg.width) && has(pkg.height));
+    const needWeight = !has(pkg.weight);
+    if (!needSize && !needWeight) continue;
+    const cm = (v) => ({ value: v, unit: 'centimeters' });
+    const patches = [];
+    if (needSize) patches.push({ op: 'replace', path: '/attributes/item_package_dimensions', value: [{ length: cm(FILL_CM.length), width: cm(FILL_CM.width), height: cm(FILL_CM.height), marketplace_id: mkt }] });
+    if (needWeight) patches.push({ op: 'replace', path: '/attributes/item_package_weight', value: [{ value: FILL_KG, unit: 'kilograms', marketplace_id: mkt }] });
+    const productType = ((it.productTypes || []).find((p) => p.marketplaceId === mkt) || (it.productTypes || [])[0] || {}).productType || 'SHOES';
+    const r = await patch(`/listings/2021-08-01/items/${encodeURIComponent(sp.sellerId())}/${encodeURIComponent(m)}`,
+      { productType, patches }, { marketplaceIds: mkt, includedData: 'issues' });
+    const errs = ((r && r.issues) || []).filter((x) => x.severity === 'ERROR');
+    if (!r || r.status !== 'ACCEPTED') throw new Stop(`Amazon refused the package size for ${m}: ${errs.map((x) => x.message).join(' · ') || (r && r.status) || 'no answer'}.`);
+    sent.push(`${m} (${[needSize && `${FILL_CM.length}×${FILL_CM.width}×${FILL_CM.height} cm`, needWeight && `${FILL_KG} kg`].filter(Boolean).join(', ')})`);
+  }
+  return sent;
+}
+const DIMENSIONS_REFUSED = /dimensions need to be provided|missing necessary information/i;
+
 // ---- the rules on Amazon's options ------------------------------------------------------------------------------------------------
 // NEVER SPLIT: an option with exactly one shipment, whatever it costs (price never decides). Amazon's first if there are several.
 function onePlacement(options) {
@@ -440,6 +498,14 @@ async function run(boxes, totals) {
     const { owners, sellerPrep } = await prepFor([...qtyBySku.keys()]);
     const item = (msku, quantity) => ({ msku, quantity, ...owners.get(msku) });
 
+    // 2b. Package size for SKUs Amazon has none for (fillPackageSize)
+    say('Checking package sizes on Amazon');
+    const filled = await fillPackageSize([...qtyBySku.keys()]);
+    if (filled.length) {
+      job.warnings.push(`Package size sent to Amazon for ${filled.join(', ')}.`);
+      logActivity({ who: job.by, section: 'AMZ Shipment', log: `Do shipment: package size sent to Amazon for ${filled.join(', ')}` });
+    }
+
     // 3. Plan
     say(`Creating the plan: ${qtyBySku.size} SKUs, ${totals.units} units`);
     const stamp = new Date().toLocaleString('en-GB', { timeZone: 'Europe/London', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '');
@@ -450,7 +516,14 @@ async function run(boxes, totals) {
       sourceAddress: shipFrom(),
     });
     planId = created.inboundPlanId;
-    job.warnings.push(...(await waitOp(created.operationId, 'Creating the plan')).filter((w) => !ADDRESS_WARNING.test(w)));
+    try {
+      job.warnings.push(...(await waitOp(created.operationId, 'Creating the plan')).filter((w) => !ADDRESS_WARNING.test(w)));
+    } catch (e) {
+      if (filled.length && DIMENSIONS_REFUSED.test(e.message)) {
+        throw new Stop(`The package size was sent to Amazon for ${filled.length} SKU${filled.length === 1 ? '' : 's'}, but Amazon hasn't taken it in yet. Press Do shipment again in 15 minutes.`);
+      }
+      throw e;
+    }
 
     // 4. One pack group
     say('Getting the pack group');
