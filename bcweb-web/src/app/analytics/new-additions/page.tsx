@@ -46,7 +46,8 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     2026-11-13 the row carries a "Not in stock at Amazon" / "n not in stock at Amazon" badge (unsold new sizes with amzLive 0 —
     owner: "In stock in Amazon is what im interested in"), each such size a tiny grey corner dot, and the menu's Amazon group greys
     ("Not on Amazon yet") for a style with no size listed. Stock, sold and the Amazon price per size are in the
-    tile's tooltip. The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
+    tile's tooltip. AMAZON PENDING (owner, 2026-11-19): an unsold size in a Pending Amazon order is tinted amber, never counted as
+    sold until Amazon confirms it (see PENDING_TILE). The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
     the upload file) — git history.
 
 NO DUE SWITCH — A REVIEW COLUMN INSTEAD (owner, 2026-11-06: the team sets long or short review dates on the other pricing screens,
@@ -188,6 +189,12 @@ const SIZE_TILE: Record<SizeState, string> = {
   done: 'bg-slate-100 text-slate-400',
   old: 'bg-slate-100 text-slate-400',
 };
+// AMAZON PENDING (owner, 2026-11-19: "show pending orders on the new additions as well"): an unsold new size in an Amazon order still
+// Pending (row.amzPending) is a white tile tinted AMBER — still white's "to sell" (still a link to its Amazon drill, still out of the
+// Sold %), because it isn't a sale until Amazon confirms it. The next Update Orders after Amazon confirms books it and the tile goes grey;
+// a cancelled order drops out of the pending list on that run and the amber goes. The one tile with a tooltip besides the dot's — amber
+// alone doesn't say "pending".
+const PENDING_TILE = 'bg-amber-50 text-amber-900 font-semibold ring-1 ring-inset ring-amber-400';
 // NO TOOLTIP ON A TILE (owner, 2026-11-06: "not feeling the size hover. Lets try without any hover text at all"). Tried and dropped
 // the same day, in order: a full line (sold / days left / stock / Amazon price / review), "n sold", "Over 90 days", "Not counted
 // here". The colour is the whole message: white = still to sell (a link to its Amazon drill when listed), grey = nothing to do here.
@@ -681,11 +688,16 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
         // when the style has other unsold sizes in stock there (otherwise the row's badge says the whole style); never Birkenstock.
         const missing = state === 'todo' && r && r.amzLive === 0 && !isBirk(g.brand) && g.sizes.some((x) => !isSold(x) && x.amzLive > 0);
         const dot = missing && <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-slate-400" />;
+        // AMAZON PENDING (see PENDING_TILE): amber, with a tooltip saying so.
+        const pending = state === 'todo' && r && r.amzPending > 0;
+        const look = pending ? PENDING_TILE : SIZE_TILE[state];
+        const tip = [pending && `Amazon order pending (${r.amzPending}) — counts as sold once Amazon confirms it`,
+                     missing && 'Not in stock at Amazon'].filter(Boolean).join(' · ') || undefined;
         if (state === 'todo' && r && r.onAmz) {
           return (
-            <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`} title={missing ? 'Not in stock at Amazon' : undefined}
+            <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`} title={tip}
                   onClick={(e) => { e.stopPropagation(); onAmz(); }}
-                  className={tile + SIZE_TILE.todo +
+                  className={tile + look +
                     ' transition hover:bg-brand-50 hover:ring-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400'}>
               {t.size}
               {dot}
@@ -693,8 +705,7 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
           );
         }
         return (
-          <span key={t.code} onClick={(e) => e.stopPropagation()} className={tile + SIZE_TILE[state]}
-                title={missing ? 'Not in stock at Amazon' : undefined}>
+          <span key={t.code} onClick={(e) => e.stopPropagation()} className={tile + look} title={tip}>
             {t.size}
             {dot}
           </span>

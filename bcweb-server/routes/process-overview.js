@@ -28,6 +28,7 @@ Success Response:
       "amzPrice": 39.99, "amzReview": null, "amzDue": true, "amzBb": false,                       // Amazon, per size
       "rrp": 49.95, "imagename": "glb123-tan.jpg",       // the style's RRP and picture (per style)
       "shpLive": true, "shpPrice": 44.95, "shpReview": "2026-11-08", "shpDue": false,   // Shopify, per style
+      "amzPending": 0,                                  // units in Amazon orders still Pending — shown only, never sold
       "net": 1,                                         // net units over every channel — sold = net > 0
       "channels": { "AMZ": { "net": 1, "sold": 1 }, "SHP": { … }, "CM3": { … }, "EBY": { … } } }
   ],
@@ -84,6 +85,7 @@ router.get('/', async (req, res) => {
         onAmz: r.on_amz === true, amzLive: Number(r.amz_live) || 0, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
         amzDue: r.amz_due === true,
         amzBb: r.amz_bb === true,     // the Buy Box decides this size, not its review date (utils/amzDue.js)
+        amzPending: Number(r.amz_pending) || 0,   // in a Pending Amazon order — New Additions' tile mark, never counted as sold
         rrp: money(r.rrp), cost: money(r.cost), amzFbaFee: money(r.amz_fbafee), imagename: r.imagename || null,
         shpLive: r.shp_live === true, shpPrice: money(r.shp_price), shpReview: r.shp_review || null,
         shpDue: r.shp_due === true,

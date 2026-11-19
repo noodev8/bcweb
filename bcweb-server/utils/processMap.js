@@ -19,6 +19,11 @@ Purpose: THE NEW SKUS — prospect performance (owner, 2026-11-05: "I want to se
       until it is healthy; don't "fix" that with a maturity window (rejected).
   DAYS LEFT: NEW_DAYS − days since first arrival. An unsold SKU that reaches 90 days leaves the list (and the % — it drops out of
       both sides, so the % can rise without a sale); the screen sorts on it so a size is priced BEFORE it drops out.
+  AMAZON PENDING (owner, 2026-11-19: "show pending orders on the new additions as well"): amz_pending, the units of the SKU in an
+      Amazon order still Pending (amz_pending_order — utils/amzOrderSync.js; Amazon gives a Pending order no price, so it isn't in
+      `sales` yet). SHOWN ONLY — never SOLD, never in Daily's %: once Amazon confirms, the next Update Orders books it into `sales` and
+      the size is sold; a cancelled order leaves the table on the next Update Orders and the mark goes with it (~2% of Amazon orders
+      over Sep–Nov 2026, most within minutes).
 
 PRICE DUE (owner, 2026-11-05, option A — New Additions' own "Look again" review, skusummary.next_new_review, was retired the same day:
 "one review date, one habit"). The pricing screens' own Due, read here:
@@ -100,6 +105,10 @@ const NEW_SKUS_SQL = `
       SELECT l.code, l.qty FROM localstock l JOIN sz ON sz.code = l.code WHERE ${AMZ_BOUND_SQL}
     ) x
      GROUP BY x.code
+  ),
+  -- Units in Amazon orders still Pending (header: AMAZON PENDING) — shown, never counted as sold.
+  pend AS (
+    SELECT p.code, SUM(p.qty) AS qty FROM amz_pending_order p JOIN sz ON sz.code = p.code GROUP BY p.code
   )
   SELECT sz.code, sz.groupid, NULLIF(TRIM(ss.brand), '') AS brand, sz.size, t.shopifytitle AS title,
          sz.first_in::text AS first_in,                                     -- text, never a pg DATE (CLAUDE.md: BST day-shift)
@@ -117,6 +126,7 @@ const NEW_SKUS_SQL = `
          (a.code IS NOT NULL AND COALESCE(a.amztotal, 0) > 0
            AND ${dueSql('sz.code', 'sz.next_amz_price_review', '$2', '(SELECT d FROM today)')}) AS amz_due,   -- THE one Amazon rule
          (sz.code = ANY($2::text[])) AS amz_bb,                                   -- the Buy Box decides this size (header)
+         COALESCE(pend.qty, 0) AS amz_pending,                                    -- units in Pending Amazon orders (header)
          -- Shopify (per style — the same on each of its sizes)
          (COALESCE(ss.shopify, 0) = 1) AS shp_live,
          ${safeNumeric('ss.shopifyprice')} AS shp_price,
@@ -136,6 +146,7 @@ const NEW_SKUS_SQL = `
     LEFT JOIN loc           ON loc.code   = sz.code
     LEFT JOIN fba           ON fba.code   = sz.code
     LEFT JOIN sloc          ON sloc.groupid = sz.groupid
+    LEFT JOIN pend          ON pend.code  = sz.code
    ORDER BY sz.groupid, CASE WHEN sz.size ~ '^[0-9]+([.][0-9]+)?$' THEN sz.size::numeric END NULLS LAST, sz.size
 `;
 

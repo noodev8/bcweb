@@ -5283,6 +5283,9 @@ export interface ProcessSizeRow {
   // THE one Amazon due rule (server utils/amzDue.js, PLAN.md decision 26): true = the Buy Box decides this size (selling at FBA, or
   // New) — never due (decision 27: its cards are Daily's Buy Box moves), and its review date doesn't count.
   amzBb: boolean;
+  // Units in Amazon orders still Pending (not yet in sales — Amazon gives no price until it confirms). New Additions marks the tile;
+  // NEVER counted as sold (server utils/processMap.js → AMAZON PENDING). Gone on the next Update Orders once confirmed or cancelled.
+  amzPending: number;
   rrp: number | null;            // the style's RRP (per style) — read against the two prices
   cost: number | null;           // the style's cost — New Additions' bulk preview flags a Shopify price below it
   amzFbaFee: number | null;      // the size's FBA fee — with cost, the Amazon break-even the bulk preview flags
