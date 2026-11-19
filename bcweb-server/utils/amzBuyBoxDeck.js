@@ -73,6 +73,7 @@ PROFIT ON THE CARD: amzProfit is a straight line in price, so each card carries 
 */
 
 const { amzProfit } = require('./amzProfit');
+const { sizeTaxSql } = require('./vat');
 const { readScreen } = require('./amzBuyBox');
 const { placed } = require('./orderStatus');
 const { SELL_SPEED_CTES } = require('./sellSpeed');
@@ -346,7 +347,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
     () => db.query(`SELECT groupid, imagename FROM skusummary WHERE groupid = ANY($1)`, [groupids]),
     // cost / fbafee / tax for the profit line — readScreen doesn't return them.
     () => db.query(
-      `SELECT a.code, a.fbafee, sk.cost, sk.tax FROM amzfeed a JOIN skumap m ON m.code = a.code
+      `SELECT a.code, a.fbafee, sk.cost, ${sizeTaxSql('m', 'sk')} AS tax FROM amzfeed a JOIN skumap m ON m.code = a.code
        LEFT JOIN skusummary sk ON sk.groupid = m.groupid WHERE a.code = ANY($1)`, [codes]),
     // MORE COMING (owner, 2026-11-12): on order = supplier lines (2 local / 3 Amazon) PLACED and not arrived (utils/orderStatus.js →
     // placed); at home = sellable local stock (#FREE). Shown on the card only — neither changes the suggestion.

@@ -60,6 +60,7 @@ Return Codes:
 */
 
 const express = require('express');
+const { sizeTaxSql } = require('../utils/vat');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
@@ -108,7 +109,7 @@ router.get('/', async (req, res) => {
     // One query for every code on eBay: is it ours, which style, and what we hold.
     const result = codes.length === 0 ? { rows: [] } : await query(`
       WITH m AS (
-        SELECT DISTINCT ON (code) code, groupid FROM skumap
+        SELECT DISTINCT ON (code) code, groupid, tax FROM skumap
         WHERE code = ANY($1::text[]) AND COALESCE(deleted, 0) = 0
         ORDER BY code, groupid
       ),
@@ -132,6 +133,7 @@ router.get('/', async (req, res) => {
              t.shopifytitle AS shopify_title,
              ${safeNumeric('ss.shopifyprice')} AS shopify_price,
              ${safeNumeric('ss.cost')} AS cost,
+             ${sizeTaxSql('m', 'ss')} AS tax,
              COALESCE(loc.qty, 0) AS local,
              COALESCE(fba.qty, 0) AS fba,
              GREATEST(COALESCE(sold.qty, 0), 0) AS sold_30d
@@ -178,7 +180,7 @@ router.get('/', async (req, res) => {
         // Profit of ONE sale at eBay's price, plus any postage the buyer pays (0 under the free-postage rule).
         const postage = l.postage.cost || 0;
         const profit = x.ebay_price === null || cost === null ? null
-          : ebayProfit({ price: x.ebay_price, postage, cost, orderTotal: x.ebay_price + postage, orderUnits: 1 });
+          : ebayProfit({ price: x.ebay_price, postage, cost, orderTotal: x.ebay_price + postage, orderUnits: 1, tax: o ? o.tax : null });
         const line = {
           ...x,
           // A variation's size is eBay's own; a single-size listing comes back from GetSellerList without its item specifics, so

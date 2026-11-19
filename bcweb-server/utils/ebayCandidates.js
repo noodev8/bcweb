@@ -31,6 +31,7 @@ READINESS:
 */
 
 const { query } = require('../database');
+const { sizeTax } = require('./vat');
 const { safeNumeric } = require('./sql');
 const { ebayProfit } = require('./ebayProfit');
 const rules = require('./ebayListingRules');
@@ -48,7 +49,7 @@ const round2 = (v) => (v === null ? null : Math.round(v * 100) / 100);
 async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
   const result = await query(`
     WITH sz AS (
-      SELECT DISTINCT ON (m.code) m.code, m.groupid, NULLIF(TRIM(m.uksize), '') AS uksize,
+      SELECT DISTINCT ON (m.code) m.code, m.groupid, m.tax, NULLIF(TRIM(m.uksize), '') AS uksize,
              NULLIF(regexp_replace(TRIM(COALESCE(m.ean, '')), 'B$', ''), '') AS ean
       FROM skumap m
       WHERE COALESCE(m.deleted, 0) = 0 AND ($2::text IS NULL OR m.groupid = $2)
@@ -67,7 +68,7 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
       SELECT code, ${safeNumeric('amzprice')} AS price FROM amzfeed WHERE ($2::text IS NULL OR groupid = $2)
     ),
     lines AS (
-      SELECT sz.groupid, sz.code, sz.uksize, sz.ean, COALESCE(loc.qty, 0) AS local, COALESCE(fba.qty, 0) AS fba, amz.price AS amz_price
+      SELECT sz.groupid, sz.code, sz.tax, sz.uksize, sz.ean, COALESCE(loc.qty, 0) AS local, COALESCE(fba.qty, 0) AS fba, amz.price AS amz_price
       FROM sz
       LEFT JOIN loc ON loc.code = sz.code
       LEFT JOIN fba ON fba.code = sz.code
@@ -76,7 +77,7 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
     ),
     per AS (
       SELECT groupid, SUM(local) AS local, SUM(fba) AS fba,
-             json_agg(json_build_object('code', code, 'uksize', uksize, 'ean', ean, 'local', local, 'fba', fba, 'amz_price', amz_price)
+             json_agg(json_build_object('code', code, 'tax', tax, 'uksize', uksize, 'ean', ean, 'local', local, 'fba', fba, 'amz_price', amz_price)
                ORDER BY CASE WHEN SUBSTRING(code FROM '[^-]*$') ~ '^[0-9]+([.][0-9]+)?$' THEN SUBSTRING(code FROM '[^-]*$')::numeric END NULLS LAST,
                         code) AS sizes
       FROM lines GROUP BY groupid
@@ -89,6 +90,7 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
            ${safeNumeric('ss.shopifyprice')} AS price,
            ${safeNumeric('ss.rrp')} AS rrp,
            ${safeNumeric('ss.cost')} AS cost,
+           ss.tax,
            (SELECT COUNT(*) FROM product_images pi WHERE pi.groupid = ss.groupid) AS photos,
            d.description,
            EXISTS (SELECT 1 FROM skumap x WHERE x.groupid = ss.groupid AND x.code = ANY($1::text[])) AS on_ebay,
@@ -126,7 +128,7 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
         amz_price: num(z.amz_price) !== null && num(z.amz_price) > 0 ? num(z.amz_price) : null,
         price: def ? def.price : null,
         price_from: def ? def.from : null,
-        profit: def && cost !== null ? round2(sizeProfit(def.price, cost)) : null,
+        profit: def && cost !== null ? round2(sizeProfit(def.price, cost, sizeTax(z.tax, r.tax))) : null,
       };
     });
     const priced = sizes.filter((z) => z.price !== null);
@@ -186,8 +188,8 @@ async function loadCandidates({ onEbayCodes, groupid = null, full = false }) {
 }
 
 // One eBay sale of one pair at `price`, free postage (rules.POSTAGE) — THE EBY formula. Also used by the stock sync's added sizes.
-function sizeProfit(price, cost) {
-  return ebayProfit({ price, postage: rules.POSTAGE, cost, orderTotal: price + rules.POSTAGE, orderUnits: 1 });
+function sizeProfit(price, cost, tax) {
+  return ebayProfit({ price, postage: rules.POSTAGE, cost, orderTotal: price + rules.POSTAGE, orderUnits: 1, tax });
 }
 
 // Every SKU live on eBay now — fixed price and auction alike — from a fetchActiveListings() read.

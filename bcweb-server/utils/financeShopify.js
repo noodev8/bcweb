@@ -28,7 +28,7 @@ Every tax line this shop returns reads `{"rate": 0.2, "title": "GB VAT", "price"
 So the Taxes column of the rebuilt report is ~nil (£8.99 across the whole of August 2026) and cannot be the VAT that gets declared on
 £32,820 of sales. Shopify is simply not calculating it for this shop.
 
-VAT is therefore derived the same way the Amazon side does it, from OUR OWN flag: `skusummary.tax` (1 = standard, 0 = zero-rated
+VAT is therefore derived the same way the Amazon side does it, from OUR OWN flag: the size's VAT, utils/vat.js — skumap.tax when set, else `skusummary.tax` (1 = standard, 0 = zero-rated
 children's footwear). A standard-rated row's VAT is a sixth of its VAT-inclusive total; a zero-rated row's is nil. That is the
 owner's stated method and it keeps one definition of "is this VATable" across both channels.
 
@@ -48,6 +48,7 @@ Exports:
 */
 
 const config = require('../config/config');
+const { sizeTaxSql } = require('./vat');
 const logger = require('./logger');
 
 // The API version the Python pins. Kept identical deliberately: the two implementations must see the same payload shapes, and a
@@ -617,7 +618,7 @@ async function computeShopify(db, month) {
   const taxByCode = new Map();
   if (skus.length > 0) {
     const res = await db.query(
-      `SELECT sm.code, ss.tax
+      `SELECT sm.code, ${sizeTaxSql('sm', 'ss')} AS tax
          FROM skumap sm
          LEFT JOIN skusummary ss ON ss.groupid = sm.groupid
         WHERE sm.code = ANY($1::text[])`,
@@ -689,7 +690,7 @@ async function computeShopify(db, month) {
     feesError,
     feeBreakdown,
     // The VAT evidence, mirroring the Amazon block: what was excluded as zero-rated, and anything we could not resolve.
-    vatSource: 'skusummary.tax',
+    vatSource: 'size VAT (skumap.tax, else skusummary.tax)',
     zeroRated: { rows: zeroRatedRows, value: pounds(zeroRatedValue) },
     unmatched: [...unmatched.values()].map((u) => ({ ...u, value: pounds(u.value) })).sort((a, b) => b.value - a.value),
     rowCount: rows.length,

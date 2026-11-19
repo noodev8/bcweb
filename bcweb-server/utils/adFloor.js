@@ -86,6 +86,7 @@ async function getAdFloors(groupids) {
     SELECT ss.groupid,
            ss.segment,
            ${safeNumeric('ss.cost')} AS cost,
+           ss.tax,                   -- STYLE grain: a floor is a style price, so the style's VAT (utils/vat.js)
            COALESCE(a.clicks, 0)     AS clicks,
            COALESCE(a.spend, 0)      AS spend,
            COALESCE(s.units, 0)      AS units
@@ -148,7 +149,7 @@ async function getAdFloors(groupids) {
     }
 
     // No cost means no floor: priceForProfit() cannot place a price without it, and cost is a junk-prone legacy VARCHAR (CLAUDE.md).
-    const adFloor = adCostPerSale === null || cost === null ? null : priceForProfit(adCostPerSale, cost);
+    const adFloor = adCostPerSale === null || cost === null ? null : priceForProfit(adCostPerSale, cost, r.tax);
 
     out.set(r.groupid, {
       adCostPerSale: adCostPerSale === null ? null : Math.round(adCostPerSale * 100) / 100,

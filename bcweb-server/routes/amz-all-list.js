@@ -79,6 +79,7 @@ Return Codes:
 */
 
 const express = require('express');
+const { sizeTaxSql } = require('../utils/vat');
 const router = express.Router();
 const { query, pool } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
@@ -214,10 +215,11 @@ router.get('/', async (req, res) => {
     if (withCards && rows.length) {
       const codes = rows.map((r) => r.code);
       const econ = (await query(
-        `SELECT a.code, a.fbafee, sk.cost, sk.tax, sk.imagename, bb.offers, bb.featured, bb.sales_rank,
+        `SELECT a.code, a.fbafee, sk.cost, ${sizeTaxSql('m', 'sk')} AS tax, sk.imagename, bb.offers, bb.featured, bb.sales_rank,
                 (SELECT COALESCE(SUM(s.qty), 0) FROM sales s WHERE s.channel = 'AMZ' AND s.code = a.code AND s.qty > 0
                    AND s.solddate >= CURRENT_DATE - 365)::int AS u12
          FROM amzfeed a JOIN skusummary sk ON sk.groupid = a.groupid
+         LEFT JOIN skumap m ON m.code = a.code
          LEFT JOIN amz_buybox_now bb ON bb.code = a.code AND bb.error IS NULL
          WHERE a.code = ANY($1)`, [codes])).rows;
       const econOf = Object.fromEntries(econ.map((e) => [e.code, e]));

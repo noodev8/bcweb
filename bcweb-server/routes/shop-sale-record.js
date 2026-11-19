@@ -43,7 +43,7 @@ continuous:
   solddate     today in Europe/London; ordertime 'HH24:MI' London.
   qty          always 1 — one row per item. Two pairs = two lines.
   paytype      'card' | 'cash' — the two values the legacy rows hold; one for the whole basket.
-  collectedvat soldprice / 6 when standard-rated; 0 when skusummary.tax = 0 (zero-rated children's footwear). Misc is standard-rated.
+  collectedvat soldprice / 6 when standard-rated; 0 when the size's VAT is 0 (utils/vat.js; zero-rated children's footwear). Misc is standard-rated.
   profit       soldprice − VAT − cost. The legacy shop formula: NO fee/postage/haircut terms, because a shop sale has none of those.
                NOT utils/shopifyProfit.js — that is a Shopify parcel's economics. NULL when cost is junk/blank (skusummary.cost is a
                legacy varchar) rather than a wrong figure.
@@ -98,6 +98,7 @@ Return Codes:
 */
 
 const express = require('express');
+const { sizeTaxSql } = require('../utils/vat');
 const router = express.Router();
 const { withTransaction } = require('../utils/transaction');
 const { safeNumeric } = require('../utils/sql');
@@ -153,7 +154,7 @@ async function bookItem(client, it, index, { paytype, basket, changedBy, count }
 
   if (it.code) {
     const metaRes = await client.query(
-      `SELECT m.groupid, s.brand, s.tax, t.shopifytitle AS title,
+      `SELECT m.groupid, s.brand, ${sizeTaxSql('m', 's')} AS tax, t.shopifytitle AS title,
               ${safeNumeric('s.cost')} AS cost,
               ${safeNumeric('s.rrp')}  AS rrp
        FROM skumap m

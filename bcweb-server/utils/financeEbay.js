@@ -27,7 +27,7 @@ HOW EACH TRANSACTION IS READ
                    the owner books it by hand. None seen so far; guessing their accounting treatment would be worse than saying so.
 
 VAT — from OUR tax flag, as Amazon and Shopify do (spec §3.2). eBay's transactions carry no SKU, so each order is matched to the `sales`
-rows Update Orders booked for it (ordernum 'EB' + eBay's order number, channel EBY) → skumap.code → skusummary.tax. All lines
+rows Update Orders booked for it (ordernum 'EB' + eBay's order number, channel EBY) → skumap.code → the size's VAT (utils/vat.js: skumap.tax, else skusummary.tax). All lines
 standard-rated (the normal case): VAT = gross ÷ 6. A zero-rated line takes its share of the order's gross (by soldprice) out of the VAT.
 An order with no `sales` rows — an order cancelled before posting has them deleted by the order sync — is standard-rated and listed
 as unmatched, never silently assumed.
@@ -48,6 +48,7 @@ Exports:
 */
 
 const { financeToken, dropFinanceToken } = require('./ebayAuth');
+const { sizeTaxSql } = require('./vat');
 const { signatureHeaders } = require('./ebaySignature');
 
 const API = 'https://apiz.ebay.com/sell/finances/v1/transaction';
@@ -136,7 +137,7 @@ async function salesLines(db, orderIds) {
   const byOrder = new Map();
   if (orderIds.length === 0) return byOrder;
   const res = await db.query(
-    `SELECT s.ordernum, s.code, s.qty, s.soldprice, ss.tax
+    `SELECT s.ordernum, s.code, s.qty, s.soldprice, ${sizeTaxSql('sm', 'ss')} AS tax
        FROM sales s
        LEFT JOIN skumap sm ON sm.code = s.code
        LEFT JOIN skusummary ss ON ss.groupid = sm.groupid
@@ -256,7 +257,7 @@ async function computeEbay(db, month) {
     fees: pounds(-fees),            // NEGATIVE, the same convention as Amazon and Shopify — financeQuickFile flips it
     feeBreakdown: [...feeBreakdown.entries()].filter(([, p]) => p !== 0).map(([label, p]) => ({ label, amount: pounds(p) })),
     movement: pounds(movement),
-    vatSource: 'skusummary.tax',
+    vatSource: 'size VAT (skumap.tax, else skusummary.tax)',
     zeroRated: pounds(zeroRated),
     counts,
     transactionCount: transactions.length,

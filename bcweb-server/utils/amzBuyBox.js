@@ -69,6 +69,7 @@ HEADLINE (owner, 2026-11-12 — "those headline percentages ... would be good to
 */
 
 const { query } = require('../database');
+const { sizeTaxSql } = require('./vat');
 const { withTransaction } = require('./transaction');
 const sp = require('./amzSpApi');
 const { amzProfit, priceForProfit, breakevenPrice } = require('./amzProfit');
@@ -407,7 +408,7 @@ async function readScreen(db) {
              ORDER BY l.id DESC LIMIT 1) AS set_since,
             COALESCE(a.amzlive,0)::int AS live, COALESCE(a.amztotal,0)::int AS total,
             GREATEST(COALESCE(a.amzsold,0) - COALESCE(a.amzreturn,0), 0)::int AS sold30,
-            a.fbafee, sk.cost, sk.tax, ${safeNumeric('sk.rrp')} AS rrp
+            a.fbafee, sk.cost, ${sizeTaxSql('m', 'sk')} AS tax, ${safeNumeric('sk.rrp')} AS rrp
      FROM amz_buybox_now b
      JOIN amzfeed a ON a.code = b.code
      LEFT JOIN skumap m ON m.code = b.code

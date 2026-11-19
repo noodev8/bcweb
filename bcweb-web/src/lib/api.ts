@@ -1336,9 +1336,9 @@ export function getImagesMissing() {
 // and pushes live to Shopify (Admin API) when the product is on. Logs a price_change_log ('SHP') row whenever the Shopify price actually
 // changes; `extras.note` (optional) rides on that row, `extras.reviewDays` (optional int >= 1) parks the style until today+N. Returns the
 // numbers actually written (shopify price defaults to rrp if left blank), whether a log row was written, and the review date (if any).
-export interface ProductPriceFields { cost: string; rrp: string; tax: boolean; shopifyPrice: string; }
+export interface ProductPriceFields { cost: string; rrp: string; shopifyPrice: string; }
 export interface ProductPriceExtras { reviewDays?: number | null; note?: string; }
-export interface ProductPriceSaved { cost: number; rrp: number; tax: boolean; price: number; }
+export interface ProductPriceSaved { cost: number; rrp: number; price: number; }
 export function updateProductPrice(groupid: string, fields: ProductPriceFields, extras?: ProductPriceExtras) {
   return request<{ groupid: string; saved: ProductPriceSaved; logged: boolean; next_review: string | null; size_prices_ended: SizePriceEnded[]; shopify?: ShopifyPushResult; google?: GooglePushResult }>(
     {
@@ -4515,7 +4515,7 @@ export interface FinancePayPal {
 // Sign convention: sales/salesVat POSITIVE, refund/refundVat NEGATIVE, fees NEGATIVE.
 // `fees` is null (not 0) when the sales pull succeeded but the FEES call failed — a different token and a different scope, so it can
 // fail on its own, and a null says so where a 0 would quietly become a missing purchase line.
-// VAT is derived server-side from skusummary.tax, NOT from Shopify, which reports 0.00 tax on every line for this shop.
+// VAT is derived server-side from the size's VAT flag (utils/vat.js), NOT from Shopify, which reports 0.00 tax on every line for this shop.
 export interface FinanceShopify {
   present: boolean;
   source: 'api';

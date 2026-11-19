@@ -797,9 +797,8 @@ function ProductsContent() {
                         cost={detail.cost}
                         rrp={detail.rrp}
                         price={detail.price}
-                        tax={detail.tax}
                         birkPrice={detail.birkPrice ?? null}
-                        onSaved={(s) => setDetail((prev) => (prev ? { ...prev, cost: s.cost, rrp: s.rrp, price: s.price, tax: s.tax } : prev))}
+                        onSaved={(s) => setDetail((prev) => (prev ? { ...prev, cost: s.cost, rrp: s.rrp, price: s.price } : prev))}
                       />
                       <div className="mt-4 border-t border-slate-100 pt-4">
                         <ShopifyToggle

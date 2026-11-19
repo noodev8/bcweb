@@ -10,7 +10,8 @@ Purpose: CLONE an existing product to a brand-new groupid — the legacy "Copy" 
          What we deliberately copy vs reset (owner-confirmed — "be careful with what we copy, ensure the user enters the right info"):
            COPIED  — skusummary header incl. ALL pricing (cost/rrp/shopifyprice/min/max/tax), brand/colour/segment/season/width/material,
                      supplier; attributes (gender/producttype); the size list (skumap: optionsize/display, uksize, cost & amazon seed
-                     values). The title is copied too (see the Birkenstock width rule below).
+                     values, and a size's own VAT exception, skumap.tax — utils/vat.js). The title is copied too (see the Birkenstock
+                     width rule below).
            RESET   — `shopify = 0` (the copy is NOT live; pushing to Shopify/Amazon stays a deliberate later user action). Review dates
                      (`next_shopify_price_review`, skumap.`next_amz_price_review`) cleared. A fresh unique `handle`. A fresh sku (blanked;
                      the Amazon export re-mints it) and a per-size googleid = the new code.
@@ -175,13 +176,14 @@ router.post('/', async (req, res) => {
         INSERT INTO skumap (
           updated, sku, groupid, optionsize, ean, search2, uksize, supplier, code, googleid,
           cost, amzprice, amzminprice, amzmaxprice, fba, deleted, googlestatus, googlecampaign,
-          status, pricestatus, amzperformance, amz365, shp365, next_amz_price_review
+          status, pricestatus, amzperformance, amz365, shp365, next_amz_price_review, tax
         )
         SELECT
           ${UPDATED_EXPR}, '', $2::text, optionsize, '', '', uksize, supplier,
           $2::text || substring(code from char_length($1::text) + 1), $2::text || substring(code from char_length($1::text) + 1),
           cost, amzprice, amzminprice, amzmaxprice, fba, 0, googlestatus, googlecampaign,
-          status, pricestatus, amzperformance, amz365, shp365, NULL
+          status, pricestatus, amzperformance, amz365, shp365, NULL,
+          tax  -- a size's VAT exception (utils/vat.js): a sister colour has the same sizes, so the same zero-rated ones
         FROM skumap WHERE groupid = $1 AND COALESCE(deleted, 0) = 0
       `, [sourceGroupid, newGroupid]);
 

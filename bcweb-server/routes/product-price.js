@@ -3,7 +3,7 @@
 API Route: product_price
 =======================================================================================================================================
 Method: POST
-Purpose: Save the price fields on skusummary for the Add / Modify Product module: Cost, RRP, Tax, and the base Shopify price. This is
+Purpose: Save the price fields on skusummary for the Add / Modify Product module: Cost, RRP and the base Shopify price. This is
          the module's price stage. It is NOT the harvest/review workflow (`pricing-apply`, W1) — it doesn't enforce the min/max bounds
          and it doesn't set `shopifychange` (this module pushes live to Shopify directly via the Admin API, see `pushIfLive` below —
          setting the nightly-sync flag too would double-push). By owner decision this route:
@@ -25,8 +25,9 @@ Purpose: Save the price fields on skusummary for the Add / Modify Product module
              Shopify price actually changed (old != new — the same `logged` condition as the audit row): Google Merchant carries price
              only, so a no-op save has nothing to send there and we skip the round-trip. `google` is null when the price was unchanged.
 
-         Money columns on skusummary are legacy VARCHAR, so we WRITE 2dp strings (e.g. '39.95'), never numbers (CLAUDE.md). Tax is the
-         legacy 0/1 integer flag. `updated` uses the legacy 'YYYYMMDD HH24:MI:SS' Europe/London format. Single-row write, still wrapped
+         Money columns on skusummary are legacy VARCHAR, so we WRITE 2dp strings (e.g. '39.95'), never numbers (CLAUDE.md). VAT is NOT
+         saved here (owner, 2026-11-19): every style stays VAT on (skusummary.tax = 1, set at creation) and a zero-rated size is set by
+         hand on skumap.tax (utils/vat.js) — operators can't tell children's sizes from the box. A stray `tax` in the body is ignored. `updated` uses the legacy 'YYYYMMDD HH24:MI:SS' Europe/London format. Single-row write, still wrapped
          in withTransaction for consistency with the other write routes. Requires auth.
 =======================================================================================================================================
 Request Payload:
@@ -34,7 +35,6 @@ Request Payload:
   "groupid":      "0128221-GIZEH", // string, required
   "cost":         18.75,           // number|string, required, > 0
   "rrp":          45.00,           // number|string, required, > 0 and >= cost
-  "tax":          true,            // boolean -> 1/0
   "shopifyPrice": 39.95,           // number|string, optional; <= 0 / blank defaults to rrp
   "reviewDays":   14,              // integer >= 1, OPTIONAL; sets next_shopify_price_review = today+N (omit/blank = leave untouched)
   "note":         "seasonal bump"  // string, OPTIONAL; stored in price_change_log.reason_notes, only when the price actually changes
@@ -44,7 +44,7 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "groupid": "0128221-GIZEH",
-  "saved": { "cost": 18.75, "rrp": 45.00, "tax": true, "price": 39.95 },  // numbers actually written (price is the 2dp value)
+  "saved": { "cost": 18.75, "rrp": 45.00, "price": 39.95 },  // numbers actually written (price is the 2dp value)
   "logged": true,                 // true if a price_change_log row was written (i.e. the Shopify price changed)
   "next_review": "2026-07-22",    // next_shopify_price_review after the write (YYYY-MM-DD), or null if none set
   "size_prices_ended": [ { "code": "…-35", "size": "35", "price": 45.00 } ],  // size prices the new style price went to or below, so
@@ -97,7 +97,6 @@ router.post('/', async (req, res) => {
     const cost = parseMoney(body.cost);
     const rrp = parseMoney(body.rrp);
     let price = parseMoney(body.shopifyPrice);
-    const tax = body.tax === true || body.tax === 1 || body.tax === '1' ? 1 : 0;
 
     // Optional review period. Absent/blank -> don't touch next_shopify_price_review. If supplied it must be an integer >= 1 (a real
     // park decision), else reject — never silently coerce a bad value.
@@ -159,12 +158,12 @@ router.post('/', async (req, res) => {
       // shopifychange is deliberately NOT set (this module pushes to Shopify directly below — the nightly flag would double-push).
       // Stamp next_shopify_price_review only when a review period was supplied (optional here, unlike the harvest W1). Build the SET
       // clause both ways so the review column is left completely untouched when reviewDays is null. RETURNING echoes the final value.
-      const setReview = reviewDays !== null ? `, next_shopify_price_review = CURRENT_DATE + $6::int` : '';
-      const params = [groupid, costStr, rrpStr, priceStr, tax];
+      const setReview = reviewDays !== null ? `, next_shopify_price_review = CURRENT_DATE + $5::int` : '';
+      const params = [groupid, costStr, rrpStr, priceStr];
       if (reviewDays !== null) params.push(reviewDays);
       const upd = await client.query(`
         UPDATE skusummary
-           SET cost = $2, rrp = $3, shopifyprice = $4, tax = $5, updated = ${UPDATED_EXPR}, updated_date = now()${setReview}
+           SET cost = $2, rrp = $3, shopifyprice = $4, updated = ${UPDATED_EXPR}, updated_date = now()${setReview}
          WHERE groupid = $1
          RETURNING next_shopify_price_review
       `, params);
@@ -207,7 +206,7 @@ router.post('/', async (req, res) => {
     return res.json({
       return_code: 'SUCCESS',
       groupid,
-      saved: { cost: costNum, rrp: rrpNum, tax: tax === 1, price: priceNum },
+      saved: { cost: costNum, rrp: rrpNum, price: priceNum },
       logged,
       next_review: nextReviewIso,
       size_prices_ended: sizePricesEnded,

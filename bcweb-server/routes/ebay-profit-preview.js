@@ -37,9 +37,9 @@ router.get('/', async (req, res) => {
   const price = Number(req.query.price);
   if (!groupid || !Number.isFinite(price) || price <= 0) return res.json({ return_code: 'BAD_REQUEST', message: 'groupid and a price above 0 are needed' });
   try {
-    const r = await query(`SELECT ${safeNumeric('cost')} AS cost FROM skusummary WHERE groupid = $1`, [groupid]);
+    const r = await query(`SELECT ${safeNumeric('cost')} AS cost, tax FROM skusummary WHERE groupid = $1`, [groupid]);
     const cost = r.rows[0] && r.rows[0].cost !== null ? Number(r.rows[0].cost) : null;
-    const p = cost === null ? null : ebayProfit({ price, postage: POSTAGE, cost, orderTotal: price + POSTAGE, orderUnits: 1 });
+    const p = cost === null ? null : ebayProfit({ price, postage: POSTAGE, cost, orderTotal: price + POSTAGE, orderUnits: 1, tax: r.rows[0] ? r.rows[0].tax : null }); // STYLE grain (utils/vat.js)
     return res.json({ return_code: 'SUCCESS', profit: p === null ? null : Math.round(p * 100) / 100 });
   } catch (err) {
     logger.error('[ebay-profit-preview] error:', err.message);

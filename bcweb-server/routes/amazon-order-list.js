@@ -144,6 +144,7 @@ Return Codes:
 */
 
 const express = require('express');
+const { sizeTaxSql } = require('../utils/vat');
 const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
@@ -263,7 +264,7 @@ router.get('/', async (req, res) => {
              -- The floor /amz-apply blocks below (cost + FBA fee), shown beside the price box so the operator isn't surprised by it.
              ${safeNumeric('sk.cost')} + ${safeNumeric('a.fbafee')} AS floor,
              -- warm_price's inputs (utils/amzProfit.js → priceForProfit): the raw fee (it falls back itself) and the VAT flag.
-             ${safeNumeric('a.fbafee')} AS fbafee, sk.tax AS tax,
+             ${safeNumeric('a.fbafee')} AS fbafee, ${sizeTaxSql('m', 'sk')} AS tax,
              -- Detail row extras (owner, 2026-09-28): the style's RRP and its picture (bare filename; the web builds the URL).
              ${safeNumeric('sk.rrp')} AS rrp,
              NULLIF(sk.imagename, '') AS imagename,

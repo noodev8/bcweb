@@ -3,7 +3,8 @@
 =======================================================================================================================================
 Component: PriceEditor
 =======================================================================================================================================
-Purpose: Editable price block for a product (skusummary): Cost, RRP, Tax, and the base Shopify price. Saves via POST /product-price,
+Purpose: Editable price block for a product (skusummary): Cost, RRP and the base Shopify price. No VAT box (owner, 2026-11-19): every
+         style is VAT on and a zero-rated size is set by hand (bcweb-server/utils/vat.js) — operators can't judge it from the box. Saves via POST /product-price,
          which enforces the legacy rules (Cost > 0, RRP > 0, RRP >= Cost) and pushes live to Shopify (Admin API) and, if also live on
          Google, to Google Merchant Center's Content API — both when the product is on that channel.
 
@@ -37,7 +38,6 @@ interface Props {
   cost: number | null;
   rrp: number | null;
   price: number | null;
-  tax: boolean;
   // Suggested RRP/cost from the birktracker order book — set only for an unpriced Birkenstock style; drives the optional prefill.
   birkPrice?: BirkPriceHint | null;
   onSaved?: (saved: ProductPriceSaved) => void;
@@ -69,7 +69,7 @@ function Money({ label, value, onChange, onBlur }: { label: string; value: strin
   );
 }
 
-export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice, onSaved }: Props) {
+export default function PriceEditor({ groupid, cost, rrp, price, birkPrice, onSaved }: Props) {
   const { logout } = useAuth();
 
   // Birk order-book prefill: when this Birkenstock style is still unpriced (Cost or RRP blank/≤0) and the order book gave us a
@@ -77,14 +77,13 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
   // as UNSAVED edits (baseline stays the loaded values), so the form is pre-dirty: the operator can tweak anything, then just Save.
   const unpriced = !(Number(cost) > 0) || !(Number(rrp) > 0);
   const prefillFromBirk = !!birkPrice && unpriced && (birkPrice.rrp != null || birkPrice.cost != null);
-  const loadedForm = { cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price), tax };
+  const loadedForm = { cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price) };
   const initialForm = prefillFromBirk
     ? {
         cost: birkPrice!.cost != null ? birkPrice!.cost.toFixed(2) : loadedForm.cost,
         rrp: birkPrice!.rrp != null ? birkPrice!.rrp.toFixed(2) : loadedForm.rrp,
         // Price field mirrors RRP for a new product (owner's rule); fall back to the loaded price when there's no RRP hint.
         shopifyPrice: birkPrice!.rrp != null ? birkPrice!.rrp.toFixed(2) : loadedForm.shopifyPrice,
-        tax,
       }
     : loadedForm;
 
@@ -143,7 +142,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
     });
   }
   function reset() {
-    setForm({ cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price), tax });
+    setForm({ cost: toStr(cost), rrp: toStr(rrp), shopifyPrice: toStr(price) });
     setReviewDays(null);
     setNote('');
     setError(null);
@@ -174,7 +173,7 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
     });
     if (res.success && res.data) {
       const s = res.data.saved;
-      const next = { cost: toStr(s.cost), rrp: toStr(s.rrp), shopifyPrice: toStr(s.price), tax: s.tax };
+      const next = { cost: toStr(s.cost), rrp: toStr(s.rrp), shopifyPrice: toStr(s.price) };
       setForm(next);
       setBaseline(JSON.stringify(next));
       setReviewDays(null);
@@ -198,17 +197,10 @@ export default function PriceEditor({ groupid, cost, rrp, price, tax, birkPrice,
         <span className="text-[11px] text-slate-400">Cost &amp; RRP required · RRP ≥ Cost</span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Money label="Cost" value={form.cost} onChange={(v) => set('cost', v)} />
         <Money label="RRP" value={form.rrp} onChange={(v) => set('rrp', v)} onBlur={defaultShopifyFromRrp} />
         <Money label="Shopify Price" value={form.shopifyPrice} onChange={(v) => set('shopifyPrice', v)} />
-        <div>
-          <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-slate-400">Tax</label>
-          <label className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
-            <input type="checkbox" checked={form.tax} onChange={(e) => set('tax', e.target.checked)} className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500" />
-            VAT
-          </label>
-        </div>
       </div>
 
       <p className="mt-1 text-[11px] text-slate-400">Leave Shopify Price blank to default it to RRP. If the product is live on Shopify and/or Google, saving pushes the new price there immediately.</p>

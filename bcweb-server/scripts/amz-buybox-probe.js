@@ -30,6 +30,7 @@ Usage (from bcweb-server/):
 
 require('dotenv').config();
 const { query, pool } = require('../database');
+const { sizeTaxSql } = require('../utils/vat');
 const sp = require('../utils/amzSpApi');
 const { amzProfit, priceForProfit } = require('../utils/amzProfit');
 const { SETTINGS } = require('../utils/amzPricingStandard');
@@ -50,7 +51,7 @@ const show = (label, obj) => { if (raw && !printed.has(label)) { printed.add(lab
 async function pickSizes() {
   const base = `SELECT a.code, a.sku, a.asin, a.fbafee, ${safeNumeric('a.amzprice')} AS price,
                        COALESCE(a.amzlive,0)::int AS live, COALESCE(a.amztotal,0)::int AS total,
-                       sk.cost, sk.tax, ${safeNumeric('sk.rrp')} AS rrp,
+                       sk.cost, ${sizeTaxSql('m', 'sk')} AS tax, ${safeNumeric('sk.rrp')} AS rrp,
                        COALESCE((SELECT SUM(s.qty) FROM sales s WHERE s.channel = 'AMZ' AND s.code = a.code
                                   AND s.solddate >= CURRENT_DATE - 30), 0)::int AS sold30
                 FROM amzfeed a JOIN skumap m ON m.code = a.code LEFT JOIN skusummary sk ON sk.groupid = m.groupid

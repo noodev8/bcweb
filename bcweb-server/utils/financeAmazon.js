@@ -23,7 +23,7 @@ difference is exactly zero. That check is the module's early warning for an Amaz
 is the thing the legacy screen could not do (a missing file there produced a silent 0.00 and a red box).
 
 VAT IS NOT WHAT AMAZON SAYS IT IS
-Amazon charges VAT on children's footwear, which is zero-rated in the UK. The authority is skusummary.tax (1 = VAT applies, 0 =
+Amazon charges VAT on children's footwear, which is zero-rated in the UK. The authority is the size's VAT, utils/vat.js (skumap.tax when set, else skusummary.tax; 1 = VAT applies, 0 =
 zero-rated) reached via skumap.sku -> groupid, NOT PowerBuilder's description keyword match on BOYS/GIRLS/KIDS/... plus four
 hard-coded codes. A flag is maintained; a description is not, and a renamed listing silently dropped out of the old rule.
 
@@ -38,6 +38,7 @@ Exports:
   buildKidsVatCsv(rows)       -> CSV text in the legacy layout
 =======================================================================================================================================
 */
+const { sizeTaxSql } = require('./vat');
 
 // ---------------------------------------------------------------------------------------------------------------------------------
 // Column names, as Amazon writes them
@@ -306,7 +307,7 @@ async function loadTaxFlags(db, skus) {
   if (list.length === 0) return new Map();
 
   const res = await db.query(
-    `SELECT sm.sku, sm.code, sm.groupid, ss.tax
+    `SELECT sm.sku, sm.code, sm.groupid, ${sizeTaxSql('sm', 'ss')} AS tax
        FROM skumap sm
        LEFT JOIN skusummary ss ON ss.groupid = sm.groupid
       WHERE sm.sku = ANY($1::text[])`,

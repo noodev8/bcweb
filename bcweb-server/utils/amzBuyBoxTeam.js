@@ -47,6 +47,7 @@ WEEKS: Monday 00:00 UK time. 'this' = Monday to now, 'last' = the week before. A
 */
 
 const { amzProfit, priceForProfit } = require('./amzProfit');
+const { sizeTaxSql } = require('./vat');
 const { SETTINGS } = require('./amzPricingStandard');
 
 const NOT_PEOPLE = ['Manual', 'Claude'];
@@ -94,7 +95,7 @@ async function readTeamWeek(db) {
   }
   // Today's cost / FBA fee / VAT, as the screen's groups use them.
   const econ = new Map((await db.query(
-    `SELECT m.code, sk.cost, sk.tax, a.fbafee, t.shopifytitle AS title
+    `SELECT m.code, sk.cost, ${sizeTaxSql('m', 'sk')} AS tax, a.fbafee, t.shopifytitle AS title
      FROM skumap m LEFT JOIN skusummary sk ON sk.groupid = m.groupid LEFT JOIN amzfeed a ON a.code = m.code
      LEFT JOIN title t ON t.groupid = m.groupid WHERE m.code = ANY($1)`, [codes])).rows.map((r) => [r.code, r]));
   // Amazon sales of those sizes since last Monday (qty -1 = a return), for the raises' pairs.

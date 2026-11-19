@@ -36,6 +36,7 @@ eBay and press again. A SKU we don't know is still written (it has to be posted)
 */
 
 const { safe, ARCHIVE_COLS } = require('./orderRows');
+const { sizeTaxSql } = require('./vat');
 const { ebayProfit } = require('./ebayProfit');
 const { safeNumeric } = require('./sql');
 const { query } = require('../database');
@@ -91,7 +92,7 @@ function linesBySku(order) {
  */
 async function bookSale(client, order, line, ordernum, created) {
   const g = await client.query(
-    `SELECT sm.groupid, ss.brand, ss.cost, ${safeNumeric('ss.rrp')} AS rrp
+    `SELECT sm.groupid, ss.brand, ss.cost, ${safeNumeric('ss.rrp')} AS rrp, ${sizeTaxSql('sm', 'ss')} AS tax
        FROM skumap sm LEFT JOIN skusummary ss ON ss.groupid = sm.groupid
       WHERE sm.code = $1 LIMIT 1`,
     [line.sku]
@@ -109,7 +110,7 @@ async function bookSale(client, order, line, ordernum, created) {
   const orderUnits = (order.lineItems || []).reduce((n, li) => n + (Number(li.quantity) || 0), 0);
   const profit = ebayProfit({
     price, postage: line.postageTotal / units, cost: meta.cost,
-    orderTotal: money(order.pricingSummary && order.pricingSummary.total), orderUnits
+    orderTotal: money(order.pricingSummary && order.pricingSummary.total), orderUnits, tax: meta.tax
   });
 
   await client.query(

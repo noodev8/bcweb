@@ -42,7 +42,7 @@ async function cardDetails(db, groupids) {
 
   const [styles, sizes, changes, run] = await Promise.all([
     db.query(
-      `SELECT ss.groupid, ss.imagename, NULLIF(TRIM(ss.handle), '') AS handle, ${safeNumeric('ss.cost')} AS cost,
+      `SELECT ss.groupid, ss.imagename, NULLIF(TRIM(ss.handle), '') AS handle, ${safeNumeric('ss.cost')} AS cost, ss.tax,
               (SELECT MAX(${safeNumeric('a.amzprice')}) FROM amzfeed a
                 WHERE a.groupid = ss.groupid AND COALESCE(a.amzlive, 0) > 0) AS amazon_highest
        FROM skusummary ss WHERE ss.groupid = ANY($1::text[])`, [groupids]),
@@ -87,7 +87,7 @@ async function cardDetails(db, groupids) {
     byGroup[s.groupid] = {
       imagename: s.imagename || null,
       handle: s.handle || null,
-      profit_line: profitLine(s.cost),
+      profit_line: profitLine(s.cost, s.tax), // STYLE grain: the card prices the style, so the style's VAT (utils/vat.js)
       amazon_highest: num(s.amazon_highest),
       last_change: null,
       sizes: [],

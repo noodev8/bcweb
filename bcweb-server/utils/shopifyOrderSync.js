@@ -19,6 +19,7 @@ the truncated-fetch archive guard) are commented where they live.
 */
 
 const { isConfigured, fetchUnfulfilledOrders } = require('./shopifyOrders');
+const { sizeTax } = require('./vat');
 const shopifyFulfil = require('./shopifyFulfil');
 const { shopifyProfit } = require('./shopifyProfit');
 const { safe, ARCHIVE_COLS } = require('./orderRows');
@@ -113,8 +114,9 @@ function lineItemsBySku(order) {
 async function insertSale(client, order, line, ordernum) {
   // groupid drives everything downstream. No groupid -> no sale, but the orderstatus row stays: the order still has to be picked and
   // posted, and an unmatched SKU must not invent a groupid.
-  const g = await client.query(`SELECT groupid FROM skumap WHERE code = $1 LIMIT 1`, [line.sku]);
+  const g = await client.query(`SELECT groupid, tax FROM skumap WHERE code = $1 LIMIT 1`, [line.sku]);
   const groupid = g.rows[0] ? g.rows[0].groupid : null;
+  const sizeFlag = g.rows[0] ? g.rows[0].tax : null; // the size's own VAT exception, if any (utils/vat.js)
   if (!groupid) return 'no-groupid';
 
   // qty > 0 scopes the guard to sale rows, never return reversals (Amazon writes negative rows into the same table).
@@ -126,7 +128,7 @@ async function insertSale(client, order, line, ordernum) {
 
   // rrp is stamped onto the sale (2026-09-26, migrations/20260926b_sales_rrp.sql) so it survives the style being deleted or re-priced.
   const meta = await client.query(
-    `SELECT brand, cost, ${safeNumeric('rrp')} AS rrp FROM skusummary WHERE groupid = $1 LIMIT 1`, [groupid]
+    `SELECT brand, cost, tax, ${safeNumeric('rrp')} AS rrp FROM skusummary WHERE groupid = $1 LIMIT 1`, [groupid]
   );
   const brand = meta.rows[0] ? meta.rows[0].brand : null;
   const rrp = meta.rows[0] ? meta.rows[0].rrp : null;
@@ -134,7 +136,7 @@ async function insertSale(client, order, line, ordernum) {
 
   const soldprice = Number(line.price) || 0;
   // NULL rather than a wrong figure when cost is missing or junk (skusummary.cost is a legacy VARCHAR). See utils/shopifyProfit.js.
-  const profit = shopifyProfit(soldprice, costRaw);
+  const profit = shopifyProfit(soldprice, costRaw, sizeTax(sizeFlag, meta.rows[0] ? meta.rows[0].tax : null));
 
   const when = wallClock(order.created_at);
   // paytype is truncated to 20 even though the column holds 100 — the legacy limit, kept so old and new rows read alike.

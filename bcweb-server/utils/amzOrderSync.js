@@ -35,6 +35,7 @@ Speed: one getOrders call (+ pages of 100) and one getOrderItems per order NOT a
 */
 
 const sp = require('./amzSpApi');
+const { sizeTax } = require('./vat');
 const { query } = require('../database');
 const { loadReference, planSales, planCancellations } = require('./amzImport');
 const { insertSales, retractCancelled, projectDerivedToAmzfeed, projectDerivedToSkumap } = require('./amzImportApply');
@@ -234,7 +235,7 @@ async function writePending(client, lines) {
     const m = ref.bySku.get(l.sku);
     const g = (m && ref.byGroup.get(m.groupid)) || {};
     const price = m ? prices.get(m.code) ?? null : null;
-    const unit = price === null ? null : amzProfit({ price, cost: g.cost, fbafee: m.fbafee, tax: g.tax }).profit;
+    const unit = price === null ? null : amzProfit({ price, cost: g.cost, fbafee: m.fbafee, tax: sizeTax(m.tax, g.tax) }).profit;
     await client.query(
       `INSERT INTO amz_pending_order (ordernum, order_item_id, sku, code, groupid, productname, brand, qty, est_price, est_profit, solddate, ordertime)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING`,

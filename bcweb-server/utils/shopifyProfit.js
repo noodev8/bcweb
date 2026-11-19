@@ -58,6 +58,12 @@ const PACKING = 1.00;           // packaging + wages, flat estimate (deliberatel
 const ROYAL_MAIL = 3.44;        // outbound postage, flat estimate (deliberately high)
 const RETURNS_DIVISOR = 1.2;    // flat "cover refunds" haircut — see the note above before touching this
 
+// SIZE VAT (2026-11-19, utils/vat.js — THE rule): every function below takes an optional `tax` flag, the size's VAT (vat.sizeTax).
+// Only an explicit 0 (zero-rated children's footwear) drops the VAT; left out, null or 1 is the standard rate exactly as before, so a
+// caller that passes nothing gets the same figure to the penny.
+const { isZeroRated } = require('./vat');
+const vatShare = (tax) => (isZeroRated(tax) ? 0 : 1 / VAT_DIVISOR);
+
 /*
  * shopifyProfit(sold, cost) -> number | null
  *   sold: the per-unit sold price (ex nothing — the VAT-inclusive price the customer paid)
@@ -67,12 +73,12 @@ const RETURNS_DIVISOR = 1.2;    // flat "cover refunds" haircut — see the note
  * stores NULL rather than a wrong figure, so a missing skusummary.cost shows as "—" on the Sales screen instead of quietly reporting
  * the whole sale price as profit. (skusummary.cost is a legacy VARCHAR that can hold junk — see CLAUDE.md's schema landmines.)
  */
-function shopifyProfit(sold, cost) {
+function shopifyProfit(sold, cost, tax) {
   const s = toNumber(sold);
   const c = toNumber(cost);
   if (s === null || c === null) return null;
 
-  const vat = s / VAT_DIVISOR;
+  const vat = isZeroRated(tax) ? 0 : s / VAT_DIVISOR; // s / 6 exactly as before (not s * 1/6 — that can move a rounding penny)
   const gross = s - vat - c;
   const paymentFee = PAYMENT_FIXED + PAYMENT_RATE * s;
   const expenses = paymentFee + PACKING + ROYAL_MAIL;
@@ -102,14 +108,14 @@ function shopifyProfit(sold, cost) {
  *
  * Returns null on unusable input, for the same load-bearing reason shopifyProfit() does: a caller must show "—", never a wrong price.
  */
-function priceForProfit(targetProfit, cost) {
+function priceForProfit(targetProfit, cost, tax) {
   const p = toNumber(targetProfit);
   const c = toNumber(cost);
   if (p === null || c === null) return null;
 
   // The share of a VAT-inclusive price that survives VAT and the percentage payment fee. Derived from the constants, never typed as
   // a literal, so it cannot drift from shopifyProfit() above.
-  const priceCoefficient = 1 - 1 / VAT_DIVISOR - PAYMENT_RATE;
+  const priceCoefficient = 1 - vatShare(tax) - PAYMENT_RATE;
   const flatCosts = PAYMENT_FIXED + PACKING + ROYAL_MAIL;
 
   const sold = (c + flatCosts + RETURNS_DIVISOR * p) / priceCoefficient;
@@ -150,10 +156,10 @@ function costFromProfitSql(soldExpr, profitExpr) {
  * so the browser never holds a second copy of VAT, the payment fee or the returns haircut — the coefficients come from here.
  * Matches shopifyProfit(price, cost) to the penny. null when the cost is unusable (the card then shows "—").
  */
-function profitLine(cost) {
+function profitLine(cost, tax) {
   const c = toNumber(cost);
   if (c === null) return null;
-  const priceCoefficient = 1 - 1 / VAT_DIVISOR - PAYMENT_RATE;
+  const priceCoefficient = 1 - vatShare(tax) - PAYMENT_RATE;
   const flatCosts = PAYMENT_FIXED + PACKING + ROYAL_MAIL;
   return { per_pound: priceCoefficient / RETURNS_DIVISOR, at_zero: -(c + flatCosts) / RETURNS_DIVISOR };
 }

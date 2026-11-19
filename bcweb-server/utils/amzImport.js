@@ -26,6 +26,7 @@ Phase 3 exists ONLY for PowerBuilder. When PB is retired, delete projectDerivedT
 */
 
 const { safeNumeric } = require('./sql');
+const { sizeTax } = require('./vat');
 const { amzProfit, returnProfit } = require('./amzProfit');
 const { parseReport, parseCancellations } = require('./amzReports');
 
@@ -51,12 +52,12 @@ async function loadReference(db, skus) {
 
   // sku -> code/groupid. skumap.sku is 1:1 with code (verified: 0 duplicate skus across 537 rows), so a Map is safe.
   const map = await db.query(
-    `SELECT sku, code, groupid, ${safeNumeric('fbafee')} AS fbafee FROM skumap WHERE sku = ANY($1::text[])`,
+    `SELECT sku, code, groupid, ${safeNumeric('fbafee')} AS fbafee, tax FROM skumap WHERE sku = ANY($1::text[])`,
     [list]
   );
 
   const bySku = new Map();
-  for (const r of map.rows) bySku.set(r.sku, { code: r.code, groupid: r.groupid, fbafee: r.fbafee === null ? null : Number(r.fbafee) });
+  for (const r of map.rows) bySku.set(r.sku, { code: r.code, groupid: r.groupid, fbafee: r.fbafee === null ? null : Number(r.fbafee), tax: r.tax });
 
   // groupid -> the economics + naming a sales row needs. cost/rrp are legacy varchars that can hold junk ('RRP' is a real value in
   // this database), so they go through safeNumeric and degrade to NULL rather than throwing.
@@ -138,7 +139,7 @@ async function planSales(db, orderRows, ref) {
     if (legacy.has(`${row.orderId}|${m.code}`)) { out.legacyDuplicate += 1; continue; }
 
     const g = ref.byGroup.get(m.groupid) || {};
-    const { profit } = amzProfit({ price: row.unitPrice, cost: g.cost, fbafee: m.fbafee, tax: g.tax });
+    const { profit } = amzProfit({ price: row.unitPrice, cost: g.cost, fbafee: m.fbafee, tax: sizeTax(m.tax, g.tax) });
     if (profit === null) out.noProfit += 1;
 
     // Discount vs RRP, as the legacy import recorded it (of_amzsalesload:219-223). Null rather than 0 when RRP is unknown or junk,

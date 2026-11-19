@@ -80,6 +80,7 @@ Exports:
 */
 
 const { safeNumeric, LONDON_TODAY_SQL } = require('./sql');
+const { sizeTaxSql } = require('./vat');
 const { LIVE_DAY, REAL_CHANGE } = require('./sellSpeed');
 const { amzProfit, priceForProfit } = require('./amzProfit');
 const { readCsv } = require('./csv');
@@ -322,7 +323,7 @@ async function checkStyle(db, groupid, { to = null, mode = 'lean', buyBox = null
   // One query at a time: db may be a single transaction client (pg refuses overlapping queries on one client).
   const feedR = await db.query(
     `SELECT DISTINCT ON (a.code) a.code, a.sku, ${safeNumeric('a.amzprice')} AS price, a.amzlive AS live, a.amztotal AS total,
-            a.fbafee, sk.cost, sk.tax, ${safeNumeric('sk.rrp')} AS rrp
+            a.fbafee, sk.cost, ${sizeTaxSql('m', 'sk')} AS tax, ${safeNumeric('sk.rrp')} AS rrp
      FROM amzfeed a JOIN skumap m ON m.code = a.code LEFT JOIN skusummary sk ON sk.groupid = m.groupid
      WHERE m.groupid = $1 ORDER BY a.code`,
     [groupid]

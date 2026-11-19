@@ -34,6 +34,7 @@ Usage:
 
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const { pool } = require('../database');
+const { sizeTaxSql } = require('../utils/vat');
 const { withTransaction } = require('../utils/transaction');
 const { writeAmzPrice } = require('../utils/priceWrite');
 const { amzProfit, priceForProfit } = require('../utils/amzProfit');
@@ -70,7 +71,7 @@ function args(argv) {
 async function main() {
   const o = args(process.argv.slice(2));
   const f = await pool.query(
-    `SELECT a.code, a.sku, ${safeNumeric('a.amzprice')} AS price, a.amzlive, a.amztotal, a.fbafee, sk.cost, sk.tax,
+    `SELECT a.code, a.sku, ${safeNumeric('a.amzprice')} AS price, a.amzlive, a.amztotal, a.fbafee, sk.cost, ${sizeTaxSql('m', 'sk')} AS tax,
             ${safeNumeric('sk.rrp')} AS rrp, m.next_amz_price_review::text AS next_review
      FROM amzfeed a LEFT JOIN skusummary sk ON sk.groupid = a.groupid LEFT JOIN skumap m ON m.code = a.code WHERE a.code = $1`,
     [o.code]

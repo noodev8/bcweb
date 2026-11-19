@@ -37,6 +37,11 @@ const PACKING = 1.00;               // packaging + wages — the same flat estim
 const ROYAL_MAIL = 3.44;            // outbound postage — the same flat estimate as Shopify
 const RETURNS_DIVISOR = 1.2;        // the same "cover refunds" haircut as Shopify and Amazon
 
+// SIZE VAT (2026-11-19, utils/vat.js — THE rule): optional `tax`, the size's VAT. Only an explicit 0 (zero-rated children's
+// footwear) drops the VAT on the ITEM; postage the buyer pays stays standard rated, as utils/financeEbay.js declares it. Left out,
+// null or 1 = exactly the figure as before.
+const { isZeroRated } = require('./vat');
+
 function toNumber(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = typeof v === 'number' ? v : Number(String(v).trim());
@@ -50,13 +55,15 @@ function toNumber(v) {
  *   cost        per-unit cost of goods (skusummary.cost — a legacy VARCHAR, may be junk)
  *   orderTotal  the whole order's total incl. postage — picks the fixed fee
  *   orderUnits  units in the whole order — the fixed fee is per ORDER, so each unit carries its share
+ *   tax         optional: the size's VAT flag (utils/vat.js) — 0 = zero rated
  */
-function ebayProfit({ price, postage = 0, cost, orderTotal, orderUnits = 1 }) {
+function ebayProfit({ price, postage = 0, cost, orderTotal, orderUnits = 1, tax }) {
   const p = toNumber(price);
   const c = toNumber(cost);
   if (p === null || c === null) return null;
-  const sale = p + (toNumber(postage) || 0);
-  const vat = sale / VAT_DIVISOR;
+  const post = toNumber(postage) || 0;
+  const sale = p + post;
+  const vat = (isZeroRated(tax) ? post : sale) / VAT_DIVISOR;
   const total = toNumber(orderTotal);
   const fixed = (total !== null && total <= FIXED_THRESHOLD) ? FIXED_10_OR_LESS : FIXED_OVER_10;
   const fee = (FINAL_VALUE_RATE + REGULATORY_RATE) * sale + fixed / Math.max(Number(orderUnits) || 1, 1);
