@@ -22,8 +22,8 @@ DIFFERENCES FROM THE REPORT (known, accepted):
   - Pending orders carry no price in the API, so they are booked on the first run after Amazon confirms them (Unshipped / Shipped —
     for FBA usually within the hour). The report booked them while Pending.
     Until then each Pending line is kept in amz_pending_order (estimated price + profit, DISPLAY ONLY — the Sales screen shows it
-    tagged Pending and counts it in the totals; owner, 2026-11-12; New Additions marks the size's tile, never counting it as sold —
-    utils/processMap.js, owner, 2026-11-19). See fetchPending / writePending below.
+    tagged Pending and counts it in the totals; owner, 2026-11-12; New Additions and Daily count the size as sold and tint its tile
+    amber — utils/processMap.js, owner, 2026-11-19). See fetchPending / writePending below.
   - Dates: the API gives UTC; converted here to the Europe/London date + HH:MM the report gave (an order at 00:30 BST is that day).
   - Amazon.co.uk only, as the report's sales-channel filter — multi-channel (MCF) orders for eBay / Shopify pairs never appear.
 

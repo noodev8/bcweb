@@ -19,11 +19,12 @@ Purpose: THE NEW SKUS — prospect performance (owner, 2026-11-05: "I want to se
       until it is healthy; don't "fix" that with a maturity window (rejected).
   DAYS LEFT: NEW_DAYS − days since first arrival. An unsold SKU that reaches 90 days leaves the list (and the % — it drops out of
       both sides, so the % can rise without a sale); the screen sorts on it so a size is priced BEFORE it drops out.
-  AMAZON PENDING (owner, 2026-11-19: "show pending orders on the new additions as well"): amz_pending, the units of the SKU in an
-      Amazon order still Pending (amz_pending_order — utils/amzOrderSync.js; Amazon gives a Pending order no price, so it isn't in
-      `sales` yet). SHOWN ONLY — never SOLD, never in Daily's %: once Amazon confirms, the next Update Orders books it into `sales` and
-      the size is sold; a cancelled order leaves the table on the next Update Orders and the mark goes with it (~2% of Amazon orders
-      over Sep–Nov 2026, most within minutes).
+  AMAZON PENDING (owner, 2026-11-19: "show pending orders on the new additions as well", then the same day: "count the amz pending
+      ones in the %"): amz_pending, the units of the SKU in an Amazon order still Pending (amz_pending_order — utils/amzOrderSync.js;
+      Amazon gives a Pending order no price, so it isn't in `sales` yet). It COUNTS AS SOLD — in Daily's % and New Additions' — as the
+      Sales screen counts Pending in its totals. Once Amazon confirms, the next Update Orders books it into `sales` (still sold); a
+      cancelled order leaves the table on that run and the size is unsold again (~2% of Amazon orders over Sep–Nov 2026, most within
+      minutes). The rule is applied in routes/process-overview.js (Daily) and bcweb-web/src/lib/process.ts → isSold (the screens).
 
 PRICE DUE (owner, 2026-11-05, option A — New Additions' own "Look again" review, skusummary.next_new_review, was retired the same day:
 "one review date, one habit"). The pricing screens' own Due, read here:
@@ -106,7 +107,7 @@ const NEW_SKUS_SQL = `
     ) x
      GROUP BY x.code
   ),
-  -- Units in Amazon orders still Pending (header: AMAZON PENDING) — shown, never counted as sold.
+  -- Units in Amazon orders still Pending (header: AMAZON PENDING) — counted as sold.
   pend AS (
     SELECT p.code, SUM(p.qty) AS qty FROM amz_pending_order p JOIN sz ON sz.code = p.code GROUP BY p.code
   )

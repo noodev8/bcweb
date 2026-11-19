@@ -9,8 +9,8 @@ Purpose: The NEW SKUS and the prospects total, for the dashboard's Daily (New st
            - prospects: one plain total of lines on the Prospects list (the Archive left out).
            - rows: every SKU FIRST booked in on Goods In in the last 90 days, with its net sales per channel since that first arrival
              (AMZ, SHP, CM3, EBY), its stock and both channels' PRICE DUE. Rules: utils/processMap.js → NEW_SKUS_SQL — read its header.
-           - newSkus: Daily's figure, counted HERE from those rows (sold = net units over every channel > 0), so the tile and the
-             screen count the same list (owner, 2026-11-05).
+           - newSkus: Daily's figure, counted HERE from those rows (sold = net units over every channel > 0, OR in a Pending Amazon
+             order — owner, 2026-11-19), so the tile and the screen count the same list (owner, 2026-11-05).
          Every SKU comes back (a quarter's new SKUs is a couple of hundred), so the screens group and count without a second call.
          READ ONLY. Requires auth.
 =======================================================================================================================================
@@ -28,8 +28,8 @@ Success Response:
       "amzPrice": 39.99, "amzReview": null, "amzDue": true, "amzBb": false,                       // Amazon, per size
       "rrp": 49.95, "imagename": "glb123-tan.jpg",       // the style's RRP and picture (per style)
       "shpLive": true, "shpPrice": 44.95, "shpReview": "2026-11-08", "shpDue": false,   // Shopify, per style
-      "amzPending": 0,                                  // units in Amazon orders still Pending — shown only, never sold
-      "net": 1,                                         // net units over every channel — sold = net > 0
+      "amzPending": 0,                                  // units in Amazon orders still Pending — counts as sold (header)
+      "net": 1,                                         // net units over every channel — sold = net > 0 or amzPending > 0
       "channels": { "AMZ": { "net": 1, "sold": 1 }, "SHP": { … }, "CM3": { … }, "EBY": { … } } }
   ],
   "others": [                                           // the same styles' OTHER sizes — size run only, never counted
@@ -76,7 +76,10 @@ router.get('/', async (req, res) => {
         channels[ch] = { net: Number(s.net || 0), sold: Number(s.sold || 0) };
         net += channels[ch].net;
       }
-      if (net > 0) sold += 1;   // the NEW_SKUS rule: netted a sale over every channel together
+      const pending = Number(r.amz_pending) || 0;
+      // The NEW_SKUS rule: netted a sale over every channel together, or in a Pending Amazon order (utils/processMap.js →
+      // AMAZON PENDING). Mirrored by bcweb-web/src/lib/process.ts → isSold.
+      if (net > 0 || pending > 0) sold += 1;
       const ageDays = Number(r.age_days);
       return {
         code: r.code, groupid: r.groupid, title: r.title, brand: r.brand, size: r.size,
@@ -85,7 +88,7 @@ router.get('/', async (req, res) => {
         onAmz: r.on_amz === true, amzLive: Number(r.amz_live) || 0, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
         amzDue: r.amz_due === true,
         amzBb: r.amz_bb === true,     // the Buy Box decides this size, not its review date (utils/amzDue.js)
-        amzPending: Number(r.amz_pending) || 0,   // in a Pending Amazon order — New Additions' tile mark, never counted as sold
+        amzPending: pending,          // in a Pending Amazon order — counts as sold; New Additions tints the tile amber
         rrp: money(r.rrp), cost: money(r.cost), amzFbaFee: money(r.amz_fbafee), imagename: r.imagename || null,
         shpLive: r.shp_live === true, shpPrice: money(r.shp_price), shpReview: r.shp_review || null,
         shpDue: r.shp_due === true,
