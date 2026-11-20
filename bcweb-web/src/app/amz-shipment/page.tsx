@@ -520,6 +520,8 @@ function Packing({ initial, autoBack, onShipped }: {
 
   // What Mark shipped sends: the stored boxes and units on screen. The server refuses if its own counts differ.
   const totalUnits = boxes.reduce((n, b) => n + boxUnits(b), 0);
+  // Total weight of the stored boxes, to 0.1 kg (as the Do shipment confirm box adds it up). A box with no weight yet adds nothing.
+  const totalKg = Math.round(boxes.reduce((n, b) => n + (Number(b.dims.weight) || 0), 0) * 10) / 10;
   const notPacked = boxes.filter((b) => !b.locked);
   // The stored box your box will replace when packed (Unpack / Empty) — see the header.
   const refillNo = mine.refill?.box ?? null;
@@ -946,6 +948,7 @@ function Packing({ initial, autoBack, onShipped }: {
       <div className="mb-3 flex items-center gap-3 px-1 text-sm text-slate-500">
         <span><span className="text-base font-semibold text-slate-900">{boxes.length}</span> packed {boxes.length === 1 ? 'box' : 'boxes'}</span>
         <span><span className="text-base font-semibold text-slate-900">{totalUnits}</span> {totalUnits === 1 ? 'unit' : 'units'}</span>
+        <span><span className="text-base font-semibold text-slate-900">{totalKg}</span> kg</span>
         {allPacked && (
           <span className="flex items-center gap-1 text-xs font-medium text-emerald-700">
             <CheckCircleIcon className="h-4 w-4" />All packed — ready to ship
