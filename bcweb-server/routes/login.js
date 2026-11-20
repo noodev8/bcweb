@@ -17,7 +17,8 @@ Success Response:
 {
   "return_code": "SUCCESS",
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",  // string, JWT (payload = { id })
-  "display_name": "Andreas"                            // string, shown in the UI
+  "display_name": "Andreas",                           // string, shown in the UI
+  "is_admin": true                                     // boolean — false = the five warehouse screens only (web app hides the rest)
 }
 =======================================================================================================================================
 Return Codes:
@@ -47,7 +48,7 @@ router.post('/', async (req, res) => {
 
     // 2) Look up the active user by username. Only active accounts can log in (CLAUDE.md).
     const result = await query(
-      'SELECT id, password_hash, display_name FROM app_users WHERE username = $1 AND active = true',
+      'SELECT id, password_hash, display_name, is_admin FROM app_users WHERE username = $1 AND active = true',
       [username]
     );
 
@@ -65,7 +66,7 @@ router.post('/', async (req, res) => {
     // 4) Sign a thin JWT — id only. Everything else is looked up per-request by verifyToken (API-RULES).
     const token = jwt.sign({ id: user.id }, config.jwt.secret, { expiresIn: config.jwt.expiresIn });
 
-    return res.json({ return_code: 'SUCCESS', token, display_name: user.display_name });
+    return res.json({ return_code: 'SUCCESS', token, display_name: user.display_name, is_admin: user.is_admin === true });
   } catch (err) {
     logger.error('[login] error:', err.message);
     return res.json({ return_code: 'SERVER_ERROR', message: 'Login failed' });

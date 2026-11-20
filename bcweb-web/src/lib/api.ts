@@ -306,7 +306,7 @@ export interface ProductDetail {
   birkPrice?: BirkPriceHint | null;   // order-book RRP/cost suggestion (see BirkPriceHint); absent/null when not applicable
   sizes: ProductSize[];   // one row per variant (skumap)
 }
-export interface LoginData { token: string; display_name: string; }
+export interface LoginData { token: string; display_name: string; is_admin: boolean; }
 // No `google` field: pricing-apply is decoupled from Google (a periodic server sweep pushes SHP changes to Google Merchant — see
 // scripts/google-jobs.js --prices). Only the Shopify push happens inline. (Add/Modify's updateProductPrice still returns a google result.)
 // A size price a style-price write ended (the style price went to or below it — server utils/sizePrice.js → styleDrop).
@@ -321,7 +321,30 @@ export interface ParkData { groupid: string; next_review: string; }
 export function login(username: string, password: string) {
   return request<LoginData>(
     { url: '/login', method: 'POST', data: { username, password } },
-    (b) => ({ token: b.token, display_name: b.display_name })
+    (b) => ({ token: b.token, display_name: b.display_name, is_admin: b.is_admin === true })
+  );
+}
+
+// --- Users (owner, 2026-11-20): admin sees every screen, not admin only the five in lib/userAccess.ts (hidden on screen only) ------
+export interface MeData { id: number; display_name: string; is_admin: boolean; }
+export interface AppUserRow { id: number; display_name: string; username: string; is_admin: boolean; is_you: boolean; }
+
+// Who is signed in (server routes/me.js) — AuthContext reads it each page load so a switch on the Users screen applies without a login.
+export function getMe() {
+  return request<MeData>(
+    { url: '/me', method: 'GET' },
+    (b) => ({ id: Number(b.id), display_name: String(b.display_name ?? ''), is_admin: b.is_admin === true })
+  );
+}
+// Every active login + is_admin (routes/users-list.js — admins only, NOT_ADMIN otherwise).
+export function getUsers() {
+  return request<AppUserRow[]>({ url: '/users-list', method: 'GET' }, (b) => (b.users || []) as AppUserRow[]);
+}
+// Switch one login (routes/user-set-admin.js — WRITES app_users.is_admin + bclog). Failure codes: NOT_ADMIN, SELF, NOT_FOUND, LAST_ADMIN.
+export function setUserAdmin(userId: number, isAdmin: boolean) {
+  return request<{ id: number; display_name: string; is_admin: boolean }>(
+    { url: '/user-set-admin', method: 'POST', data: { user_id: userId, is_admin: isAdmin } },
+    (b) => ({ id: Number(b.id), display_name: String(b.display_name ?? ''), is_admin: b.is_admin === true })
   );
 }
 

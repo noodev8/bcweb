@@ -38,6 +38,7 @@ const STATIC = new Set([
   '/shopify-order',
   '/locations',
   '/finance',
+  '/users',
   '/birk-tracker',
   '/birkenstock',
   '/products',

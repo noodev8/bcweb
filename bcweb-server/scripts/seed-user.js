@@ -43,7 +43,8 @@ async function main() {
       username      TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       display_name  TEXT NOT NULL,
-      active        BOOLEAN NOT NULL DEFAULT true
+      active        BOOLEAN NOT NULL DEFAULT true,
+      is_admin      BOOLEAN NOT NULL DEFAULT true   -- false = the five warehouse screens only; set on the Users screen
     )
   `);
 

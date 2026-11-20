@@ -36,13 +36,14 @@ export const HEADER_TABS: HeaderTab[] = [
 ];
 
 /*
-Which tab a path belongs to, for the active highlight. Prefix match, so a drill page (/segments/IVES-COLOUR) lights up its module.
+Which tab a path belongs to, for the active highlight. `tabs` is the bar being drawn — a non-admin's bar is their five screens
+(lib/userAccess.ts), so AppShell passes those. Prefix match, so a drill page (/segments/IVES-COLOUR) lights up its module.
 Longest match wins, so a tab nested inside another's path would not be shadowed by its parent.
 */
-export function tabForPath(pathname: string): HeaderTab | undefined {
+export function tabForPath(pathname: string, tabs: HeaderTab[] = HEADER_TABS): HeaderTab | undefined {
   let best: HeaderTab | undefined;
   let bestLen = -1;
-  for (const t of HEADER_TABS) {
+  for (const t of tabs) {
     for (const h of [t.href, ...(t.also || [])]) {
       if ((pathname === h || pathname.startsWith(h + '/')) && h.length > bestLen) {
         best = t;

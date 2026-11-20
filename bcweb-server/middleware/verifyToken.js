@@ -10,6 +10,8 @@ Purpose: JWT authentication middleware for all protected routes (every pricing r
     never a value sent by the client (CLAUDE.md). If someone forged a display name it would be ignored; we only trust the id in a
     validly-signed token, and read the name from app_users.
   - Only active users pass (active = true). A deactivated user's existing tokens stop working immediately.
+  - is_admin rides along (owner, 2026-11-20) so /me and the Users screen can read it. It HIDES screens in the web app only — no route
+    is refused on it here (owner: "don't need to worry about server"); the only route that checks it is /user-set-admin.
 
 Note on filename: API-RULES originally mentioned middleware/auth.js, but this project standardised on middleware/verifyToken.js
 (now reflected in both API-RULES and CLAUDE.md). We follow that filename; the exported function is `verifyToken`, honouring
@@ -33,7 +35,7 @@ function extractBearer(req) {
   return null;
 }
 
-// Verify + resolve the user. Returns { id, display_name } on success, or null on any failure (bad/expired token, unknown/inactive user).
+// Verify + resolve the user. Returns { id, display_name, is_admin } on success, or null on any failure (bad/expired token, unknown/inactive user).
 async function resolveUser(token) {
   let payload;
   try {
@@ -45,11 +47,12 @@ async function resolveUser(token) {
 
   // Token is valid — now fetch the CURRENT user record. The token is intentionally thin; the DB is the source of truth (API-RULES).
   const result = await query(
-    'SELECT id, display_name FROM app_users WHERE id = $1 AND active = true',
+    'SELECT id, display_name, is_admin FROM app_users WHERE id = $1 AND active = true',
     [payload.id]
   );
   if (result.rows.length === 0) return null; // user deleted or deactivated since the token was issued
-  return { id: result.rows[0].id, display_name: result.rows[0].display_name };
+  const u = result.rows[0];
+  return { id: u.id, display_name: u.display_name, is_admin: u.is_admin === true };
 }
 
 // Required auth: block the request unless a valid token resolves to an active user.
@@ -63,7 +66,7 @@ async function verifyToken(req, res, next) {
     if (!user) {
       return res.json({ return_code: 'UNAUTHORIZED', message: 'Invalid or expired session' });
     }
-    req.user = user; // { id, display_name } — used by write routes for changed_by
+    req.user = user; // { id, display_name, is_admin } — display_name is used by write routes for changed_by
     return next();
   } catch (err) {
     logger.error('[verifyToken] error:', err.message);

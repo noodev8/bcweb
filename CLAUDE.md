@@ -8,6 +8,8 @@ A **modular internal platform** for Brookfield Comfort (UK footwear e-commerce, 
 
 **Dashboard:** a **Daily** hero first, then every other screen **once** in six group tiles. Never put a screen in two groups or repeat a Daily screen in the menu.
 
+**Admin vs not admin** (`app_users.is_admin`, switched on Admin → Users): not admin sees only Customer Orders, Goods In, AMZ Shipment, Pick and Location — their dashboard is those five buttons. The list is `bcweb-web/src/lib/userAccess.ts` (THE copy). Hidden on screen only (owner's call) — don't add route-level refusals; only `/user-set-admin` checks it.
+
 ## Structure — two apps in one repo
 
 ```

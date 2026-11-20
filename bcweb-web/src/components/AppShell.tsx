@@ -18,7 +18,8 @@ import { ArrowLeftIcon, ArrowRightOnRectangleIcon, HomeIcon } from '@heroicons/r
 import { useAuth } from '@/contexts/AuthContext';
 import CopyButton from '@/components/CopyButton';
 import { logScreenView } from '@/lib/api';
-import { HEADER_TABS, tabForPath } from '@/lib/headerNav';
+import { HEADER_TABS, tabForPath, type HeaderTab } from '@/lib/headerNav';
+import { NON_ADMIN_SCREENS, canSee } from '@/lib/userAccess';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { forgetPackedOffScreen } from '@/lib/amzActiveBox';
 
@@ -61,9 +62,13 @@ interface AppShellProps {
 export default function AppShell({ children, title, titleHref, titleTitle, subtitle, subtitleCopy, subtitleNode, backHref, backLabel, bigTitle, headerRight, headerBarRight, crumb, bare }: AppShellProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const { ready, isAuthenticated, displayName, logout } = useAuth();
+  const { ready, isAuthenticated, isAdmin, displayName, logout } = useAuth();
+  // ADMIN vs NOT ADMIN (owner, 2026-11-20 — lib/userAccess.ts): a non-admin's header bar is their five screens, and any other screen
+  // goes back to the dashboard (their five buttons). null = not known yet; hidden on screen only.
+  const allowed = isAdmin === null ? null : canSee(pathname, isAdmin);
+  const tabs: HeaderTab[] = isAdmin === false ? NON_ADMIN_SCREENS : HEADER_TABS;
   // The header tab for wherever we are (drives the active highlight), or undefined on a screen that has none.
-  const here = tabForPath(pathname);
+  const here = tabForPath(pathname, tabs);
   // A "Packed — Box n" number goes when you leave the screen that packed it (lib/amzActiveBox.ts, lastPacked). Every logged-in page
   // renders AppShell, so this is the one place that sees every screen change. Writes no data, fetches nothing.
   useEffect(() => { forgetPackedOffScreen(pathname); }, [pathname]);
@@ -115,16 +120,21 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
   see is a false row. Keyed on pathname only — a filter change or a ?from= is the same screen, not a second visit.
   */
   useEffect(() => {
-    if (!ready || !isAuthenticated) return;
+    if (!ready || !isAuthenticated || allowed !== true) return;
     logScreenView(pathname);
-  }, [pathname, ready, isAuthenticated]);
+  }, [pathname, ready, isAuthenticated, allowed]);
 
   // Route guard — bounce unauthenticated users to /login once hydration is done.
   useEffect(() => {
     if (ready && !isAuthenticated) router.replace('/login');
   }, [ready, isAuthenticated, router]);
 
-  if (!ready || !isAuthenticated) {
+  // Screen guard — a non-admin on a screen that isn't one of their five goes to the dashboard.
+  useEffect(() => {
+    if (ready && isAuthenticated && allowed === false) router.replace('/dashboard');
+  }, [ready, isAuthenticated, allowed, router]);
+
+  if (!ready || !isAuthenticated || allowed !== true) {
     return <div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>;
   }
 
@@ -157,7 +167,7 @@ export default function AppShell({ children, title, titleHref, titleTitle, subti
             {/* Module switcher — hop between modules from anywhere (kills the "back to the front page, then in again" detour).
                 The active tab lifts to a white "raised" pill inside the recessed track. */}
             <nav className="inline-flex min-w-0 items-center gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-100/70 p-1">
-              {HEADER_TABS.map((m) => {
+              {tabs.map((m) => {
                 const active = here?.href === m.href;
                 const Icon = m.icon;
                 return (

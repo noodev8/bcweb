@@ -90,6 +90,12 @@ app.use('/login', loginLimiter, require('./routes/login'));
 // shell-level routes rather than under a module, because it belongs to no module: every screen in the app calls it.
 app.use('/screen-view', require('./routes/screen-view'));
 
+// Users (owner, 2026-11-20): who is signed in (is_admin decides which screens the web app shows — hidden on screen only, no route is
+// refused on it), and the Admin -> Users screen that switches a user between admin and not admin.
+app.use('/me', require('./routes/me'));                         // GET: the signed-in user's name + is_admin   READ ONLY
+app.use('/users-list', require('./routes/users-list'));         // GET: every active user + is_admin (admins only)   READ ONLY
+app.use('/user-set-admin', require('./routes/user-set-admin')); // POST: WRITES app_users.is_admin (admins only) + bclog
+
 // eBay's Marketplace Account Deletion endpoint — PUBLIC (eBay calls it, no login); a POST only acts if eBay's signature verifies.
 app.use('/ebay-account-deletion', require('./routes/ebay-account-deletion'));
 // eBay listings (2026-11-01): what is live on eBay, read from eBay on Refresh and checked against our stock — READ ONLY (utils/ebayListings.js)

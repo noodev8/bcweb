@@ -10,22 +10,30 @@ Purpose: Holds the logged-in user (display_name) + JWT for the whole web app and
 Design: a thin context. login() calls the API client and, on SUCCESS, stores the token + display_name. We intentionally do NOT
         decode the JWT on the client (it only carries an id anyway, per API-RULES); the display_name comes straight from the login
         response. `ready` flags that we've finished reading localStorage so guards don't flash-redirect during hydration.
+
+ADMIN vs NOT ADMIN (owner, 2026-11-20): `isAdmin` decides which screens show (lib/userAccess.ts). It comes from GET /me on each page
+        load, so a switch on the Users screen applies on that person's next page load without a new login. The last answer is kept in
+        localStorage (written at login and by every /me) so a page doesn't wait on /me to draw. null = not known yet (AppShell shows
+        Loading). Hidden on screen only — the API refuses nothing on it.
 =======================================================================================================================================
 */
 
 import { createContext, useContext, useSyncExternalStore, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { login as apiLogin, getToken, setToken, clearToken } from '@/lib/api';
+import useSWR from 'swr';
+import { login as apiLogin, getMe, getToken, setToken, clearToken, type MeData } from '@/lib/api';
 
 interface AuthState {
   displayName: string | null;
   ready: boolean;                       // true once we've hydrated auth from localStorage
   isAuthenticated: boolean;
+  isAdmin: boolean | null;              // null = not known yet (first visit before /me answers). false = the five screens only.
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
 }
 
 const DISPLAY_KEY = 'bc_display_name';
+const ADMIN_KEY = 'bc_is_admin';        // '1' | '0' — the last known answer, so pages draw before /me returns
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
@@ -67,6 +75,20 @@ function getDisplayNameSnapshot(): string | null {
   return token && name ? name : null;
 }
 
+// The cached admin flag — a primitive again ('1' | '0' | null).
+function getAdminSnapshot(): string | null {
+  if (typeof window === 'undefined') return null;
+  return window.localStorage.getItem(ADMIN_KEY);
+}
+
+function storeAdmin(isAdmin: boolean): void {
+  if (typeof window === 'undefined') return;
+  const v = isAdmin ? '1' : '0';
+  if (window.localStorage.getItem(ADMIN_KEY) === v) return;   // unchanged — no event, no re-render
+  window.localStorage.setItem(ADMIN_KEY, v);
+  announceAuthChange();
+}
+
 // `ready` means "past hydration, so localStorage has actually been consulted" — it exists so route guards don't flash-redirect before
 // we know. false on the server and during the hydration render, true immediately after, with no effect and no setState.
 const NEVER_CHANGES = () => () => {};
@@ -76,12 +98,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const displayName = useSyncExternalStore(subscribeToAuth, getDisplayNameSnapshot, () => null);
   const ready = useSyncExternalStore(NEVER_CHANGES, () => true, () => false);
+  const cachedAdmin = useSyncExternalStore(subscribeToAuth, getAdminSnapshot, () => null);
+
+  // GET /me once per page load (and again after a new login — the token is in the key, so one user's answer is never reused for
+  // another's). useSWR directly, not useApiQuery: that hook calls useAuth(), which isn't available inside the provider itself.
+  const token = displayName ? getToken() : null;
+  const me = useSWR<MeData>(
+    token ? ['auth-me', token] : null,
+    async () => {
+      const res = await getMe();
+      if (res.success && res.data) {
+        storeAdmin(res.data.is_admin);
+        return res.data;
+      }
+      if (res.return_code === 'UNAUTHORIZED') logout();
+      throw new Error(res.error || 'Could not read who is signed in');
+    },
+    { revalidateOnFocus: false, errorRetryCount: 2 },
+  );
+  // /me's answer, else the last known one. If /me fails with nothing cached, the narrower view (the five screens) rather than a page
+  // stuck on Loading.
+  const isAdmin: boolean | null = me.data ? me.data.is_admin
+    : cachedAdmin === '1' ? true : cachedAdmin === '0' ? false
+      : me.error ? false : null;
 
   async function login(username: string, password: string) {
     const result = await apiLogin(username, password);
     if (result.success && result.data) {
       setToken(result.data.token);
       window.localStorage.setItem(DISPLAY_KEY, result.data.display_name);
+      window.localStorage.setItem(ADMIN_KEY, result.data.is_admin ? '1' : '0');
       announceAuthChange();
       return { success: true };
     }
@@ -91,7 +137,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   function logout() {
     clearToken();
-    if (typeof window !== 'undefined') window.localStorage.removeItem(DISPLAY_KEY);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem(DISPLAY_KEY);
+      window.localStorage.removeItem(ADMIN_KEY);
+    }
     announceAuthChange();
     router.replace('/login');
   }
@@ -100,6 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     displayName,
     ready,
     isAuthenticated: !!displayName,
+    isAdmin: displayName ? isAdmin : null,
     login,
     logout,
   };

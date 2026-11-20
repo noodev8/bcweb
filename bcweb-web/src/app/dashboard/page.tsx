@@ -47,6 +47,9 @@ duplicates"). The page reads top to bottom in order of importance:
      (both opened /segments), so that tile went. Each card opens in place, one at a time, with its contents named on the closed
      card. The Today card (/process, a map of the new-sizes funnel) was removed 2026-10-26 — Daily carries its numbers now.
 
+NOT ADMIN (owner, 2026-11-20): a non-admin's dashboard is ONLY their five screens as big buttons (lib/userAccess.ts) — no search, no
+Daily, no warnings, no menu (and none of their requests run). Admins see everything below as before. Who is which: Admin -> Users.
+
 COMING BACK. Every menu tile links with `?from=<group id>`; AppShell points the header logo at /dashboard?g=<group id>, and this page
 re-opens that group on arrival (read from the URL, nothing remembered between visits).
 =======================================================================================================================================
@@ -63,13 +66,15 @@ import { getAmzImportLast, getAmzLoadedList, getBackupLast, getPricingDueCounts,
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
+import { useAuth } from '@/contexts/AuthContext';
+import { NON_ADMIN_SCREENS } from '@/lib/userAccess';
 import {
   ShoppingCartIcon, TagIcon, Squares2X2Icon, SignalIcon,
   UserGroupIcon, MegaphoneIcon, HandRaisedIcon, ClipboardDocumentListIcon, InboxArrowDownIcon, CalendarDaysIcon,
   CursorArrowRaysIcon, MapPinIcon, TruckIcon, DocumentMagnifyingGlassIcon, ArchiveBoxIcon,
   ChevronDownIcon, ChevronRightIcon, PresentationChartLineIcon, CubeIcon, SparklesIcon, ArrowsRightLeftIcon, ScaleIcon, SunIcon, CurrencyPoundIcon,
   ChartPieIcon, CalculatorIcon, CloudArrowDownIcon, CalendarIcon, ShoppingBagIcon, BuildingStorefrontIcon, PrinterIcon, PhotoIcon,
-  RectangleStackIcon, LightBulbIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon, MagnifyingGlassIcon,
+  RectangleStackIcon, LightBulbIcon, Cog6ToothIcon, InboxStackIcon, GlobeAltIcon, MagnifyingGlassIcon, UsersIcon,
 } from '@heroicons/react/24/outline';
 
 type Icon = ComponentType<SVGProps<SVGSVGElement>>;
@@ -187,6 +192,8 @@ const GROUPS: Group[] = [
       // Hidden while SKU_HEALTH is false (lib/features.ts, owner 2026-11-05).
       ...(SKU_HEALTH ? [{ title: 'SKU health', subtitle: 'Sellers, stock and what has not sold', description: 'Three numbers: SKUs that sold in 90 days, SKUs in stock, and SKUs not sold in 12 months.', href: '/sku-health', icon: PresentationChartLineIcon }] : []),
       { title: 'Log', subtitle: 'Who did what, and when', description: 'Every Goods In, stock adjustment, order sync and import. Search and filter by section or person.', href: '/analytics/activity-log', icon: DocumentMagnifyingGlassIcon },
+      // Users (owner, 2026-11-20): admin sees every screen, not admin only the five warehouse screens (lib/userAccess.ts).
+      { title: 'Users', subtitle: 'Who can see everything', description: 'Switch each login between admin (every screen) and not admin (the five warehouse screens only).', href: '/users', icon: UsersIcon },
     ],
   },
 ];
@@ -198,6 +205,15 @@ export default function DashboardPage() {
   // undefined = no click yet, so the ?g= group (or nothing) shows; null = every group closed.
   const [chosenId, setOpenId] = useState<string | null | undefined>(undefined);
   const openId = chosenId === undefined ? urlGroup : chosenId;
+  const { isAdmin } = useAuth();
+
+  if (isAdmin === false) {
+    return (
+      <AppShell>
+        <StaffButtons />
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell>
@@ -220,6 +236,30 @@ export default function DashboardPage() {
         </div>
       ))}
     </AppShell>
+  );
+}
+
+/* =====================================================================================================================================
+   NOT ADMIN — the five warehouse screens as big buttons, nothing else (owner, 2026-11-20). Big enough to hit from a step away at the
+   bench; the list and its order are lib/userAccess.ts.
+===================================================================================================================================== */
+function StaffButtons() {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {NON_ADMIN_SCREENS.map((s) => (
+        <Link
+          key={s.href}
+          href={s.href}
+          className="group flex min-h-[11rem] flex-col items-center justify-center gap-3 rounded-2xl bg-white p-6 text-center shadow-sm outline-none ring-1 ring-slate-200 transition hover:shadow-md hover:ring-2 hover:ring-brand-500 focus-visible:ring-2 focus-visible:ring-brand-500"
+        >
+          <span className="inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-50 text-brand-600 transition group-hover:bg-brand-500 group-hover:text-white">
+            <s.icon className="h-7 w-7" />
+          </span>
+          <span className="text-xl font-semibold tracking-tight text-slate-900">{s.label}</span>
+          <span className="text-sm text-slate-500">{s.subtitle}</span>
+        </Link>
+      ))}
+    </div>
   );
 }
 
