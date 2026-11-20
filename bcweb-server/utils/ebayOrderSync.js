@@ -36,6 +36,7 @@ eBay and press again. A SKU we don't know is still written (it has to be posted)
 */
 
 const { safe, ARCHIVE_COLS } = require('./orderRows');
+const { tidyPostcode, postcodeNote } = require('./postcode');
 const { sizeTaxSql } = require('./vat');
 const { ebayProfit } = require('./ebayProfit');
 const { safeNumeric } = require('./sql');
@@ -168,6 +169,12 @@ async function syncEbayOrders(client, fetched) {
     if (addr.countryCode && addr.countryCode !== 'GB') {
       out.notes.push(`${ordernum}: delivery country ${addr.countryCode} — the label screen only prints UK addresses`);
     }
+    // Tidied on the way in (utils/postcode.js, THE copy) — 'da 12 4 eu' -> 'DA12 4EU'; one that won't tidy is kept as typed and noted.
+    const pc = tidyPostcode(safe(addr.postalCode), addr.countryCode);
+    if (pc.flagged) {
+      out.attention = true;
+      out.notes.push(postcodeNote(ordernum, addr.postalCode));
+    }
 
     let isNew = false;
     for (const line of lines) {
@@ -178,7 +185,7 @@ async function syncEbayOrders(client, fetched) {
               shippingname = $1, postcode = $2, address1 = $3, address2 = $4, company = $5, city = $6,
               county = $7, country = $8, phone = $9, shippingnotes = $10, email = $11, last_seen = CURRENT_TIMESTAMP
             WHERE ordernum = $12 AND shopifysku = $13 AND channel = 'EBAY'`,
-          [safe(shipTo.fullName, 100), safe(addr.postalCode, 20), safe(addr.addressLine1, 200), safe(addr.addressLine2, 200),
+          [safe(shipTo.fullName, 100), safe(pc.postcode, 20), safe(addr.addressLine1, 200), safe(addr.addressLine2, 200),
            safe(shipTo.companyName, 100), safe(addr.city, 100), safe(addr.stateOrProvince, 100), safe(addr.countryCode, 100),
            safe(phone, 50), safe(note, 200), safe(shipTo.email, 100), ordernum, line.sku]
         );
@@ -220,7 +227,7 @@ async function syncEbayOrders(client, fetched) {
         [safe(ordernum, 100), safe(line.sku, 50), line.qty,
          updated ? updated.legacy : '', created ? created.legacy : '',
          safe(supplier, 50), safe(line.title, 200), safe(shipTo.fullName, 100),
-         safe(addr.postalCode, 20), safe(addr.addressLine1, 200), safe(addr.addressLine2, 200),
+         safe(pc.postcode, 20), safe(addr.addressLine1, 200), safe(addr.addressLine2, 200),
          safe(shipTo.companyName, 100), safe(addr.city, 100), safe(addr.stateOrProvince, 100),
          safe(addr.countryCode, 100), safe(phone, 50), safe(note, 200),
          safe(shipTo.email, 100), courier,

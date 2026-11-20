@@ -23,6 +23,7 @@ const { sizeTax } = require('./vat');
 const shopifyFulfil = require('./shopifyFulfil');
 const { shopifyProfit } = require('./shopifyProfit');
 const { safe, ARCHIVE_COLS } = require('./orderRows');
+const { tidyPostcode, postcodeNote } = require('./postcode');
 const { safeNumeric } = require('./sql');
 const logger = require('./logger');
 
@@ -191,6 +192,10 @@ async function syncOrders(client, orders) {
     const createdAt = wallClock(order.created_at);
     const updatedAt = wallClock(order.updated_at);
 
+    // Tidied on the way in (utils/postcode.js, THE copy) — 'da 12 4 eu' -> 'DA12 4EU'; one that won't tidy is kept as typed and noted.
+    const pc = tidyPostcode(safe(shipping.zip), shipping.country_code);
+    if (pc.flagged) notes.push(postcodeNote(ordernum, shipping.zip));
+
     const lines = lineItemsBySku(order);
     const withSku = (order.line_items || []).filter((i) => safe(i.sku)).length;
     skippedNoSku += (order.line_items || []).length - withSku;
@@ -229,7 +234,7 @@ async function syncOrders(client, orders) {
               last_seen = CURRENT_TIMESTAMP
             WHERE ordernum = $12 AND shopifysku = $13`,
           [
-            safe(shipping.name), safe(shipping.zip), safe(shipping.address1), safe(shipping.address2),
+            safe(shipping.name), safe(pc.postcode, 20), safe(shipping.address1), safe(shipping.address2),
             safe(shipping.company), safe(shipping.city), safe(shipping.province_code), safe(shipping.country_code),
             safe(shipping.phone), shippingNotes, safe(order.email),
             ordernum, line.sku
@@ -266,7 +271,7 @@ async function syncOrders(client, orders) {
           safe(ordernum, 100), safe(line.sku, 50), line.qty,
           updatedAt ? updatedAt.legacy : '', createdAt ? createdAt.legacy : '',
           safe(supplier, 50), safe(line.title, 200), safe(shipping.name, 100),
-          safe(shipping.zip, 20), safe(shipping.address1, 200), safe(shipping.address2, 200),
+          safe(pc.postcode, 20), safe(shipping.address1, 200), safe(shipping.address2, 200),
           safe(shipping.company, 100), safe(shipping.city, 100), safe(shipping.province_code, 100),
           safe(shipping.country_code, 100), safe(shipping.phone, 50), safe(shippingNotes, 200),
           safe(order.email, 100), safe(courier, 100),
