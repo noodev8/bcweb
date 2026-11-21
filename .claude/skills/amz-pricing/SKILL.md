@@ -1,6 +1,6 @@
 ---
 name: amz-pricing
-description: Run the Amazon pricing standard on a style — each size judged against its sister sizes (Buy Box, expected vs sold, price vs the sister median) with a verdict and a suggested price, Lean on profit or Revenue Push. The check is read only; a price the owner agrees for a size can then be set (logged, sent to Amazon by the next Update Orders or Send to Amazon) with a guarded script. Reads the Buy Box screen's data (who Amazon shows, share of views, copier sellers) for today's Buy Box. Use when the owner asks to "check the pricing on <style>", "run amz-pricing", "check IVES-WHITE", "check the top 10 on Amazon", or "should I move the price on <size>".
+description: Run the Amazon pricing standard on a style — each size judged against its sister sizes (Buy Box, expected vs sold, price vs the sister median) with a verdict and a suggested price, Lean on profit or Revenue Push. The check is read only; a price the owner agrees for a size can then be set (logged, sent to Amazon by the next Update Orders or Send to Amazon) with a guarded script. Reads the Buy Box screen's data (who Amazon shows, share of views, copier sellers) for today's Buy Box. Also reviews whether recent price moves worked (Buy Box kept / won, rival followed, sales vs unmoved sizes and last year). Use when the owner asks to "check the pricing on <style>", "run amz-pricing", "check IVES-WHITE", "check the top 10 on Amazon", "should I move the price on <size>", or "check the price moves".
 ---
 
 # Amazon pricing standard (`/amz-pricing`)
@@ -103,8 +103,8 @@ Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). S
 - **Losing to a SELF-POSTER: 1% under it, or leave it** (owner, 2026-11-21, `docs/amz-buybox/PLAN.md` decision 30 — replaces the
   "2% over a self-poster" trial). When the lead (`holder = 'OTHER_MFN'`) self-posts, suggest `floor(lead × 0.99)`, never a penny
   under or level with it; if that is under the walk-away (New: break-even), leave the size. Why (11–21 Nov): 170 cuts to within 0.5%
-  of a self-poster won the box 35% of the time and the rival came back down by the next reading 98 times (pricing software
-  following us); 27 cuts 0.5%+ under won 63% and were followed 3 times; the 2% over trial won 4 of 14. An FBA or Amazon lead keeps a
+  of a self-poster won the box 35% of the time and the rival came back down by the next reading 83 times (49% — pricing
+  software following us); 27 cuts 0.5%+ under won 63% and were followed once; the 2% over trial won 4 of 14. An FBA or Amazon lead keeps a
   penny under (won 75% against FBA). The cards use the same rule (`utils/amzBuyBoxDeck.js → SELF_POST_UNDER`). Still check WHO the
   self-poster is first: the cheap non-Prime seller (A1LSPI8RFKURCB, £31.44 + £4.95) on Ives isn't worth chasing. Small samples —
   after a move, read the size's share at the next readings and say whether 1% under won it.
@@ -124,6 +124,30 @@ Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). S
 
   Then: **sisters selling** at a similar price (the style's 28-day pairs) = it's the SIZE (a cut is for clearing, not winning),
   judge it against the sisters (the standard's job) · **whole style not selling** = season, a season park, not a cut.
+
+## Reviewing the moves — "check the price moves" (owner, 2026-11-21)
+
+Did our price moves work? Asked to "check the price moves" (or "… since <date>", "did the 3% cap work"), run, from `bcweb-server`:
+
+```
+node scripts/amz-moves-review.js                         # the last 28 days
+node scripts/amz-moves-review.js --from 2026-11-11       # from a day to now (--to YYYY-MM-DD to stop earlier)
+```
+
+Read only (its header has every definition). Every two to four weeks is the right pace — most sizes sell under a pair a week,
+so a week gives Buy Box answers, not sales ones; Buy Box readings only start 2026-11-12. Its four sections:
+1. **Did the price work pay** — pairs and profit a day, moved vs nobody-moved sizes, against the month before and the same days last
+   year. Read the moved sizes' change AGAINST last year's change (the season), and say the moved group includes new stock landing.
+2. **Raises** from a size holding the box — kept it, by step: the check on the +3% cap (decision 29).
+3. **Cuts** when we didn't hold the box — won it / rival followed, by who led and how far under the lead: the check on "1% under a
+   self-poster, or leave" (decision 30). Penny-under moves made by hand still show up there, for comparison.
+4. **By where the move was made** — pairs a week after vs the 30 days before, by the log note.
+
+Report it like the rest of this skill: the headline from section 1 in a line, then what confirms or challenges an agreed rule, ONE
+decision at a time ([[one-decision-at-a-time]] memory), and always with the number of moves behind a figure — never a rule from a
+handful of moves (the 2026-11-21 run: raises of 2–3% kept the box 1 time in 5, but on 5 moves). A row of moves from the last few days
+has had no time to sell. If a rule should change, it goes to the owner as a decision and into `docs/amz-buybox/PLAN.md`, never
+straight into the code.
 
 ## Running it
 

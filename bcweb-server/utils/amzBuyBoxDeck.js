@@ -38,7 +38,8 @@ THE MOVES (suggest):
   can_match  a SELF-POSTING lead (OTHER_MFN): SELF_POST_UNDER (1%) under it, or LEAVE (`self_poster`) when that is under the
              walk-away — never a penny under or level with it (owner, 2026-11-21, PLAN.md decision 30: "go clearly under or leave").
              Why: 11–21 Nov, 170 cuts to within 0.5% of a self-posting lead won the box 35% of the time and the rival came down again
-             by the next reading 98 times (pricing software following us); 27 cuts 0.5%+ under won 17 (63%) and were followed 3 times.
+             by the next reading 83 times (49% — pricing software following us); 27 cuts 0.5%+ under won 17 (63%) and were followed once
+             (scripts/amz-moves-review.js, section 3).
              This replaces the "2% over a self-poster" trial (14 moves, won 29%).
              Any other lead (FBA, Amazon): a penny under it, postage included (at our exact price Amazon gives the tie to the rival;
              a penny under an FBA lead won 75%). If a penny under is below the walk-away, level with the lead (a tie, said on the card).
