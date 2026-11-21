@@ -8,7 +8,7 @@ moods Fierce / Chilled / Climb (names that clash with nothing BCWEB already uses
 =======================================================================================================================================
 */
 
-import type { AmzAnswer, AmzMood } from '@/lib/api';
+import type { AmzAnswer, AmzLostPart, AmzMood } from '@/lib/api';
 
 export const ANSWERS: { key: AmzAnswer; label: string; rule: string; dot: string; bar: string }[] = [
   { key: 'new', label: 'New', rule: 'Landed at Amazon in the last 30 days, no Amazon sale yet — get the first sale: a penny under the lead, never below break-even', dot: 'bg-violet-500', bar: 'bg-violet-400' },
@@ -54,3 +54,12 @@ export const REASONS: Record<string, string> = {
 };
 
 export const reasonLabel = (r: string) => REASONS[r] ?? r;
+
+// WHERE WE DON'T HAVE THE BUY BOX (owner, 2026-11-21): the Amazon Pricing strip's three parts and their cards (/amz/lost-cards).
+// The split is server-side (utils/amzBuyBox.js → lostPart); these are only its words. "Rival" = whoever has it — FBM, FBA or
+// Amazon (owner: "We dont care"); prices postage included.
+export const LOST_TEXT: Record<AmzLostPart, { label: string; hint: string }> = {
+  cheaper: { label: 'rival cheaper than us', hint: 'Biggest price gap first' },
+  level: { label: 'rival at our price or dearer', hint: 'Price isn’t the reason' },
+  nobody: { label: 'nobody has it', hint: 'Amazon shows no one' },
+};

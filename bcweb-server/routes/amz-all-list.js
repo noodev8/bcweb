@@ -32,7 +32,7 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
 
 Requires auth.
 =======================================================================================================================================
-Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=groupid][&cards=1][&step=key[&when=w]]
+Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=groupid][&cards=1][&step=key[&when=w]][&lost=part]
   limit    safety cap only (utils/listLimit.js, default 100 / max 500).
   half     review = only the sizes the Buy Box doesn't answer (the review-date half).
   q        the search (owner, 2026-11-13 — "search for Caprice, see the count, press it and get the cards one by one"): only rows whose
@@ -48,6 +48,12 @@ Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=
            (every SKU on the step, any channel). With cards=1 the Buy Box sizes are carded too, with the Buy Box cards' suggestion
            (owner 2026-11-17: "I want to price in cards" — was left out). Range's step lists and the step cards (/amz/step-cards).
   when     with step: due | week | later | buybox | all (default all) — only that chip's rows.
+  lost     WHERE WE DON'T HAVE THE BUY BOX (owner, 2026-11-21 — the Amazon Pricing strip's three parts open cards): cheaper (a rival
+           has it below our price) | level (at our price or dearer) | nobody — EXACTLY the sizes the headline counts, by THE split
+           utils/amzBuyBox.js → lostPart over its readScreen (so a part's count and its cards always agree). Due or not (parked=include
+           implied). cheaper is in BIGGEST PRICE GAP FIRST (owner: "biggest price gap first for cheaper"; our price − the rival's,
+           postage included, carried as bb_gap); level and nobody keep the usual order. With cards=1 the Buy Box suggestion is
+           carried as for q.
   cards    1 = PRICE CARDS (components/AmzPriceCards — Due cards and search cards, owner 2026-11-13: "the usual price change screen but
            reduced to cards"): each row also carries what a card shows — imagename, u12 (Amazon pairs, 12 months), breakeven, walk
            (the £3 walk-away, amzPricingStandard SETTINGS.WALK_AWAY_PROFIT — the Buy Box cards' floor), profit_line (profit a pair =
@@ -73,6 +79,7 @@ Success Response:
 Return Codes:
 "SUCCESS"
 "INVALID_STEP"     ?step= is not a Stock ladder list
+"INVALID_PART"     ?lost= is not cheaper / level / nobody
 "UNAUTHORIZED"
 "SERVER_ERROR"
 =======================================================================================================================================
@@ -91,6 +98,7 @@ const { matchesSearch, matchesStyle, profitLine, readDeck, lastChanges } = requi
 const { amzProfit, priceForProfit, breakevenPrice } = require('../utils/amzProfit');
 const { SETTINGS } = require('../utils/amzPricingStandard');
 const { stepMembers, whenOf, WHEN_KEYS } = require('../utils/stockLadderList');
+const { LOST_PARTS, lostPart, countsForHeadline, readScreen } = require('../utils/amzBuyBox');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -110,6 +118,12 @@ router.get('/', async (req, res) => {
     const when = WHEN_KEYS.includes(req.query.when) ? req.query.when : 'all';
     const ladder = stepKey ? await stepMembers(stepKey) : null;
     if (stepKey && !ladder) return res.json({ return_code: 'INVALID_STEP', message: 'Unknown Stock ladder list' });
+    // WHERE WE DON'T HAVE THE BUY BOX (header, ?lost=): the part's sizes by THE split, code -> price gap.
+    const lostKey = typeof req.query.lost === 'string' && req.query.lost ? req.query.lost : null;
+    if (lostKey && !LOST_PARTS.includes(lostKey)) return res.json({ return_code: 'INVALID_PART', message: 'Unknown Buy Box part' });
+    const lost = lostKey ? new Map((await readScreen(pool)).rows
+      .filter((r) => countsForHeadline(r) && lostPart(r) === lostKey)
+      .map((r) => [r.code, r.bb_price !== null && r.our_price !== null ? Math.round((r.our_price - r.bb_price) * 100) / 100 : null])) : null;
 
     // Every member is read (no SQL limit, no Due filter) because "due" is decided below in JS by THE rule (utils/amzDue.js) — the
     // Buy Box half needs the stored reading's answers. ~700 rows; the safety cap is applied after.
@@ -162,17 +176,19 @@ router.get('/', async (req, res) => {
     const side = await readBuyBoxSide(pool);
     const judged = result.rows.map((r) => ({ r, d: dueBy(side, r.code, r.review_parked !== true, Number(r.fba) > 0) }))
       .filter((x) => !reviewHalf || x.d.by === 'review')
-      .filter((x) => includeParked || ladder || x.d.due)
+      .filter((x) => includeParked || ladder || lost || x.d.due)
       .filter((x) => matchesSearch(x.r, q) && matchesStyle(x.r, g))
       // STOCK LADDER (header, ?step=): the step's sizes only, each with its chip; ?when= narrows; Buy Box sizes are carded too (2026-11-17).
       .filter((x) => !ladder || ladder.members.has(x.r.code))
+      .filter((x) => !lost || lost.has(x.r.code))
       .map((x) => (ladder ? { ...x, when: whenOf(x.d.due, x.d.by, x.r.next_review, ladder.today) } : x))
       .filter((x) => !ladder || when === 'all' || x.when === when);
     // Due before not-due, so the safety cap can only ever trim not-due rows: with the status rows the list passed 500 (2026-10-28)
     // and the 0-stock due SKUs, sorting last, were cut — Daily counted them, the list didn't show them. Stable: stock order kept.
     // A Stock ladder list keeps the step's own order (utils/stockLadderList.js — a step holds far fewer than the cap).
     if (ladder) judged.sort((a, b) => ladder.members.get(a.r.code).order - ladder.members.get(b.r.code).order);
-    else judged.sort((a, b) => Number(b.d.due) - Number(a.d.due));
+    else if (lostKey === 'cheaper') judged.sort((a, b) => (lost.get(b.r.code) ?? 0) - (lost.get(a.r.code) ?? 0));   // biggest gap first
+    else if (!lost) judged.sort((a, b) => Number(b.d.due) - Number(a.d.due));
     const total = judged.length;
     const outOfStock = judged.filter((x) => x.r.oos === true).length;
 
@@ -209,6 +225,7 @@ router.get('/', async (req, res) => {
         ladder_over_why: ladder.members.get(r.code).over_why,     // 'cover' (4 months' worth) | 'unsold' (step 1: 30+ days, 2+ held) | null
         ladder_units: ladder.members.get(r.code).units,           // local + FBA, one number (the ladder's stock)
       } : {}),
+      ...(lost ? { bb_gap: lost.get(r.code) } : {}),             // our price − the Buy Box holder's, postage included (?lost=)
     }));
 
     // CARDS (header, ?cards=1): the card's economics and picture for the returned rows, in one query.
@@ -242,7 +259,7 @@ router.get('/', async (req, res) => {
       }
       // The Buy Box cards' suggestion for the search's sizes (header) — the deck read narrowed to the same search — and for a
       // Stock ladder step's Buy Box sizes (owner 2026-11-17).
-      if (q || g || ladder) {
+      if (q || g || ladder || lost) {
         const deck = await readDeck(pool, { mood, q, groupid: g });
         const cardOf = Object.fromEntries(deck.cards.map((c) => [c.code, c]));
         for (const row of rows) {

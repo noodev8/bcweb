@@ -14,8 +14,10 @@ and Daily shows TWO figures (decision 27, owner 2026-11-13: "remove the 1 number
 never due.
 
 THE LAYOUT — the order the job is done in:
-  Title row     "Amazon Pricing"; the headline Buy Box % and the reading's age (components/AmzBuyBoxReading); Send to Amazon
+  Title row     "Amazon Pricing"; the reading's age (components/AmzBuyBoxReading); Send to Amazon
                 (components/AmzBasketBar — moved here with the home, the basket of prices not yet on Amazon) + its confirm banner.
+  Buy Box strip WHERE WE WIN AND LOSE (components/AmzBuyBoxStrip, owner 2026-11-21 — read its header): the % of our SKUs with the
+                Buy Box, and the three parts we don't have it on as buttons into the Buy Box cards (/amz/lost-cards).
   Team week     one collapsed line, laptop only (components/AmzTeamWeek).
   (The mood step is gone — owner, 2026-11-18: "I always use calm". The home is always Chilled; no faces, no choice. The links still
   carry ?mood=chilled, and the Fierce / Climb rules stay on the server, unused. components/MoodSwitch is kept for a way back.)
@@ -48,6 +50,7 @@ import AppShell from '@/components/AppShell';
 import AmzTeamWeek from '@/components/AmzTeamWeek';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import AmzBuyBoxReading from '@/components/AmzBuyBoxReading';
+import AmzBuyBoxStrip from '@/components/AmzBuyBoxStrip';
 import { getAmzBuyBox, getAmzBuyBoxDeck, getAmzNotSellingDue, getAmzSearchSummary, type AmzAnswer, type AmzMood } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useDebounced } from '@/lib/useDebounced';
@@ -105,6 +108,9 @@ export default function AmazonPricingHome() {
       {loadError && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{loadError.message}</div>}
 
       <div className="flex flex-col gap-4">
+        {/* BUY BOX STRIP (header): where we win and lose, the parts open the Buy Box cards. */}
+        <AmzBuyBoxStrip data={data} />
+
         {/* TEAM WEEK: each person's Buy Box results, one collapsed line — a desk job, hidden on a phone. (Its own box carries a
             bottom margin, taken back here so the steps space evenly.) */}
         <div className="-mb-4 hidden sm:block"><AmzTeamWeek /></div>

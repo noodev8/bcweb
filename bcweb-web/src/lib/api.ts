@@ -656,6 +656,7 @@ export interface AmzPriceCard extends AmzWinnerRow {
   last_change?: AmzLastChange | null;
   // A Stock ladder list's sizes (?step=) also carry these (server utils/stockLadderList.js).
   when?: LadderWhen; ladder_idle_days?: number; ladder_over?: number; ladder_over_why?: 'cover' | 'unsold' | null; ladder_units?: number;
+  bb_gap?: number | null;   // ?lost= only: our price − the Buy Box holder's, postage included
 }
 export function getAmzDueCards() {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
@@ -667,6 +668,16 @@ export function getAmzDueCards() {
 export function getAmzSearchCards(search: { q?: string; g?: string }, mood: AmzMood) {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
     { url: '/amz-all-list', method: 'GET', params: { limit: 500, parked: 'include', cards: 1, ...(search.g ? { g: search.g } : { q: search.q }), mood } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
+  );
+}
+// WHERE WE DON'T HAVE THE BUY BOX (owner, 2026-11-21): the Amazon Pricing strip's three parts, as cards — exactly the sizes the
+// headline counts (server utils/amzBuyBox.js → lostPart). cheaper comes biggest price gap first; level / nobody in the usual order.
+export type AmzLostPart = 'cheaper' | 'level' | 'nobody';
+export const isLostPart = (v: string | null): v is AmzLostPart => v === 'cheaper' || v === 'level' || v === 'nobody';
+export function getAmzLostCards(part: AmzLostPart, mood: AmzMood) {
+  return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, cards: 1, lost: part, mood } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
@@ -794,6 +805,9 @@ export interface AmzBuyBoxHeadline {
   avg_share: number | null;       // our share of views, averaged per size
   weighted_share: number | null;  // the same, weighted by pairs sold in 30 days
   full: number; part: number; none: number;   // sizes we are shown to on all / part / none of the views
+  // Where we win and lose, same sizes, all or nothing (server HEADLINE): us = we have the Buy Box; cheaper / level = a rival has it
+  // below / at-or-over our price; nobody featured. The screen's % is us / sizes. Missing on an old server.
+  lead?: { us: number; cheaper: number; level: number; nobody: number };
 }
 export interface AmzBuyBoxData {
   rows: AmzBuyBoxRow[]; counts: Record<AmzBuyBoxGroup, number>; headline: AmzBuyBoxHeadline | null;

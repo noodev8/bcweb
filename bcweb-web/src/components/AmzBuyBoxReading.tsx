@@ -1,10 +1,11 @@
 'use client';
 /*
 =======================================================================================================================================
-Component: AmzBuyBoxReading — the headline Buy Box % and how old the reading is (a title row's right side)
+Component: AmzBuyBoxReading — how old the Buy Box reading is (a title row's right side)
 =======================================================================================================================================
-Shared by the Amazon Pricing home (/amz) and Sizes at Amazon (/amz/buybox) — PLAN.md decision 24: the table moved behind a link, the
-headline and the reading's age stayed in the home's title row. Moved out of the old Buy Box screen unchanged (2026-11-13).
+Shared by the Amazon Pricing home (/amz) and Sizes at Amazon (/amz/buybox) — PLAN.md decision 24. The headline % moved OUT of the
+title row into its own strip on the home (components/AmzBuyBoxStrip, owner 2026-11-21: option A), and the "· n sizes" after the age
+went with it (it counted every size read, incl. inbound — 347 beside the strip's 281 read as a mistake).
 
 The reading is the DATABASE (amz_buybox_now — the hourly cron, or Read this style on Sizes at Amazon): opening a screen never asks
 Amazon. Amber when an hourly read looks missed: over 2 hours old during the hours it runs (UK 9am–8pm) — overnight it is naturally
@@ -50,12 +51,6 @@ export default function AmzBuyBoxReading({ data, msg }: { data: AmzBuyBoxData | 
 
   return (
     <div className="flex flex-col items-end gap-0.5 text-right">
-      {data?.headline && data.headline.sizes > 0 && (
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-bold tabular-nums tracking-tight text-slate-900">{data.headline.avg_share !== null ? `${Math.round(data.headline.avg_share)}%` : '—'}</span>
-          <span className="text-sm text-slate-500">of page views show our offer</span>
-        </div>
-      )}
       <div className="text-sm text-slate-500">
         {running ? (
           <span className="inline-flex items-center gap-1.5 font-medium text-brand-700">
@@ -67,7 +62,6 @@ export default function AmzBuyBoxReading({ data, msg }: { data: AmzBuyBoxData | 
         ) : data?.last_all ? (
           <span>
             Buy Box read <span className={stale ? 'font-medium text-amber-700' : 'text-slate-700'}>{ago(lastAllMs, now)}</span>
-            {' '}· {data.last_all.total} sizes
             {stale && <span className="text-amber-700"> — the hourly read may have stopped</span>}
           </span>
         ) : data ? (

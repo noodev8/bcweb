@@ -65,6 +65,13 @@ HEADLINE (owner, 2026-11-12 — "those headline percentages ... would be good to
   screen shows TWO figures only (owner, 2026-11-12, after a strip of five and then the full chat sentence both confused: "I think only
   the 55% and the 127 are useful"): avg_share (our share of views, averaged per size) and full (sizes shown to on every view). The
   rest (weighted_share by 30-day pairs, part, none) stay in the API for a later look, not on screen.
+  WHERE WE WIN AND LOSE (owner, 2026-11-21, agreed one decision at a time after the FBM talk — "Where are we winning and where are
+  we losing ... We dont care [if the rival is] FBM or FBA"): `lead` counts the same sizes, all or nothing — us = we have the Buy Box
+  (featured to the most views, alone or shared) · cheaper = a rival has it below our price, postage included (price is the likely
+  reason) · level = a rival has it at our price or dearer (price isn't the reason) · nobody featured. The SCREEN'S % IS us / sizes
+  (owner: "A - as they are the numbers we are showing"), so the figure adds up with the lines under it; avg_share (a shared Buy Box
+  counts for less — 72% vs 75% on the day) stays in the API, off the screen. First reading (2026-11-21 15:29, 281 SKUs): 210 · 44 ·
+  13 · 14. A later drill into price cards from the lines is on file, not built.
 =======================================================================================================================================
 */
 
@@ -397,6 +404,18 @@ function classify(r) {
   return { group, target, kept, walk };
 }
 
+// WHERE WE WIN AND LOSE (header) — THE split, used by the headline and by the cards it opens (routes/amz-all-list.js ?lost=), so a
+// part's count and its cards are always the same sizes. `r` = a readScreen row that counts (live at FBA, share known, read fine).
+// null = we have the Buy Box (alone or shared, featured to the most views). Prices are landed (postage included).
+const LOST_PARTS = ['cheaper', 'level', 'nobody'];
+function lostPart(r) {
+  if (r.holder === 'US' || r.holder === 'US_SHARED') return null;
+  if (r.holder === 'NONE') return 'nobody';
+  return r.bb_price !== null && r.our_price !== null && r.bb_price < r.our_price - 0.005 ? 'cheaper' : 'level';
+}
+/** The sizes that count for the headline (live at FBA, share known, read fine). */
+const countsForHeadline = (r) => r.live > 0 && r.our_share !== null && !r.error;
+
 /** Everything the screen shows: the stored readings with today's stock / cost, grouped; the last finished read; a read in progress. */
 async function readScreen(db) {
   const rows = await db.query(
@@ -436,7 +455,7 @@ async function readScreen(db) {
   for (const r of out) counts[r.group] += 1;
 
   // HEADLINE (header): sizes live at FBA whose share is known.
-  const known = out.filter((r) => r.live > 0 && r.our_share !== null && !r.error);
+  const known = out.filter(countsForHeadline);
   const sold = known.filter((r) => r.sold30 > 0);
   const soldPairs = sold.reduce((t, r) => t + r.sold30, 0);
   const headline = {
@@ -446,6 +465,13 @@ async function readScreen(db) {
     full: known.filter((r) => r.our_share >= 99.5).length,
     part: known.filter((r) => r.our_share > 0 && r.our_share < 99.5).length,
     none: known.filter((r) => r.our_share === 0).length,
+    // WHERE WE WIN AND LOSE (header) — the same sizes as avg_share, all or nothing per size; THE split is lostPart.
+    lead: {
+      us: known.filter((r) => lostPart(r) === null).length,
+      cheaper: known.filter((r) => lostPart(r) === 'cheaper').length,
+      level: known.filter((r) => lostPart(r) === 'level').length,
+      nobody: known.filter((r) => lostPart(r) === 'nobody').length,
+    },
   };
   const lastAll = await db.query(
     `SELECT id, started_at::text, finished_at::text, by_name, total, changed, error FROM amz_buybox_run
@@ -459,4 +485,4 @@ async function readScreen(db) {
   return { rows: out, counts, headline, last_all: lastAll.rows[0] || null, last_run: lastAny.rows[0] || null, running: running.rows[0] || null };
 }
 
-module.exports = { GROUPS, KEEP_MONTHS, sizesToRead, startRun, executeRun, readAmazon, summarise, saveReadings, classify, readScreen, fashionRank };
+module.exports = { LOST_PARTS, lostPart, countsForHeadline, GROUPS, KEEP_MONTHS, sizesToRead, startRun, executeRun, readAmazon, summarise, saveReadings, classify, readScreen, fashionRank };
