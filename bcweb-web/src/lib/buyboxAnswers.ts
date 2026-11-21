@@ -23,7 +23,7 @@ export const ANSWERS: { key: AmzAnswer; label: string; rule: string; dot: string
 // short = the one line on the Amazon Pricing home's mood card.
 export const MOODS: { key: AmzMood; label: string; sub: string; raise: string; cut: string; short: string }[] = [
   { key: 'fierce', label: 'Fierce', sub: 'Shift stock', raise: 'No raises', cut: 'More cuts — sizes that stopped selling too, and a penny under a seller copying our price', short: 'No raises · more cuts, even sizes that stopped selling' },
-  { key: 'chilled', label: 'Chilled', sub: 'A normal day', raise: 'Small steps up, at most 5%', cut: 'Just under the seller in the window, keeping £3 a pair. Sold in 30 days', short: 'Raises up to 5% · cut just under the window' },
+  { key: 'chilled', label: 'Chilled', sub: 'A normal day', raise: 'Small steps up, at most 3%', cut: 'Just under the seller in the window, keeping £3 a pair. Sold in 30 days', short: 'Raises up to 3% · cut just under the window' },
   { key: 'climb', label: 'Climb', sub: 'Reach for more', raise: 'Bigger steps up, at most 8%', cut: 'No cuts — let the other sellers sell out first', short: 'Raises up to 8% · no cuts' },
 ];
 

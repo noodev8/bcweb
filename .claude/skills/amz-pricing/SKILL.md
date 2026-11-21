@@ -89,6 +89,10 @@ Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). S
   1.4 weeks) — but 3 were on an Amazon order (placed 10 Nov) and 1 at home. Rationing (pricing ABOVE a rival and accepting fewer
   views) is only for a size with nothing on order. On order = `orderstatus` ordertype 2 / 3, `COALESCE(orderdate,'') <> ''`,
   `COALESCE(arrived,0) = 0` (`shopifysku` = the code); at home = `localstock` `#FREE`.
+- **A raise is at most +3% on our price in one step** (owner, 2026-11-21, `docs/amz-buybox/PLAN.md` decision 29 — was +5%). Of the
+  raises made 11–21 Nov on sizes holding the box, under +3% still held it at the next reading 74% of the time, +3–6% only 41%. The
+  Raise cards (Chilled) use the same cap (`utils/amzBuyBoxDeck.js → RAISE_CAP`). Never suggest a bigger one-step raise from the
+  Buy Box; a size with more room gets there step by step, a sale between each (one step, then a sale).
 - **The FBA premium over a cheaper self-poster is only a few %.** Our average share of views across the 2026-11-12 reading: 78% as
   the cheapest offer, 54% at 0–2% over the cheapest rival, 46% at 2–5%, 12% at 5–8%, ~0 at 20%+. So a raise stops a penny under
   the next DEARER rival, and at 2% over a rival already cheaper than us.

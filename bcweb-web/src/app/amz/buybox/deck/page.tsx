@@ -65,7 +65,7 @@ import { useAuth } from '@/contexts/AuthContext';
 // `dot` / `tag` = the answer's colour (LAYOUT, header) — the tab dot and the solid reason tag.
 const DECKS: { key: AmzDeckKind; label: string; verb: string; tagText: string; rule: string; dot: string; tag: string }[] = [
   { key: 'new', label: 'New', verb: 'New', tagText: 'New · cut', rule: 'Landed at Amazon in the last 30 days, no Amazon sale yet — a penny under the lead to get the first sale (up to it when a dearer seller is shown, never over the RRP), never below break-even', dot: 'bg-violet-500', tag: 'bg-violet-600' },
-  { key: 'raise', label: 'Raise', verb: 'Raise', tagText: 'Raise', rule: 'We have the Buy Box and the next rival is more than 2% above — a small step up (at most 5%). Sold in 30 days', dot: 'bg-emerald-500', tag: 'bg-emerald-600' },
+  { key: 'raise', label: 'Raise', verb: 'Raise', tagText: 'Raise', rule: 'We have the Buy Box and the next rival is more than 2% above — a small step up (at most 3%). Sold in 30 days', dot: 'bg-emerald-500', tag: 'bg-emerald-600' },
   { key: 'cut', label: 'Cut', verb: 'Cut', tagText: 'Cut', rule: 'A rival has the Buy Box at a price that still keeps us £3 a pair — a penny under it (2% over a self-poster)', dot: 'bg-rose-500', tag: 'bg-rose-600' },
 ];
 

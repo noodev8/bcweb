@@ -21,7 +21,7 @@ Success Response:
   "answer_of": { "FLE030-IVES-WHITE-05": ["raise", "ready"], ... },         // every in-stock size: [answer, reason]
   "last_all": { ...the last whole-list read, as /amz-buybox }, "running": null,
   "cards": [ { "deck": "raise", "group": "room", "code": "FLE030-IVES-WHITE-05", "our_price": 39.49, "suggest": 41.46,
-               "suggest_note": "Capped at +5% — ...", "floor": 35.62, "walk": 35.62, "breakeven": 32.10, "landed_ago": null, ... } ]
+               "suggest_note": "Capped at +3% — ...", "floor": 35.62, "walk": 35.62, "breakeven": 32.10, "landed_ago": null, ... } ]
 }
 =======================================================================================================================================
 Return Codes:

@@ -29,7 +29,7 @@ MOODS (decision 15) — Fierce · Chilled · Climb; every screen load starts on 
            Fierce  (shift stock)        Raise: none.  Cut: sold-in-30-days can_match, PLUS can_match sizes that sold nothing, PLUS `tie`
                                         sizes (a penny under the rival tied at our price). NO self-poster premium: a penny under
                                         every lead (owner, 2026-11-13: "go a penny under").
-           Chilled (= the rules before) Raise: next dearer − 1p, max +5%, max 2% over a cheaper rival, max RRP. Cut: sold-in-30-days
+           Chilled (= the rules before) Raise: next dearer − 1p, max +3%, max 2% over a cheaper rival, max RRP. Cut: sold-in-30-days
                                         can_match, a penny under the lead (2% over a self-posting lead, the trial).
            Climb   (fight for margin)   Raise: as Chilled but max +8%.  Cut: none — let rivals sell out.
          Always: never under the £3 walk-away (New: break-even), never over RRP, ONE STEP THEN A SALE (raised_waiting, every mood).
@@ -82,7 +82,9 @@ const MOODS = ['fierce', 'chilled', 'climb'];
 const DEFAULT_MOOD = 'chilled';
 const TABS = ['new', 'raise', 'cut'];
 const ANSWERS = ['new', 'raise', 'cut', 'leave', 'off'];
-const RAISE_CAP = { fierce: null, chilled: 0.05, climb: 0.08 };   // a raise is at most this much on our price per step (null = none)
+// Chilled 3% (was 5% — owner, 2026-11-21, PLAN.md decision 29): of the raises made 11–21 Nov from sizes holding the box, under +3% kept it
+// 74% of the time, +3–6% only 41%.
+const RAISE_CAP = { fierce: null, chilled: 0.03, climb: 0.08 };   // a raise is at most this much on our price per step (null = none)
 const OVER_CHEAPER_CAP = 0.02;     // ...and at most 2% over a rival already cheaper than us (header)
 const SELF_POST_PREMIUM = 0.02;    // can_match: 2% over a self-posting lead (header, a trial)
 const NEW_DAYS = 30;               // New = landed within this many days, no Amazon sale yet
