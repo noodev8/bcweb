@@ -30,7 +30,7 @@ Purpose: Owner: "the usual price change screen but reduced to cards to make it e
          Data: GET /amz-all-list ?cards=1 (getAmzDueCards / getAmzSearchCards / getAmzStepCards).
 
 NO SUGGESTION of its own (owner: "no suggestion — I'll type the price or give me the options like we have on the amazon price
-         screen. up, down, set"). On a search card a size with a Buy Box card in the chosen mood shows THAT card's suggestion (server
+         screen. up, down, set"). On a search card a size with a Buy Box card shows THAT card's suggestion (server
          utils/amzBuyBoxDeck.js → readDeck, the same rules) with "Use it", which only fills the box (owner: "keep the cards and the
          recommendations").
 
@@ -62,7 +62,7 @@ import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzCardFrame, { LastChangeLine, money } from '@/components/AmzCardFrame';
 import { applyAmzPrice, getAmzDueCards, getAmzLostCards, getAmzSearchCards, getAmzStepCards, isLostPart, markAmzReviewed, type AmzLostPart,
-  type AmzMood, type AmzPriceCard, type LadderListKey } from '@/lib/api';
+  type AmzPriceCard, type LadderListKey } from '@/lib/api';
 import { LOST_TEXT } from '@/lib/buyboxAnswers';
 import { CHIPS, LIST_TEXT, isChip, isLadderList, stepAim, stepListHref } from '@/lib/stockLadder';
 import { REVIEW_PERIODS, seasonPark } from '@/lib/reviewPeriods';
@@ -120,8 +120,6 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const { logout } = useAuth();
   const q = (useUrlParam('q') ?? '').trim();
   const g = (useUrlParam('g') ?? '').trim();   // ONE STYLE (header): the product menu's Amazon Price card — beats q
-  const moodParam = useUrlParam('mood');
-  const mood: AmzMood = moodParam === 'fierce' || moodParam === 'climb' ? moodParam : 'chilled';
   const at = useUrlParam('at');   // the card to open on (the full price screen's Back)
   // STEP CARDS (header): the Stock ladder list and its chip.
   const stepParam = useUrlParam('step');
@@ -144,19 +142,19 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
     : mode === 'search' && q ? `/amz?q=${encodeURIComponent(q)}` : '/amz');
   const fromQs = from ? `&from=${encodeURIComponent(from)}&back=${encodeURIComponent(backLabel)}` : '';
   const selfPath = mode === 'search'
-    ? `/amz/search-cards?${g ? `g=${encodeURIComponent(g)}` : `q=${encodeURIComponent(q)}`}&mood=${mood}${fromQs}`
+    ? `/amz/search-cards?${g ? `g=${encodeURIComponent(g)}` : `q=${encodeURIComponent(q)}`}${fromQs}`
     : mode === 'step' ? `/amz/step-cards?step=${step ?? ''}&when=${when}`
       : mode === 'lost' ? `/amz/lost-cards?part=${part ?? ''}` : '/amz/due-cards';
 
   // A snapshot (header): nothing refetches by itself. Waits for the client (useUrlParam reads null until hydrated).
   const key = !hydrated ? null : mode === 'due' ? ['amz-price-cards', 'due']
     : mode === 'step' ? (step ? ['amz-price-cards', 'step', step, when] : null)
-      : mode === 'lost' ? (part ? ['amz-price-cards', 'lost', part, mood] : null)
-      : g ? ['amz-price-cards', 'style', g, mood] : q ? ['amz-price-cards', 'search', q, mood] : null;
+      : mode === 'lost' ? (part ? ['amz-price-cards', 'lost', part] : null)
+      : g ? ['amz-price-cards', 'style', g] : q ? ['amz-price-cards', 'search', q] : null;
   const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(key,
     () => (mode === 'due' ? getAmzDueCards() : mode === 'step' ? getAmzStepCards(step as LadderListKey, when)
-      : mode === 'lost' ? getAmzLostCards(part as AmzLostPart, mood)
-      : getAmzSearchCards(g ? { g } : { q }, mood)),
+      : mode === 'lost' ? getAmzLostCards(part as AmzLostPart)
+      : getAmzSearchCards(g ? { g } : { q })),
     { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false });
   // FRESH ON EVERY OPEN (owner, 2026-11-13: Daily said 8 due, the screen showed 0 until Refresh — a copy from an earlier visit).
   // revalidateOnMount reads again on every open; until that read is in, nothing shows, so a card is never priced from the old copy.

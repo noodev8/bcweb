@@ -9,13 +9,13 @@ Purpose: LEAVE on Buy Box "Go through" (/amz/buybox/deck, PLAN.md decisions 16�
              GREATEST(existing, today + 28)) — the shared W-A2 write, utils/amzReviewWrite.js → writeAmzReview({ keepLater: true }),
              which also logs a HOLD row (note "Buy Box Leave") so the decision shows on Price Changes like any other hold. Why: a size
              looked at on Go through shouldn't then be moved blind from the Due list (owner: "one door per answer").
-           - one amz_buybox_press row (action 'leave', the mood, the tab, the suggested price) — utils/amzBuyBoxDeck.js → recordPress,
+           - one amz_buybox_press row (action 'leave', the tab, the suggested price; mood always 'chilled') — utils/amzBuyBoxDeck.js → recordPress,
              behind a SAVEPOINT (the record never stops the Due date). The card comes back when the price it would suggest differs
              from this one (to the penny) or after 7 days, whichever first.
          Leave asks nothing (owner: a reason "will slow us down").
 
 Request Payload:
-{ "code": "FLE030-IVES-WHITE-05", "mood": "chilled", "tab": "raise", "our_price": 39.49, "suggested": 41.46 }
+{ "code": "FLE030-IVES-WHITE-05", "tab": "raise", "our_price": 39.49, "suggested": 41.46 }
 
 Success Response:
 { "return_code": "SUCCESS", "code": "FLE030-IVES-WHITE-05", "next_review": "2026-12-10", "recorded": true }
@@ -47,7 +47,7 @@ router.post('/', async (req, res) => {
     const out = await withTransaction(async (client) => {
       const w = await writeAmzReview(client, { codes: [code], reviewDays: REVIEW_DAYS, note: 'Buy Box Leave', changedBy: by, keepLater: true });
       if (!w.rowCount) return { notFound: true };
-      const recorded = await recordPress(client, { code, by, mood: f.mood, tab: f.tab, action: 'leave', our_price: f.our_price, suggested: f.suggested, price: null });
+      const recorded = await recordPress(client, { code, by, tab: f.tab, action: 'leave', our_price: f.our_price, suggested: f.suggested, price: null });
       return { next_review: w.rows[0].next_review, recorded };
     });
     if (out.notFound) return res.json({ return_code: 'NOT_FOUND', message: `${code} is not a known size` });

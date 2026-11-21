@@ -61,7 +61,7 @@ Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=
            formula), profit_now; offers + featured (the latest Buy Box reading's sellers, amz_buybox_now — the card's sellers pop-up)
            and last_change (utils/amzBuyBoxDeck.js → lastChanges, THE copy — the card's "Last change" line; owner 2026-11-14: the
            two kinds of card the same). Two queries for the returned rows. Display only — nothing here blocks a price.
-           With q, a size that has a Buy Box card in ?mood= (default chilled) also carries that card's suggestion — bb_suggest,
+           With q, a size that has a Buy Box card also carries that card's suggestion — bb_suggest,
            bb_suggest_note, bb_deck (new / raise / cut) — from utils/amzBuyBoxDeck.js → readDeck (the same rules as the Buy Box
            cards, never a second copy). Shown on the search card with a "Use it" button; never applied by itself.
 
@@ -113,7 +113,6 @@ router.get('/', async (req, res) => {
     const q = typeof req.query.q === 'string' ? req.query.q.slice(0, 100).trim().toLowerCase() : '';
     const g = typeof req.query.g === 'string' ? req.query.g.slice(0, 100).trim().toLowerCase() : '';
     const withCards = req.query.cards === '1';
-    const mood = typeof req.query.mood === 'string' ? req.query.mood : undefined;   // readDeck normalises (anything else = chilled)
     const stepKey = typeof req.query.step === 'string' && req.query.step ? req.query.step : null;
     const when = WHEN_KEYS.includes(req.query.when) ? req.query.when : 'all';
     const ladder = stepKey ? await stepMembers(stepKey) : null;
@@ -260,7 +259,7 @@ router.get('/', async (req, res) => {
       // The Buy Box cards' suggestion for the search's sizes (header) — the deck read narrowed to the same search — and for a
       // Stock ladder step's Buy Box sizes (owner 2026-11-17).
       if (q || g || ladder || lost) {
-        const deck = await readDeck(pool, { mood, q, groupid: g });
+        const deck = await readDeck(pool, { q, groupid: g });
         const cardOf = Object.fromEntries(deck.cards.map((c) => [c.code, c]));
         for (const row of rows) {
           const c = cardOf[row.code];

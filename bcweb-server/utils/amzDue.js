@@ -20,7 +20,6 @@ THE RULE — two halves, every size in exactly one:
   they will focus on due down to zero"): until then the cards counted as due too ("Amazon to price" = cards + due), and a live queue
   that refills hourly made the morning number feel like going round in circles. Now Due is a list that reaches zero and stays there;
   the cards are counted beside it.
-  Why Chilled: a dashboard figure mustn't depend on a mood picked later (decision 23). The home's tiles show the chosen mood's cards.
   Set / Leave on a card still push the review date 4 weeks, so a size that stops selling joins the review half on a sensible date.
   No fallback when the hourly Buy Box reading stops (owner: "rare and we will notice and price manually until fixed").
 
@@ -34,14 +33,13 @@ Usage, in SQL (the routes that count / limit in SQL — Repricing, the status / 
 
 const { readDeck } = require('./amzBuyBoxDeck');
 
-const DUE_MOOD = 'chilled';
 
 /**
  * The Buy Box half: Map code -> { answer, reason, card } for every size the Buy Box answers in Chilled ('off' = Not selling is the
  * review half, so it is left out).
  */
 async function readBuyBoxSide(db) {
-  const d = await readDeck(db, { mood: DUE_MOOD, answersOnly: true });
+  const d = await readDeck(db, { answersOnly: true });
   const side = new Map();
   for (const [code, [answer, reason]] of Object.entries(d.answer_of)) {
     if (answer === 'off') continue;
@@ -84,4 +82,4 @@ function dueSql(codeCol, reviewCol, bbParam, onExpr = 'CURRENT_DATE') {
     + ` AND EXISTS (SELECT 1 FROM amzfeed due_f WHERE due_f.code = ${codeCol} AND COALESCE(due_f.amzlive, 0) > 0))`;
 }
 
-module.exports = { DUE_MOOD, readBuyBoxSide, dueBy, buyBoxMoves, sideParams, dueSql };
+module.exports = { readBuyBoxSide, dueBy, buyBoxMoves, sideParams, dueSql };

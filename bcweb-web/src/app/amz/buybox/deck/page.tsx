@@ -11,13 +11,10 @@ Purpose: Every Amazon size IN STOCK AT AMAZON gets ONE answer (New · Raise · C
          Server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js (which sizes, the suggestion, the order — read its header).
 
 TABS: New (landed in the last 30 days, no Amazon sale yet — "get the first sale": a penny under the lead, floor break-even; never mixed
-         with the other cards, shown by style in size order; the mood doesn't touch it) · Raise · Cut. Opens on New when it has cards.
+         with the other cards, shown by style in size order) · Raise · Cut. Opens on New when it has cards.
 
-MOOD: Fierce · Chilled · Climb, chosen A LEVEL ABOVE THE CARDS (owner, 2026-11-13: "We should drill down into the cards with a mood
-         already chosen"): picked on the AMAZON PRICING HOME (/amz — the old Buy Box screen became it, 2026-11-13, PLAN.md decision 23)
-         and carried in the link (?mood=), shown here as a badge (components/MoodSwitch → MoodBadge) with "Change" back to the home — no
-         switch beside the cards. No ?mood= (an old link) = Chilled. The tabs
-         keep the mood.
+ONE WAY OF PRICING: the Fierce / Climb moods were dropped (owner, 2026-11-21: "We only use chilled") — a ?mood= on an old link is
+         ignored.
 
 THE CARD is components/AmzCardFrame — THE one Amazon price card layout, shared with the Not selling / search cards (owner,
          2026-11-14: "the same layout and make it simpler"; read its header). What is this page's own: the box STARTS AT THE SUGGESTION;
@@ -41,7 +38,7 @@ THE LIST STAYS PUT while you work: the deck is the snapshot from when the page o
 
 LAYOUT (2026-11-13, owner: "too busy … no need for the list to always show … glance at data and maybe see some colours but not too
          conflicting"; docs/amz-buybox/GO-THROUGH-LAYOUT.md is the record): ONE centred column read in the order you decide —
-         toolbar (tabs, mood badge, reading age) · progress dots (one per card: hollow to do, green set, grey left, ringed current;
+         toolbar (tabs, reading age) · progress dots (one per card: hollow to do, green set, grey left, ringed current;
          click to jump — the full list is a DRAWER behind List / Q, closed on every load, lying over the page so the card never moves)
          · the card (AmzCardFrame, 2026-11-14 — was the move headline, the price ladder and three fact boxes) · a failure as one quiet
          line under the card. COLOUR: the answer's colour (New violet, Raise emerald, Cut rose) only on the tab dot and the reason tag;
@@ -57,16 +54,16 @@ import Link from 'next/link';
 import { ArrowPathIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzCardFrame, { LastChangeLine } from '@/components/AmzCardFrame';
-import { applyAmzPrice, getAmzBuyBoxDeck, leaveAmzBuyBox, type AmzDeckCard, type AmzDeckKind, type AmzMood, type AmzSendOutcome } from '@/lib/api';
+import { applyAmzPrice, getAmzBuyBoxDeck, leaveAmzBuyBox, type AmzDeckCard, type AmzDeckKind, type AmzSendOutcome } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { useAuth } from '@/contexts/AuthContext';
 
 // `dot` / `tag` = the answer's colour (LAYOUT, header) — the tab dot and the solid reason tag.
 const DECKS: { key: AmzDeckKind; label: string; verb: string; tagText: string; rule: string; dot: string; tag: string }[] = [
-  { key: 'new', label: 'New', verb: 'New', tagText: 'New · cut', rule: 'Landed at Amazon in the last 30 days, no Amazon sale yet — a penny under the lead to get the first sale (up to it when a dearer seller is shown, never over the RRP), never below break-even', dot: 'bg-violet-500', tag: 'bg-violet-600' },
+  { key: 'new', label: 'New', verb: 'New', tagText: 'New · cut', rule: 'Landed at Amazon in the last 30 days, no Amazon sale yet — a penny under the lead (1% under a self-poster) to get the first sale (up to it when a dearer seller is shown, never over the RRP), never below break-even', dot: 'bg-violet-500', tag: 'bg-violet-600' },
   { key: 'raise', label: 'Raise', verb: 'Raise', tagText: 'Raise', rule: 'We have the Buy Box and the next rival is more than 2% above — a small step up (at most 3%). Sold in 30 days', dot: 'bg-emerald-500', tag: 'bg-emerald-600' },
-  { key: 'cut', label: 'Cut', verb: 'Cut', tagText: 'Cut', rule: 'A rival has the Buy Box at a price that still keeps us £3 a pair — a penny under it (2% over a self-poster)', dot: 'bg-rose-500', tag: 'bg-rose-600' },
+  { key: 'cut', label: 'Cut', verb: 'Cut', tagText: 'Cut', rule: 'A rival has the Buy Box at a price that still keeps us £3 a pair — a penny under it (1% under a self-poster — or leave it when that would go under £3)', dot: 'bg-rose-500', tag: 'bg-rose-600' },
 ];
 
 // REVIEW (header): a Set or Leave moves the Due date to today + REVIEW_DAYS SERVER-SIDE (a later date kept). Worked out here only to
@@ -122,10 +119,7 @@ export default function AmzBuyBoxDeckPage() {
   // Old links (?g=room / can_match) land on the matching tab.
   const gWanted: AmzDeckKind | null = gParam === 'new' ? 'new' : gParam === 'raise' || gParam === 'room' ? 'raise'
     : gParam === 'cut' || gParam === 'can_match' ? 'cut' : null;
-  // MOOD (header): from the link — chosen on the Amazon Pricing home. useUrlParam reads null until hydrated, so the deck waits for the
-  // client (`hydrated`) before fetching — else it would fetch Chilled first, then the real mood.
-  const moodParam = useUrlParam('mood');
-  const mood: AmzMood = moodParam === 'fierce' || moodParam === 'climb' ? moodParam : 'chilled';
+  // useUrlParam reads null until hydrated, so the deck waits for the client (`hydrated`) before fetching.
   const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
 
   const [now, setNow] = useState(() => Date.now());
@@ -134,8 +128,8 @@ export default function AmzBuyBoxDeckPage() {
     return () => clearInterval(t);
   }, []);
 
-  // A snapshot: nothing refetches by itself, so the deck doesn't reshuffle while you work. Refresh reloads it; each mood is its own key.
-  const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(hydrated ? ['amz-buybox-deck', mood] : null, () => getAmzBuyBoxDeck(mood), {
+  // A snapshot: nothing refetches by itself, so the deck doesn't reshuffle while you work. Refresh reloads it.
+  const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(hydrated ? ['amz-buybox-deck'] : null, () => getAmzBuyBoxDeck(), {
     revalidateOnFocus: false, revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
   });
   // FRESH ON EVERY OPEN (owner, 2026-11-13: Daily said 8 due, the screen showed 0 until Refresh — a copy from an earlier visit).
@@ -182,7 +176,7 @@ export default function AmzBuyBoxDeckPage() {
   }
 
   // The press details recorded with a Set / Leave / Undo (the agree rate, read later).
-  const pressOf = (card: AmzDeckCard) => ({ mood, tab: card.deck, our_price: card.our_price, suggested: card.suggest });
+  const pressOf = (card: AmzDeckCard) => ({ mood: 'chilled' as const, tab: card.deck, our_price: card.our_price, suggested: card.suggest });
 
   async function setPrice(card: AmzDeckCard, price: number, edited: boolean) {
     if (busy) return;
@@ -254,7 +248,7 @@ export default function AmzBuyBoxDeckPage() {
     <AppShell crumb={<span className="font-medium text-slate-800">Pricing</span>}>
       {/* ONE CENTRED COLUMN (LAYOUT, header): toolbar, progress, card and the result line all the same width. */}
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
-        {/* 1 TOOLBAR — tabs · mood badge · how old the reading is. No result message here any more (it sits under the card). */}
+        {/* 1 TOOLBAR — tabs · how old the reading is. No result message here any more (it sits under the card). */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {/* Back to the tiles — worded "Back", not "Amazon Pricing", so it isn't read as the nav button (owner, 2026-11-13). */}
           <Link href="/amz" title="Back to the New / Raise / Cut tiles"
@@ -263,14 +257,13 @@ export default function AmzBuyBoxDeckPage() {
           </Link>
           <div className="inline-flex w-full rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm sm:w-auto">
             {DECKS.map((d) => (
-              <Link key={d.key} href={`/amz/buybox/deck?g=${d.key}&mood=${mood}`} title={d.rule}
+              <Link key={d.key} href={`/amz/buybox/deck?g=${d.key}`} title={d.rule}
                 className={'inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm sm:flex-none ' + (d.key === deck ? 'bg-slate-100 font-medium text-slate-900 ring-1 ring-inset ring-slate-200' : 'text-slate-600 hover:bg-slate-50')}>
                 <span className={`inline-block h-2 w-2 rounded-full ${d.dot}`} /> {d.label}
                 <span className="font-semibold tabular-nums text-slate-900">{toDo(d.key) ?? ''}</span>
               </Link>
             ))}
           </div>
-          {/* The mood badge + Change were here — taken off (owner, 2026-11-18: always Chilled). */}
           <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 text-sm text-slate-400" title="Read every hour by the cron">
             Read {ago(readMs, now)}{data?.running ? ' · a read is running' : ''}
             <button type="button" onClick={reload} aria-label="Refresh"
@@ -299,7 +292,7 @@ export default function AmzBuyBoxDeckPage() {
             </div>
             <span className="shrink-0 whitespace-nowrap text-sm tabular-nums text-slate-400">
               {index >= 0 ? `${index + 1} of ${cards.length}` : `${cards.length}`} · {setCount} set · {leftCount} left
-              {deck === 'new' && <span className="hidden md:inline" title="New sizes only — a penny under the lead to get the first sale, never below break-even"> · no raises here</span>}
+              {deck === 'new' && <span className="hidden md:inline" title="New sizes only — a penny under the lead (1% under a self-poster) to get the first sale, never below break-even"> · no raises here</span>}
             </span>
             <button type="button" onClick={() => setListOpen((o) => !o)} title="Every card in this tab (Q)"
               className="ml-auto hidden h-7 shrink-0 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-600 hover:bg-slate-50 lg:inline-flex">
@@ -317,7 +310,7 @@ export default function AmzBuyBoxDeckPage() {
                 live again (Leave is only a skip — Set or Leave it again); one you SET shows what was sent, with Undo in Set's place and
                 Next in Leave's. */}
             {current ? (
-              <Card key={`${current.code}:${current.suggest}` + (done.get(current.code)?.kind === 'set' ? ':set' : '')} card={current} mood={mood} n={index + 1} busy={busy}
+              <Card key={`${current.code}:${current.suggest}` + (done.get(current.code)?.kind === 'set' ? ':set' : '')} card={current} n={index + 1} busy={busy}
                 setDone={done.get(current.code)?.kind === 'set' ? (done.get(current.code) as Extract<Done, { kind: 'set' }>) : null}
                 onSet={(p, edited) => setPrice(current, p, edited)} onLeave={() => leave(current)} onPrev={previous}
                 onUndo={() => undo(current.code)} onNext={() => go(nextAfter(current.code, done))}
@@ -387,8 +380,8 @@ function holderOf(card: AmzDeckCard): string {
 }
 const daysAgo = (n: number | null) => (n === null ? 'never' : n === 0 ? 'today' : n === 1 ? 'yesterday' : `${n} days ago`);
 
-function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, onNext, onUndoLast }: {
-  card: AmzDeckCard; mood: AmzMood; n: number; busy: boolean;
+function Card({ card, n, busy, setDone, onSet, onLeave, onPrev, onUndo, onNext, onUndoLast }: {
+  card: AmzDeckCard; n: number; busy: boolean;
   setDone: Extract<Done, { kind: 'set' }> | null;   // set this visit: show what was sent, Undo where Set is, Next where Leave is
   onSet: (price: number, edited: boolean) => void; onLeave: () => void; onPrev: () => void;
   onUndo: () => void; onNext: () => void; onUndoLast: () => void;
@@ -470,7 +463,7 @@ function Card({ card, mood, n, busy, setDone, onSet, onLeave, onPrev, onUndo, on
     <AmzCardFrame
       code={card.code} groupid={card.groupid} size={size} title={card.title} brand={card.brand} imagename={card.imagename}
       links={[
-        { href: `/amz/sku/${encodeURIComponent(card.code)}?from=${encodeURIComponent(`/amz/buybox/deck?g=${card.deck}&mood=${mood}`)}`, label: 'Full price screen →' },
+        { href: `/amz/sku/${encodeURIComponent(card.code)}?from=${encodeURIComponent(`/amz/buybox/deck?g=${card.deck}`)}`, label: 'Full price screen →' },
         ...(card.asin ? [{ href: `https://www.amazon.co.uk/dp/${card.asin}`, label: 'Amazon ↗', external: true }] : []),
       ]}
       reason={reason}

@@ -19,18 +19,18 @@ THE LAYOUT — the order the job is done in:
   Buy Box strip WHERE WE WIN AND LOSE (components/AmzBuyBoxStrip, owner 2026-11-21 — read its header): the % of our SKUs with the
                 Buy Box, and the three parts we don't have it on as buttons into the Buy Box cards (/amz/lost-cards).
   Team week     one collapsed line, laptop only (components/AmzTeamWeek).
-  (The mood step is gone — owner, 2026-11-18: "I always use calm". The home is always Chilled; no faces, no choice. The links still
-  carry ?mood=chilled, and the Fierce / Climb rules stay on the server, unused. components/MoodSwitch is kept for a way back.)
+  (No mood step: owner, 2026-11-18, "I always use calm"; the Fierce / Climb rules and components/MoodSwitch removed 2026-11-21 — "We
+  only use chilled".)
   1 Price       THE DAILY JOB, four tiles worked to zero, each one big "Price →" (the count is in the tile — owner, 2026-11-13: "No
-                need to have Price X on the buttons. We have the count inside the box"): New · Raise · Cut — the cards ready in this
-                mood (/amz/buybox/deck — on screen "Pricing"); NOT SELLING · DUE — the review half's due sizes, into the DUE CARDS
+                need to have Price X on the buttons. We have the count inside the box"): New · Raise · Cut — the cards ready
+                (/amz/buybox/deck — on screen "Pricing"); NOT SELLING · DUE — the review half's due sizes, into the DUE CARDS
                 (/amz/due-cards — owner, 2026-11-13: "the usual price change screen but reduced to cards to make it easier and more fun
                 … to go through DUE"). Nothing small under or beside them.
   2 Look up     THE SPECIALITIES, the same tile look (owner, 2026-11-13: "Maybe the search card box is a speciality. So is the 'or the
                 list' and the '299 items' maybe they need their own card under the main cards"; named "Look up"):
                   Search            any text (brand, name, groupid, SKU — server utils/amzBuyBoxDeck.js → matchesSearch) typed where
                                     the tile's name goes; how many sizes match and how they split (due · Buy Box · not due); "Price →"
-                                    into the SEARCH CARDS (/amz/search-cards?q=&mood= — components/AmzPriceCards: every match, nothing
+                                    into the SEARCH CARDS (/amz/search-cards?q= — components/AmzPriceCards: every match, nothing
                                     hidden). Touches nothing else. Nothing stored — empty on every load (?q= fills it: the search
                                     cards' Back carries it).
                   Not selling list  the full list of the review half (/amz/all?by=all&half=review — Due switch, bulk bar, review chips)
@@ -51,7 +51,7 @@ import AmzTeamWeek from '@/components/AmzTeamWeek';
 import AmzBasketBar, { AmzUploadButton } from '@/components/AmzBasketBar';
 import AmzBuyBoxReading from '@/components/AmzBuyBoxReading';
 import AmzBuyBoxStrip from '@/components/AmzBuyBoxStrip';
-import { getAmzBuyBox, getAmzBuyBoxDeck, getAmzNotSellingDue, getAmzSearchSummary, type AmzAnswer, type AmzMood } from '@/lib/api';
+import { getAmzBuyBox, getAmzBuyBoxDeck, getAmzNotSellingDue, getAmzSearchSummary, type AmzAnswer } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useDebounced } from '@/lib/useDebounced';
 import { ANSWERS } from '@/lib/buyboxAnswers';
@@ -70,8 +70,6 @@ export default function AmazonPricingHome() {
     revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
     refreshInterval: (d) => (d?.running ? 3000 : 0),
   });
-  // Always Chilled (owner, 2026-11-18 — the mood choice was taken off).
-  const mood: AmzMood = 'chilled';
   // SEARCH (header): the search card beside the box; nothing stored. Counted once typing settles, so each key press isn't a server
   // read. Starts from ?q= when coming Back from the search cards (their Back carries it); typing takes over.
   const urlQ = useUrlParam('q');
@@ -81,12 +79,12 @@ export default function AmazonPricingHome() {
   const { data: found } = useApiQuery(q ? ['amz-search-summary', q] : null, () => getAmzSearchSummary(q), { keepPreviousData: true });
   // The card still shows the last search's numbers while the new one is counted — faded, its button waits.
   const counting = !!search.trim() && found?.q !== search.trim();
-  // The answers for the mood (same server rules as the cards). Its OWN key, never the deck page's (that one is the snapshot the cards
-  // work from), keyed on the mood and the reading so a finished read recounts.
-  const { data: deck } = useApiQuery(['amz-buybox-answers', mood, data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(mood), {
+  // The answers (same server rules as the cards). Its OWN key, never the deck page's (that one is the snapshot the cards work from),
+  // keyed on the reading so a finished read recounts.
+  const { data: deck } = useApiQuery(['amz-buybox-answers', data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(), {
     revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
   });
-  // NOT SELLING · DUE — mood-independent (the review half goes by review dates).
+  // NOT SELLING · DUE — the review half, by review dates.
   const { data: notSelling } = useApiQuery(['amz-not-selling-due'], () => getAmzNotSellingDue());
 
   const answers = deck?.answers;
@@ -125,7 +123,7 @@ export default function AmazonPricingHome() {
               return (
                 <Tile key={a.key} dot={a.dot} label={a.label} n={s ? ready : null}
                   under={`of ${s?.total ?? 0} in ${a.label}`}
-                  href={ready > 0 ? `/amz/buybox/deck?g=${a.key}&mood=${mood}` : null} btn="Price →" />
+                  href={ready > 0 ? `/amz/buybox/deck?g=${a.key}` : null} btn="Price →" />
               );
             })}
             <Tile dot="bg-slate-400" label="Not selling · due" n={notSelling ?? null} under="by review date"
@@ -138,13 +136,13 @@ export default function AmazonPricingHome() {
           <StepHead n={2} title="Look up" hint="Search anything, the whole not-selling list, or who Amazon shows." />
           <div className={GRID}>
             <SearchTile search={search} onSearch={setSearch} found={found ?? null} counting={counting}
-              href={found && found.total > 0 ? `/amz/search-cards?q=${encodeURIComponent(found.q)}&mood=${mood}` : null} />
+              href={found && found.total > 0 ? `/amz/search-cards?q=${encodeURIComponent(found.q)}` : null} />
             <Tile dot="bg-slate-400"
               label="Not selling list" n={notSelling ?? null} unit="due" under="bulk moves · review dates"
               href="/amz/all?by=all&half=review" btn="Open →" />
             <Tile dot="bg-slate-400"
               label="Sizes at Amazon" n={deck?.in_stock ?? null} unit="in stock" under="who Amazon shows on each size"
-              href={`/amz/buybox?mood=${mood}`} btn="Open →" />
+              href="/amz/buybox" btn="Open →" />
           </div>
         </section>
       </div>

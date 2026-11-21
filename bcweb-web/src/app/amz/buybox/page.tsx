@@ -6,8 +6,8 @@ Page: /amz/buybox  (SIZES AT AMAZON — the table; was the Buy Box screen until 
 Purpose: Where we stand on every Amazon size — who Amazon features, at what price, our share of views — for looking things up and checking
          a reason. Server routes/amz-buybox.js (READ ONLY) + amz-buybox-read.js; THE rules are utils/amzBuyBox.js.
 
-MOVED BEHIND A LINK (owner, 2026-11-13, PLAN.md decisions 23–24): the Buy Box screen became the AMAZON PRICING HOME (/amz — the mood,
-         the New / Raise / Cut / Not selling tiles, Team week); this table went to its own page, opened from the home's "Sizes at Amazon
+MOVED BEHIND A LINK (owner, 2026-11-13, PLAN.md decisions 23–24): the Buy Box screen became the AMAZON PRICING HOME (/amz — the
+         New / Raise / Cut / Not selling tiles, Team week); this table went to its own page, opened from the home's "Sizes at Amazon
          →" (owner: "Move it behind a link"). "Buy Box" now names the reading, the % and this table — never a place to price. The
          headline % and the reading's age show here too (components/AmzBuyBoxReading).
          RENAMED "SIZES AT AMAZON" (owner, 2026-11-13, asking "Is 'Buy Box by Size' actually all sizes?"): it isn't every Amazon size —
@@ -17,9 +17,8 @@ MOVED BEHIND A LINK (owner, 2026-11-13, PLAN.md decisions 23–24): the Buy Box 
 WHAT YOU SEE IS THE DATABASE (owner, 2026-11-12): opening the page never asks Amazon — it shows the last stored reading and how old it is.
          The cron reads the whole list every hour; the one button is Read this style, on an open row (seconds — after a price change).
 
-THE ANSWERS: every size IN STOCK AT AMAZON has ONE answer for the MOOD — New · Raise · Cut · Leave · Not selling (utils/amzBuyBoxDeck.js,
-         via GET /amz-buybox-deck). The mood comes from the home's link (?mood=, Chilled when absent) and shows beside the tabs — it is
-         chosen on the home, never here. Click an answer's tab for its sizes and its REASONS (the old groups, or why a card waits) — a
+THE ANSWERS: every size IN STOCK AT AMAZON has ONE answer — New · Raise · Cut · Leave · Not selling (utils/amzBuyBoxDeck.js,
+         via GET /amz-buybox-deck; one way of pricing since the moods were dropped, 2026-11-21 — a ?mood= on an old link is ignored). Click an answer's tab for its sizes and its REASONS (the old groups, or why a card waits) — a
          reason narrows the list. Sizes not live at FBA have no answer — search finds them.
 
 THE GROUPS (one size, one group — classify in utils/amzBuyBox.js; worked out from the stored reading + today's cost) are REASONS:
@@ -46,11 +45,10 @@ TAGS (colour restraint — small solid tags, no row tints): "following us" = a r
 
 import { Fragment, Suspense, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { ArrowPathIcon, ChevronDownIcon, ChevronRightIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzBuyBoxReading, { toMs } from '@/components/AmzBuyBoxReading';
-import { getAmzBuyBox, getAmzBuyBoxDeck, startAmzBuyBoxRead, type AmzAnswer, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow, type AmzMood } from '@/lib/api';
+import { getAmzBuyBox, getAmzBuyBoxDeck, startAmzBuyBoxRead, type AmzAnswer, type AmzBuyBoxGroup, type AmzBuyBoxHolder, type AmzBuyBoxRow } from '@/lib/api';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { ANSWERS, reasonLabel } from '@/lib/buyboxAnswers';
 import { useAuth } from '@/contexts/AuthContext';
@@ -84,9 +82,7 @@ function Tag({ children, title, tone = 'slate' }: { children: React.ReactNode; t
   return <span title={title} className={`ml-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cls}`}>{children}</span>;
 }
 
-const MOOD_KEYS: AmzMood[] = ['fierce', 'chilled', 'climb'];
-
-// useSearchParams must sit inside a Suspense boundary for Next's build.
+// A Suspense boundary round the page (it held useSearchParams for the mood until 2026-11-21).
 export default function AmzBuyBoxBySizePage() {
   return (
     <Suspense fallback={<div className="flex min-h-screen items-center justify-center text-slate-400">Loading…</div>}>
@@ -97,10 +93,6 @@ export default function AmzBuyBoxBySizePage() {
 
 function BuyBoxBySize() {
   const { logout } = useAuth();
-  const searchParams = useSearchParams();
-  // The mood is chosen on the home and carried here in the link (header); Chilled when absent.
-  const moodParam = searchParams.get('mood') as AmzMood | null;
-  const mood: AmzMood = moodParam && MOOD_KEYS.includes(moodParam) ? moodParam : 'chilled';
 
   // While a read is running (ours, another person's or the cron's) the page follows its progress every 3 s and picks up the new
   // readings when it ends; otherwise nothing refetches by itself — the readings only change on a read.
@@ -109,8 +101,8 @@ function BuyBoxBySize() {
     refreshInterval: (d) => (d?.running ? 3000 : 0),
   });
   const running = data?.running ?? null;
-  // THE ANSWERS for the mood — the same key as the home's, so the counts match it.
-  const { data: deck } = useApiQuery(['amz-buybox-answers', mood, data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(mood), {
+  // THE ANSWERS — the same key as the home's, so the counts match it.
+  const { data: deck } = useApiQuery(['amz-buybox-answers', data?.last_all?.finished_at ?? ''], () => getAmzBuyBoxDeck(), {
     revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false,
   });
 
@@ -163,7 +155,7 @@ function BuyBoxBySize() {
 
       {data && (
         <section>
-          {/* The answer tabs (the mood badge taken off, owner 2026-11-18), the in-stock count, search on the right. */}
+          {/* The answer tabs, the in-stock count, search on the right. */}
           <div className="mb-2.5 flex flex-wrap items-center gap-x-3 gap-y-2">
             <div className="inline-flex max-w-full overflow-x-auto rounded-lg border border-slate-200 bg-white p-0.5 shadow-sm">
               {ANSWERS.map((a) => {

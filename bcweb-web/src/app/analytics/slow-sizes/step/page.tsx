@@ -207,7 +207,7 @@ const CHOICE_TEXT: Partial<Record<LadderListKey, { lead: string; shopAll: boolea
 function StepChoice({ step, amzRows, amzLoaded }: { step: LadderListKey; amzRows: LadderListRow[]; amzLoaded: boolean }) {
   const text = CHOICE_TEXT[step];
   const ladder = useApiQuery('analytics-stock-ladder', () => getStockLadder());
-  const deck = useApiQuery(step === 'arrived' ? ['amz-buybox-deck', 'chilled'] : null, () => getAmzBuyBoxDeck('chilled'));
+  const deck = useApiQuery(step === 'arrived' ? ['amz-buybox-deck'] : null, () => getAmzBuyBoxDeck());
   const shop = useApiQuery(['pricing-all-list', step], () => getAllList(step));
   if (!text) return null;
   const self = stepChoiceHref(step);

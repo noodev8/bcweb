@@ -1,6 +1,6 @@
 /*
 =======================================================================================================================================
-Util: amzBuyBoxDeck  (THE rules for "Go through" — the Buy Box one-at-a-time screen, /amz/buybox/deck; answers, moods and New
+Util: amzBuyBoxDeck  (THE rules for "Go through" — the Buy Box one-at-a-time screen, /amz/buybox/deck; answers and New
                       agreed 2026-11-12, docs/amz-buybox/PLAN.md decisions 13–20; staff guide = the claude.ai "Buy Box Guide")
 =======================================================================================================================================
 Purpose: Give every Amazon size IN STOCK AT AMAZON (FBA live > 0) ONE answer — Raise · Cut · Leave · Not for this screen — or put it on
@@ -21,41 +21,39 @@ NEW (decision 20 — "new is just first sale, then normal rules"): live at FBA, 
          the RRP (owner, 2026-11-13: "get the card"; at the RRP already = no card, reason `rrp`). And (owner, 2026-11-13: "keep it"):
            - a penny under would be below break-even → level with the lead if that is still a cut and not a loss, else no card
              (the same shape as Chilled's walk-away rule).
-         The first sale — or NEW_DAYS without one — ends it: the size joins the normal answers. No raises on New, so the mood doesn't
-         touch it (a New move up to a dearer lead is the lead's price, not a mood's step).
+         The first sale — or NEW_DAYS without one — ends it: the size joins the normal answers. No raises on New.
+         A SELF-POSTING lead on New: SELF_POST_UNDER under it (as can_match below), floor break-even, else no card (`breakeven`) —
+         never a penny under or level with a self-poster.
 
-MOODS (decision 15) — Fierce · Chilled · Climb; every screen load starts on Chilled, nothing stored (the mood goes on each press row).
-         The mood changes raises everywhere and cuts outside New:
-           Fierce  (shift stock)        Raise: none.  Cut: sold-in-30-days can_match, PLUS can_match sizes that sold nothing, PLUS `tie`
-                                        sizes (a penny under the rival tied at our price). NO self-poster premium: a penny under
-                                        every lead (owner, 2026-11-13: "go a penny under").
-           Chilled (= the rules before) Raise: next dearer − 1p, max +3%, max 2% over a cheaper rival, max RRP. Cut: sold-in-30-days
-                                        can_match, a penny under the lead (2% over a self-posting lead, the trial).
-           Climb   (fight for margin)   Raise: as Chilled but max +8%.  Cut: none — let rivals sell out.
-         Always: never under the £3 walk-away (New: break-even), never over RRP, ONE STEP THEN A SALE (raised_waiting, every mood).
+ONE WAY OF PRICING (owner, 2026-11-21: "all apart from chilled are now dropped. We only use chilled"): the Fierce and Climb moods
+         (decision 15) are gone — these are the Chilled rules, the only ones. amz_buybox_press.mood keeps its history; every new press is
+         recorded 'chilled'. A `mood` sent by a client is ignored.
+         Always: never under the £3 walk-away (New: break-even), never over RRP, ONE STEP THEN A SALE (raised_waiting).
 
 THE MOVES (suggest):
-  room       RAISE to the next rival above us minus 1p, capped at RAISE_CAP[mood] on our price and at the RRP; never down. AND, when a
-             rival already sells BELOW us, capped at 2% over that cheapest rival (across the 2026-11-12 reading our share of views was
-             78% as the cheapest offer, 54% at 0–2% over, 46% at 2–5%, 12% at 5–8%, ~0 at 20%+). A size already 2%+ over the cheaper
-             rival gets no move → LEAVE (`cheaper_rival`), not Raise.
-  can_match  when the lead is a SELF-POSTER (Chilled only — Climb doesn't cut, Fierce goes a penny under): 2% over it (a TRIAL — the FBA premium; only while still a cut and not under the walk-away;
-             already within 2% of it and still not shown = the premium isn't working there, so a penny under). Otherwise a penny under
-             the lead, postage included (at our exact price Amazon gives the tie to the rival). If a penny under is below the walk-away,
-             level with the lead (a tie, said on the card).
-  tie        (Fierce only) a penny under the rival at our price, never under the walk-away — else no move.
+  room       RAISE to the next rival above us minus 1p, capped at RAISE_CAP (+3%, PLAN.md decision 29) on our price and at the RRP;
+             never down. AND, when a rival already sells BELOW us, capped at 2% over that cheapest rival (across the 2026-11-12 reading
+             our share of views was 78% as the cheapest offer, 54% at 0–2% over, 46% at 2–5%, 12% at 5–8%, ~0 at 20%+). A size already
+             2%+ over the cheaper rival gets no move → LEAVE (`cheaper_rival`), not Raise.
+  can_match  a SELF-POSTING lead (OTHER_MFN): SELF_POST_UNDER (1%) under it, or LEAVE (`self_poster`) when that is under the
+             walk-away — never a penny under or level with it (owner, 2026-11-21, PLAN.md decision 30: "go clearly under or leave").
+             Why: 11–21 Nov, 170 cuts to within 0.5% of a self-posting lead won the box 35% of the time and the rival came down again
+             by the next reading 98 times (pricing software following us); 27 cuts 0.5%+ under won 17 (63%) and were followed 3 times.
+             This replaces the "2% over a self-poster" trial (14 moves, won 29%).
+             Any other lead (FBA, Amazon): a penny under it, postage included (at our exact price Amazon gives the tie to the rival;
+             a penny under an FBA lead won 75%). If a penny under is below the walk-away, level with the lead (a tie, said on the card).
 
 THE ANSWERS (answerFor) — the reason is the old group, or why it waits:
-  Not for this screen  sold nothing in 30 days, whatever the group (except Fierce's can_match / tie cuts). Reasons: `recent` (last
+  Not for this screen  sold nothing in 30 days, whatever the group. Reasons: `recent` (last
                        Amazon sale within 90 days — resting, mostly season) / `older` (90+ days or never). Stays on the Due list.
                        The pile itself is PARKED for a later talk (PLAN.md) — not "drop until it sells".
   Raise / Cut          `ready` = a card. WAITING (no card): `left` (Left on Go through — back when the suggestion differs from the one
                        left, to the penny, or after LEAVE_BACK_DAYS), `changed` (a price set since the reading — back once a reading has
                        SEEN the new price), `raised` (room: the last real move was a raise and no pair sold since — "otherwise we are
                        making a guess on top of a guess").
-  Leave                every other selling size: top · alone · dearer · cant_match · no_bb · unknown · error · tie (outside Fierce)
+  Leave                every other selling size: top · alone · dearer · cant_match · no_bb · unknown · error · tie
                        · cheaper_rival · rrp (no room under the RRP) · not_eligible (Amazon won't feature us whatever the price — Seller
-                       Central) · no_raise (Fierce: room) · no_cut (Climb: can_match).
+                       Central) · self_poster (1% under the self-posting lead would be under the walk-away).
   New                  ready / left / changed as above, or no card: `lead` (we're shown) · `dearer` · `breakeven` · `no_bb` ·
                        `not_eligible` · `unknown` (no cost).
 
@@ -64,7 +62,7 @@ SET / LEAVE (decisions 16–18): both move skumap.next_amz_price_review to GREAT
   (recordPress — kept PRESS_KEEP_MONTHS, purged by the write itself). Leave asks nothing. Two people at once: the last price wins.
 
 ORDER — money at stake first: raise = pairs a week × the extra profit a pair; cut = pairs in 30 days × the views we're not shown to
-  (then FBA stock, so Fierce's non-sellers come most-stock first); new = by style, then the style's size order (owner: test buys are
+  (then FBA stock); new = by style, then the style's size order (owner: test buys are
   smaller size sets and rivals don't stock every size).
 
 PROFIT ON THE CARD: amzProfit is a straight line in price, so each card carries that line (profit = per_pound × price + at_zero) worked
@@ -78,15 +76,14 @@ const { readScreen } = require('./amzBuyBox');
 const { placed } = require('./orderStatus');
 const { SELL_SPEED_CTES } = require('./sellSpeed');
 
-const MOODS = ['fierce', 'chilled', 'climb'];
-const DEFAULT_MOOD = 'chilled';
+const MOOD = 'chilled';            // the only one left (header) — written on every press row
 const TABS = ['new', 'raise', 'cut'];
 const ANSWERS = ['new', 'raise', 'cut', 'leave', 'off'];
-// Chilled 3% (was 5% — owner, 2026-11-21, PLAN.md decision 29): of the raises made 11–21 Nov from sizes holding the box, under +3% kept it
+// 3% (was 5% — owner, 2026-11-21, PLAN.md decision 29): of the raises made 11–21 Nov from sizes holding the box, under +3% kept it
 // 74% of the time, +3–6% only 41%.
-const RAISE_CAP = { fierce: null, chilled: 0.03, climb: 0.08 };   // a raise is at most this much on our price per step (null = none)
+const RAISE_CAP = 0.03;            // a raise is at most this much on our price per step
 const OVER_CHEAPER_CAP = 0.02;     // ...and at most 2% over a rival already cheaper than us (header)
-const SELF_POST_PREMIUM = 0.02;    // can_match: 2% over a self-posting lead (header, a trial)
+const SELF_POST_UNDER = 0.01;      // can_match / New: this far under a self-posting lead, never a penny (header, decision 30)
 const NEW_DAYS = 30;               // New = landed within this many days, no Amazon sale yet
 const LEAVE_BACK_DAYS = 7;         // a left card comes back after this many days (or as soon as its suggestion changes)
 const REVIEW_DAYS = 28;            // a Set or a Leave moves the Amazon Due date 4 weeks out, keeping a later one
@@ -98,7 +95,7 @@ const floor2 = (n) => Math.floor(n * 100 + 1e-6) / 100;
 const ceil2 = (n) => Math.ceil(n * 100 - 1e-6) / 100;
 const r2 = (n) => (n === null || n === undefined || !Number.isFinite(n) ? null : Math.round(n * 100) / 100);
 const isUs = (h) => h === 'US' || h === 'US_SHARED';
-const normMood = (m) => (MOODS.includes(m) ? m : DEFAULT_MOOD);
+const isSelfPoster = (h) => h === 'OTHER_MFN';
 /** Run query thunks one after another (see readDeck). */
 async function inSequence(thunks) { const out = []; for (const t of thunks) out.push(await t()); return out; }
 
@@ -117,14 +114,13 @@ function cheaperRival(r) {
   return below.length ? Math.min(...below.map((o) => Number(o.price))) : null;
 }
 
-/** The suggested move for one stored row in `mood`. Returns { price, note[, over_lead] } or null when there is no move. */
-function suggest(r, mood = DEFAULT_MOOD) {
+/** The suggested move for one stored row. Returns { price, note } or null when there is no move. */
+function suggest(r) {
   if (r.our_price === null) return null;
   if (r.group === 'room') {
-    const cap = RAISE_CAP[normMood(mood)];
-    if (cap === null || r.next_up === null) return null;
-    let p = floor2(Math.min(r.next_up - PENNY, r.our_price * (1 + cap)));
-    const capPct = `${Math.round(cap * 100)}%`;
+    if (r.next_up === null) return null;
+    let p = floor2(Math.min(r.next_up - PENNY, r.our_price * (1 + RAISE_CAP)));
+    const capPct = `${Math.round(RAISE_CAP * 100)}%`;
     let note = p <= r.next_up - PENNY - 0.005 ? `Capped at +${capPct} — the next rival is further up` : 'A penny under the next rival above us';
     if (r.rrp !== null && p > r.rrp) { p = floor2(r.rrp); note = 'Capped at the RRP'; }
     const cheaper = cheaperRival(r);
@@ -134,19 +130,13 @@ function suggest(r, mood = DEFAULT_MOOD) {
     }
     return p > r.our_price + 0.005 ? { price: p, note } : null;
   }
-  if (r.group === 'can_match' || r.group === 'tie') {
+  if (r.group === 'can_match') {
     if (r.bb_price === null) return null;
-    if (r.group === 'tie') {
-      // Fierce only (answerFor): a penny under the rival at our price, never under the walk-away.
-      const under = r2(r.bb_price - PENNY);
-      if (r.walk !== null && under < ceil2(r.walk)) return null;
-      return { price: under, note: 'A penny under the rival tied at our price (Fierce) — it may follow' };
-    }
-    if (r.holder === 'OTHER_MFN' && normMood(mood) !== 'fierce') {   // Fierce: a penny under every lead (owner, 2026-11-13)
-      const over = floor2(r.bb_price * (1 + SELF_POST_PREMIUM));
-      if (over < r.our_price - 0.005 && (r.walk === null || over >= ceil2(r.walk))) {
-        return { price: over, note: `2% over the self-posting lead (${'£' + r.bb_price.toFixed(2)}) — FBA usually wins views there (a trial)`, over_lead: true };
-      }
+    if (isSelfPoster(r.holder)) {
+      // CLEARLY UNDER A SELF-POSTER, OR LEAVE (header, decision 30) — a penny under gets followed down.
+      const under = floor2(r.bb_price * (1 - SELF_POST_UNDER));
+      if (under >= r.our_price - 0.005 || (r.walk !== null && under < ceil2(r.walk))) return null;
+      return { price: under, note: `1% under the self-posting lead (${'£' + r.bb_price.toFixed(2)}) — a penny under gets followed down` };
     }
     const under = r2(r.bb_price - PENNY);
     if (r.walk !== null && under < ceil2(r.walk)) {
@@ -172,9 +162,15 @@ function suggestNew(r) {
     if (r.rrp !== null && r.rrp !== undefined && p > r.rrp) { p = floor2(r.rrp); note = `New — up to the RRP, under the dearer lead (${'£' + r.bb_price.toFixed(2)})`; }
     return p > r.our_price + 0.005 ? { price: p, note } : { reason: 'rrp' };
   }
-  const under = r2(r.bb_price - PENNY);
   const be = r.breakeven;
   if (be === null || be === undefined) return { reason: 'unknown' };
+  if (isSelfPoster(r.holder)) {
+    // CLEARLY UNDER A SELF-POSTER (header, decision 30): 1% under, never a penny or level; floor break-even.
+    const clear = floor2(r.bb_price * (1 - SELF_POST_UNDER));
+    if (clear >= ceil2(be) && clear < r.our_price - 0.005) return { price: clear, note: `New — 1% under the self-posting lead (${'£' + r.bb_price.toFixed(2)}) to get the first sale; a penny under gets followed down` };
+    return { reason: 'breakeven' };
+  }
+  const under = r2(r.bb_price - PENNY);
   if (under >= ceil2(be)) return { price: under, note: 'New — a penny under the lead to get the first sale' };
   // A penny under would be a loss: level with the lead if that is still a cut and not a loss (a tie usually goes to them).
   if (r.bb_price >= ceil2(be) && r.bb_price < r.our_price - 0.005) {
@@ -184,35 +180,23 @@ function suggestNew(r) {
 }
 
 /**
- * The answer for one in-stock, NOT-new size in `mood`: { answer, reason, s } — s = the suggestion when the answer has a card (raise /
- * cut), before the waiting checks (readDeck turns `ready` into left / changed / raised).
+ * The answer for one in-stock, NOT-new size: { answer, reason, s } — s = the suggestion when the answer has a card (raise / cut),
+ * before the waiting checks (readDeck turns `ready` into left / changed / raised).
  */
-function answerFor(r, mood) {
+function answerFor(r) {
   const sold = r.sold30 > 0;
   if (r.group === 'error') return sold ? { answer: 'leave', reason: 'error' } : { answer: 'off', reason: null };
-  if (!sold) {
-    // Fierce shifts stock: can_match / tie sizes are cut even when they sold nothing in 30 days.
-    if (mood === 'fierce' && (r.group === 'can_match' || r.group === 'tie') && r.our_eligible !== false) {
-      const s = suggest(r, mood);
-      if (s) return { answer: 'cut', reason: 'ready', s };
-    }
-    return { answer: 'off', reason: null };   // recent / older, filled in by readDeck
-  }
+  if (!sold) return { answer: 'off', reason: null };   // recent / older, filled in by readDeck
   if (r.group === 'room') {
-    if (mood === 'fierce') return { answer: 'leave', reason: 'no_raise' };
-    const s = suggest(r, mood);
+    const s = suggest(r);
     if (s) return { answer: 'raise', reason: 'ready', s };
     return { answer: 'leave', reason: cheaperRival(r) !== null ? 'cheaper_rival' : 'rrp' };
   }
   if (r.group === 'can_match') {
-    if (mood === 'climb') return { answer: 'leave', reason: 'no_cut' };
     if (r.our_eligible === false) return { answer: 'leave', reason: 'not_eligible' };
-    const s = suggest(r, mood);
-    return s ? { answer: 'cut', reason: 'ready', s } : { answer: 'leave', reason: 'can_match' };
-  }
-  if (r.group === 'tie' && mood === 'fierce' && r.our_eligible !== false) {
-    const s = suggest(r, mood);
+    const s = suggest(r);
     if (s) return { answer: 'cut', reason: 'ready', s };
+    return { answer: 'leave', reason: isSelfPoster(r.holder) ? 'self_poster' : 'can_match' };
   }
   return { answer: 'leave', reason: r.group };
 }
@@ -239,7 +223,7 @@ function matchesStyle(r, g) {
 }
 
 /**
- * The deck for `mood`. answersOnly = stop after the answers (step 3) — no cards built: what utils/amzDue.js needs to decide Amazon
+ * The deck. answersOnly = stop after the answers (step 3) — no cards built: what utils/amzDue.js needs to decide Amazon
  * "due" (PLAN.md decision 26), without the card queries. q = the search (matchesSearch), groupid = one style (matchesStyle) — screens
  * only; amzDue never passes them.
  */
@@ -266,8 +250,7 @@ async function lastChanges(db, codes) {
     at: x.changed_at, by: x.changed_by, old_price: x.old_price, new_price: x.new_price, sold_since: x.sold_since }]));
 }
 
-async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', groupid: gIn = '' } = {}) {
-  const mood = normMood(moodIn);
+async function readDeck(db, { answersOnly = false, q: qIn = '', groupid: gIn = '' } = {}) {
   const q = typeof qIn === 'string' ? qIn.trim().toLowerCase() : '';
   const g = typeof gIn === 'string' ? gIn.trim().toLowerCase() : '';
   const screen = await readScreen(db);
@@ -297,7 +280,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
       const m = suggestNew(r);
       return m.reason ? { r, answer: 'new', reason: m.reason, landed_ago: f.landed_ago } : { r, answer: 'new', reason: 'ready', s: m, landed_ago: f.landed_ago };
     }
-    const a = answerFor(r, mood);
+    const a = answerFor(r);
     if (a.answer === 'off') a.reason = f.sold_recent ? 'recent' : 'older';
     return { r, ...a, landed_ago: f.landed_ago ?? null };
   });
@@ -337,7 +320,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
     a.reasons[x.reason] = (a.reasons[x.reason] || 0) + 1;
     answerOf[x.r.code] = [x.answer, x.reason];
   }
-  if (answersOnly) return { mood, q, answers, answer_of: answerOf, in_stock: live.length, last_all: screen.last_all };
+  if (answersOnly) return { q, answers, answer_of: answerOf, in_stock: live.length, last_all: screen.last_all };
 
   // 4) the cards — the ready ones, with what the card shows.
   const picked = all.filter((x) => x.reason === 'ready');
@@ -374,7 +357,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
     () => db.query(`SELECT code, (CURRENT_DATE - MAX(solddate))::int AS ago FROM sales
                WHERE channel = 'AMZ' AND qty > 0 AND code = ANY($1) GROUP BY 1`, [codes]),
     // PRICED → SOLD (PLAN.md decision 22 — Fast sellers retired, its speed figure moved here): days from the price the last sale went
-    // at going live to that sale, THE rule in utils/sellSpeed.js. A size that sold within a day of its last raise is the one to Climb.
+    // at going live to that sale, THE rule in utils/sellSpeed.js. A size that sold within a day of its last raise is the one to raise again.
     // Only the two CTEs it needs are read (PostgreSQL skips the unreferenced ones).
     () => db.query(`WITH ${SELL_SPEED_CTES}
                SELECT c.code, to_char(ss_sale.sold_on, 'YYYY-MM-DD') AS sold_on, ss_sale.sold_price::float8 AS sold_price,
@@ -425,7 +408,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
       holder: r.holder, bb_price: r.bb_price, lead_share: r.lead_share, our_share: r.our_share, next_up: r.next_up, rivals: r.rivals,
       rival_at_our_price: r.rival_at_our_price, amazon_retail: r.amazon_retail,
       offers: r.offers, featured: r.featured, sales_rank: r.sales_rank ?? null,
-      suggest: s.price, suggest_note: s.note, over_lead: !!s.over_lead,
+      suggest: s.price, suggest_note: s.note,
       profit_now: profitNow, profit_suggest: profitSuggest, profit_line: profitLine(econ),
       gain_week: gain, stake,
     };
@@ -440,7 +423,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
 
   const counts = Object.fromEntries(TABS.map((t) => [t, cards.filter((c) => c.deck === t).length]));
   return {
-    mood, q, cards, counts, answers, answer_of: answerOf, in_stock: live.length,
+    q, cards, counts, answers, answer_of: answerOf, in_stock: live.length,
     last_all: screen.last_all, running: screen.running,
   };
 }
@@ -448,7 +431,7 @@ async function readDeck(db, { mood: moodIn, answersOnly = false, q: qIn = '', gr
 /**
  * Record one press on Go through (decision 17) and purge rows past PRESS_KEEP_MONTHS — inside the caller's transaction, behind a
  * SAVEPOINT: the record is for the agree rate, so a failure here never stops the price / review write it belongs to.
- * press = { code, by, mood, tab, action: 'set' | 'leave' | 'undo', our_price, suggested, price }.
+ * press = { code, by, tab, action: 'set' | 'leave' | 'undo', our_price, suggested, price } — recorded with mood 'chilled' (header).
  * Returns true when recorded.
  */
 async function recordPress(client, press) {
@@ -457,7 +440,7 @@ async function recordPress(client, press) {
     await client.query(
       `INSERT INTO amz_buybox_press (code, pressed_by, mood, tab, action, our_price, suggested, price)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [press.code, press.by || null, normMood(press.mood), press.tab, press.action,
+      [press.code, press.by || null, MOOD, press.tab, press.action,
         press.our_price ?? null, press.suggested ?? null, press.price ?? null]);
     await client.query(`DELETE FROM amz_buybox_press WHERE pressed_at < now() - make_interval(months => $1)`, [PRESS_KEEP_MONTHS]);
     await client.query('RELEASE SAVEPOINT amz_buybox_press');
@@ -469,16 +452,15 @@ async function recordPress(client, press) {
   }
 }
 
-/** Validate a press's Go through fields from a request body: { mood, tab, our_price, suggested } or { error }. */
+/** Validate a press's Go through fields from a request body: { tab, our_price, suggested } or { error }. A `mood` is ignored (header). */
 function pressFields(b) {
   if (!b || typeof b !== 'object') return { error: 'buybox fields missing' };
-  if (!MOODS.includes(b.mood)) return { error: 'mood must be fierce, chilled or climb' };
   if (!TABS.includes(b.tab)) return { error: 'tab must be new, raise or cut' };
   const n = (v) => (v === null || v === undefined || v === '' || !Number.isFinite(Number(v)) ? null : Math.round(Number(v) * 100) / 100);
-  return { mood: b.mood, tab: b.tab, our_price: n(b.our_price), suggested: n(b.suggested) };
+  return { tab: b.tab, our_price: n(b.our_price), suggested: n(b.suggested) };
 }
 
 module.exports = {
-  MOODS, DEFAULT_MOOD, TABS, ANSWERS, RAISE_CAP, OVER_CHEAPER_CAP, SELF_POST_PREMIUM, NEW_DAYS, LEAVE_BACK_DAYS, REVIEW_DAYS,
+  TABS, ANSWERS, RAISE_CAP, OVER_CHEAPER_CAP, SELF_POST_UNDER, NEW_DAYS, LEAVE_BACK_DAYS, REVIEW_DAYS,
   PRESS_KEEP_MONTHS, cheaperRival, suggest, suggestNew, answerFor, profitLine, matchesSearch, matchesStyle, readDeck, recordPress, pressFields, lastChanges,
 };

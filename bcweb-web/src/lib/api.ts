@@ -648,7 +648,7 @@ export interface AmzPriceCard extends AmzWinnerRow {
   breakeven: number | null; walk: number | null;                // profit £0 / the £3 walk-away price (null = no cost)
   profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound × price + at_zero
   profit_now: number | null;
-  // A Buy Box move in the chosen mood (search cards only): the Buy Box cards' suggestion, shown — never applied by itself.
+  // A Buy Box move (search cards only): the Buy Box cards' suggestion, shown — never applied by itself.
   bb_suggest?: number | null; bb_suggest_note?: string | null; bb_deck?: AmzDeckKind | null;
   // The same as the Buy Box cards (owner, 2026-11-14): the latest reading's sellers (the sellers pop-up) and the last real price move.
   offers?: AmzBuyBoxOffer[]; featured?: AmzBuyBoxFeatured[];
@@ -665,9 +665,9 @@ export function getAmzDueCards() {
   );
 }
 // `g` = one style exactly (the product menu's Amazon Price card) instead of the text search `q`.
-export function getAmzSearchCards(search: { q?: string; g?: string }, mood: AmzMood) {
+export function getAmzSearchCards(search: { q?: string; g?: string }) {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
-    { url: '/amz-all-list', method: 'GET', params: { limit: 500, parked: 'include', cards: 1, ...(search.g ? { g: search.g } : { q: search.q }), mood } },
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, parked: 'include', cards: 1, ...(search.g ? { g: search.g } : { q: search.q }) } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
@@ -675,9 +675,9 @@ export function getAmzSearchCards(search: { q?: string; g?: string }, mood: AmzM
 // headline counts (server utils/amzBuyBox.js → lostPart). cheaper comes biggest price gap first; level / nobody in the usual order.
 export type AmzLostPart = 'cheaper' | 'level' | 'nobody';
 export const isLostPart = (v: string | null): v is AmzLostPart => v === 'cheaper' || v === 'level' || v === 'nobody';
-export function getAmzLostCards(part: AmzLostPart, mood: AmzMood) {
+export function getAmzLostCards(part: AmzLostPart) {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
-    { url: '/amz-all-list', method: 'GET', params: { limit: 500, cards: 1, lost: part, mood } },
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, cards: 1, lost: part } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
@@ -823,10 +823,9 @@ export function getAmzBuyBox() {
     })
   );
 }
-// Buy Box PRICING, the cards (was "Go through"; /amz/buybox/deck; server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js — answers, moods and New,
-// PLAN.md decisions 13–20). READ ONLY. Every size IN STOCK AT AMAZON gets ONE answer for the mood; New / Raise / Cut sizes that are ready
+// Buy Box PRICING, the cards (was "Go through"; /amz/buybox/deck; server routes/amz-buybox-deck.js, THE rules utils/amzBuyBoxDeck.js — answers and New,
+// PLAN.md decisions 13–20; one way of pricing since the Fierce / Climb moods were dropped, 2026-11-21). READ ONLY. Every size IN STOCK AT AMAZON gets ONE answer; New / Raise / Cut sizes that are ready
 // make cards. A Set is applyAmzPrice with `buybox`; a Leave is leaveAmzBuyBox.
-export type AmzMood = 'fierce' | 'chilled' | 'climb';
 export type AmzDeckKind = 'new' | 'raise' | 'cut';
 export type AmzAnswer = AmzDeckKind | 'leave' | 'off';
 // A size's last real price move (server utils/amzBuyBoxDeck.js → lastChanges) and net Amazon pairs sold since that day.
@@ -852,7 +851,6 @@ export interface AmzDeckCard {
   rival_at_our_price: boolean; amazon_retail: boolean; offers: AmzBuyBoxOffer[]; featured: AmzBuyBoxFeatured[];
   sales_rank: number | null;     // Amazon Fashion Best Sellers Rank ("Rank:" on the card)
   suggest: number; suggest_note: string;
-  over_lead: boolean;   // cut: the suggestion is 2% OVER a self-posting lead (a trial), not a penny under it
   profit_now: number | null; profit_suggest: number | null;
   profit_line: { per_pound: number; at_zero: number } | null;   // profit a pair = per_pound × price + at_zero (amzProfit is linear)
   gain_week: number | null;   // raise only: pairs a week × the extra profit a pair at the suggestion
@@ -861,17 +859,16 @@ export interface AmzDeckCard {
 // One answer's sizes: total, how many are ready (cards), and the count per reason (ready / left / changed / raised, or the old group).
 export interface AmzAnswerSum { total: number; ready: number; reasons: Record<string, number> }
 export interface AmzDeckData {
-  mood: AmzMood; cards: AmzDeckCard[]; counts: Record<AmzDeckKind, number>; in_stock: number;
+  cards: AmzDeckCard[]; counts: Record<AmzDeckKind, number>; in_stock: number;
   answers: Record<AmzAnswer, AmzAnswerSum>;
   answer_of: Record<string, [AmzAnswer, string]>;   // every in-stock size: [answer, reason]
   last_all: AmzBuyBoxRun | null; running: AmzBuyBoxRun | null;
 }
 const EMPTY_SUM: AmzAnswerSum = { total: 0, ready: 0, reasons: {} };
-export function getAmzBuyBoxDeck(mood: AmzMood = 'chilled') {
+export function getAmzBuyBoxDeck() {
   return request<AmzDeckData>(
-    { url: '/amz-buybox-deck', method: 'GET', params: { mood } },
+    { url: '/amz-buybox-deck', method: 'GET' },
     (b) => ({
-      mood: (b.mood || mood) as AmzMood,
       cards: (b.cards || []) as AmzDeckCard[], counts: (b.counts || { new: 0, raise: 0, cut: 0 }) as Record<AmzDeckKind, number>,
       in_stock: b.in_stock ?? 0,
       answers: { new: EMPTY_SUM, raise: EMPTY_SUM, cut: EMPTY_SUM, leave: EMPTY_SUM, off: EMPTY_SUM, ...(b.answers || {}) } as Record<AmzAnswer, AmzAnswerSum>,
@@ -881,7 +878,9 @@ export function getAmzBuyBoxDeck(mood: AmzMood = 'chilled') {
   );
 }
 // Go through's press details, recorded with a Set / Undo (applyAmzPrice `buybox`) or a Leave — the agree rate, read later.
-export interface AmzBuyBoxPress { mood: AmzMood; tab: AmzDeckKind; our_price: number; suggested: number }
+// mood: always 'chilled' — a server from before 2026-11-21 refuses a press without it; the newer one ignores it. Drop it once the VPS
+// runs the 2026-11-21 server.
+export interface AmzBuyBoxPress { mood: 'chilled'; tab: AmzDeckKind; our_price: number; suggested: number }
 // LEAVE on Go through: nothing to Amazon; the Due date moves 4 weeks out (a later one kept) and the press is recorded.
 export function leaveAmzBuyBox(code: string, press: AmzBuyBoxPress) {
   return request<{ next_review: string | null; recorded: boolean }>(

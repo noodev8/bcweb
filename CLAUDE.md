@@ -101,5 +101,5 @@ Start the API first. Seed/reset a user: `node scripts/seed-user.js <username> <p
 
 - The API points at the **LIVE production DB.** Reads are safe; when testing writes, wrap in `BEGIN … ROLLBACK` unless the owner OKs a live apply-and-restore.
 - Single `.gitignore` at repo root.
-- Removed on purpose — don't bring back without the owner: the Pricing Slider, the Winners screen, Today (`/process`), Fast sellers, the match-Amazon autopilot, the HARVEST status, the status trend, Portfolio's Segment / Campaign tabs.
+- Removed on purpose — don't bring back without the owner: the Pricing Slider, the Winners screen, Today (`/process`), Fast sellers, the match-Amazon autopilot, the HARVEST status, the status trend, Portfolio's Segment / Campaign tabs, the Fierce / Climb Buy Box moods (Chilled only).
 - Don't invent pricing logic — the notes above and the code are the source of truth.

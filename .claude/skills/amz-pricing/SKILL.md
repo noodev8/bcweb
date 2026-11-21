@@ -14,7 +14,7 @@ price the owner has agreed in this conversation.
 
 THE one meaning of Amazon "due" is `utils/amzDue.js`. Every Amazon size is one of two kinds:
 - **Selling at FBA (an Amazon sale in 30 days) or New** — a Buy Box size, **never Due**. Its moves are the New / Raise / Cut cards
-  on **Amazon Pricing** (`/amz`, the mood chosen there; Daily's quieter "Buy Box moves n"), worked by the team "when they have
+  on **Amazon Pricing** (`/amz`, one set of rules — the Fierce / Climb moods were dropped 2026-11-21; Daily's quieter "Buy Box moves n"), worked by the team "when they have
   time". This skill doesn't work through the cards. Asked about one of these sizes by name, read its Buy Box data below and give
   a judgement, and point to the card if it has one.
 - **Everything else** (not selling, on its way in, no stock, priced ahead of arrival) — **Due** when its review date comes round.
@@ -100,14 +100,14 @@ Codes are the FULL amzfeed code (`FLE030-IVES-WHITE-06`, not `IVES-WHITE-06`). S
   `amz_buybox_history` across the day before trusting a share for a raise.
 - **Last year's price is evidence of room.** GREY-06 sold 5 at £39.99 in Oct 2025 and 3 at £38.99 in Nov, against £37.39 now —
   check the same months last year (`sales.soldprice`) before calling a raise a guess.
-- **Losing to a SELF-POSTER: 2% over it, not a penny under** (a TRIAL from 2026-11-12, owner: "try 2% over a self-poster"). When
-  the lead (`holder = 'OTHER_MFN'`) self-posts, suggest `floor(lead × 1.02)` — FBA wins views there (the share figures above), and
-  it keeps more a pair (BLACKSOLE-05: £39.71 ≈ £5.51 against £4.90 a penny under). Only while that is still a cut and not under the
-  walk-away. If we are ALREADY within 2% of the self-poster and still not shown, the premium isn't working on that size — a penny
-  under, or leave it. The Pricing cards and Team week use the same rule (`utils/amzBuyBoxDeck.js → SELF_POST_PREMIUM`). Still check WHO
-  the self-poster is first: the cheap non-Prime seller (A1LSPI8RFKURCB, £31.44 + £4.95) on Ives isn't worth chasing even at 2% over
-  (IVES-WHITE-04 / 08 would give ~£1.50 a pair for it). It's a trial — after a move, read the size's share at the next readings and
-  tell the owner whether 2% over won views; that is how the rule gets confirmed or dropped.
+- **Losing to a SELF-POSTER: 1% under it, or leave it** (owner, 2026-11-21, `docs/amz-buybox/PLAN.md` decision 30 — replaces the
+  "2% over a self-poster" trial). When the lead (`holder = 'OTHER_MFN'`) self-posts, suggest `floor(lead × 0.99)`, never a penny
+  under or level with it; if that is under the walk-away (New: break-even), leave the size. Why (11–21 Nov): 170 cuts to within 0.5%
+  of a self-poster won the box 35% of the time and the rival came back down by the next reading 98 times (pricing software
+  following us); 27 cuts 0.5%+ under won 63% and were followed 3 times; the 2% over trial won 4 of 14. An FBA or Amazon lead keeps a
+  penny under (won 75% against FBA). The cards use the same rule (`utils/amzBuyBoxDeck.js → SELF_POST_UNDER`). Still check WHO the
+  self-poster is first: the cheap non-Prime seller (A1LSPI8RFKURCB, £31.44 + £4.95) on Ives isn't worth chasing. Small samples —
+  after a move, read the size's share at the next readings and say whether 1% under won it.
 - **Look at the sales by day, not "sold since".** BLACKSOLE-05 read "4 sold since" at £41.79, but all 4 went 26–29 Oct and nothing
   sold for 14 days after a self-poster came in at £38.94 — the price was solid until the rival arrived. Check the last sale date
   (`MAX(solddate)` where qty > 0) and the run of days before calling a price "proven". The Pricing card's 30-day strip shows it.

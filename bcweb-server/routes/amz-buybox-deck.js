@@ -4,16 +4,16 @@ API Route: amz_buybox_deck
 =======================================================================================================================================
 Method: GET
 Purpose: The Buy Box "Go through" screen (/amz/buybox/deck) and the Buy Box screen's answer bar (2026-11-12, PLAN.md decisions 13–20).
-         Every size IN STOCK AT AMAZON gets ONE answer for the chosen MOOD — New · Raise · Cut · Leave · Not for this screen — and the
+         Every size IN STOCK AT AMAZON gets ONE answer — New · Raise · Cut · Leave · Not for this screen — and the
          New / Raise / Cut sizes that are ready make cards, one suggested move each. THE rules: utils/amzBuyBoxDeck.js (read its header).
          READ ONLY, never asks Amazon — the stored reading, like the Buy Box screen. A Set is the normal W-A1 (POST /amz-apply with its
          `buybox` fields); a Leave is POST /amz-buybox-leave.
 
-Query: ?mood=fierce|chilled|climb  (anything else = chilled — every screen load starts on Chilled, nothing stored)
+Query: none (the Fierce / Climb moods were dropped 2026-11-21 — a ?mood= from an old link is ignored)
 
 Success Response:
 {
-  "return_code": "SUCCESS", "mood": "chilled", "in_stock": 293,
+  "return_code": "SUCCESS", "in_stock": 293,
   "counts": { "new": 6, "raise": 22, "cut": 7 },                               // cards on each tab
   "answers": { "raise": { "total": 29, "ready": 22, "reasons": { "ready": 22, "raised": 5, "changed": 2 } }, "cut": {...},
                "new": {...}, "leave": { "total": 47, "ready": 0, "reasons": { "top": 20, "tie": 8, ... } },
@@ -43,7 +43,7 @@ router.use(verifyToken);
 router.get('/', async (req, res) => {
   const client = await pool.connect();
   try {
-    const d = await readDeck(client, { mood: typeof req.query.mood === 'string' ? req.query.mood : undefined });
+    const d = await readDeck(client);
     return res.json({ return_code: 'SUCCESS', ...d });
   } catch (err) {
     logger.error('[amz-buybox-deck] error:', err.message);
