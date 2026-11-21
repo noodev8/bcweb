@@ -176,7 +176,7 @@ export default function AmzBuyBoxDeckPage() {
   }
 
   // The press details recorded with a Set / Leave / Undo (the agree rate, read later).
-  const pressOf = (card: AmzDeckCard) => ({ mood: 'chilled' as const, tab: card.deck, our_price: card.our_price, suggested: card.suggest });
+  const pressOf = (card: AmzDeckCard) => ({ tab: card.deck, our_price: card.our_price, suggested: card.suggest });
 
   async function setPrice(card: AmzDeckCard, price: number, edited: boolean) {
     if (busy) return;

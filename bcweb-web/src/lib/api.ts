@@ -878,9 +878,7 @@ export function getAmzBuyBoxDeck() {
   );
 }
 // Go through's press details, recorded with a Set / Undo (applyAmzPrice `buybox`) or a Leave — the agree rate, read later.
-// mood: always 'chilled' — a server from before 2026-11-21 refuses a press without it; the newer one ignores it. Drop it once the VPS
-// runs the 2026-11-21 server.
-export interface AmzBuyBoxPress { mood: 'chilled'; tab: AmzDeckKind; our_price: number; suggested: number }
+export interface AmzBuyBoxPress { tab: AmzDeckKind; our_price: number; suggested: number }
 // LEAVE on Go through: nothing to Amazon; the Due date moves 4 weeks out (a later one kept) and the press is recorded.
 export function leaveAmzBuyBox(code: string, press: AmzBuyBoxPress) {
   return request<{ next_review: string | null; recorded: boolean }>(
