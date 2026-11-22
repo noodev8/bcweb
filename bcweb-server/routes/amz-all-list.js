@@ -32,7 +32,7 @@ Purpose: Amazon Pricing's home list — EVERY in-stock Amazon SKU, not one segme
 
 Requires auth.
 =======================================================================================================================================
-Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=groupid][&cards=1][&step=key[&when=w]][&lost=part]
+Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=groupid][&cards=1][&step=key[&when=w]][&lost=part][&new=1]
   limit    safety cap only (utils/listLimit.js, default 100 / max 500).
   half     review = only the sizes the Buy Box doesn't answer (the review-date half).
   q        the search (owner, 2026-11-13 — "search for Caprice, see the count, press it and get the cards one by one"): only rows whose
@@ -54,6 +54,11 @@ Request: GET /amz-all-list[?parked=include][&half=review][&limit=N][&q=text][&g=
            implied). cheaper is in BIGGEST PRICE GAP FIRST (owner: "biggest price gap first for cheaper"; our price − the rival's,
            postage included, carried as bb_gap); level and nobody keep the usual order. With cards=1 the Buy Box suggestion is
            carried as for q.
+  new      1 = NEW ADDITIONS' BUY BOX (owner, 2026-11-22: "a button … called BUY BOX that gives us the list of items that are on Amazon
+           and just the sizes that have not sold anything yet"): only the UNSOLD NEW SKUS (utils/processMap.js → unsoldNewSkus — the
+           white tiles, a Pending Amazon order counts as sold) that are at Amazon, live or on its way (amztotal > 0). Due or not
+           (parked=include implied), the Buy Box suggestion carried as for q. OLDEST-added style first (owner, 2026-11-22 — the older ones are priced first);
+           each row also carries first_in and days_left (90 − days since it, as New Additions). The cards: /amz/new-cards.
   cards    1 = PRICE CARDS (components/AmzPriceCards — Due cards and search cards, owner 2026-11-13: "the usual price change screen but
            reduced to cards"): each row also carries what a card shows — imagename, u12 (Amazon pairs, 12 months), breakeven, walk
            (the £3 walk-away, amzPricingStandard SETTINGS.WALK_AWAY_PROFIT — the Buy Box cards' floor), profit_line (profit a pair =
@@ -93,7 +98,8 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { safeNumeric } = require('../utils/sql');
 const { parseListLimit } = require('../utils/listLimit');
 const { STATUSES, channelFilterSql } = require('../utils/portfolioStatus');
-const { readBuyBoxSide, dueBy, buyBoxMoves } = require('../utils/amzDue');
+const { readBuyBoxSide, dueBy, buyBoxMoves, sideParams } = require('../utils/amzDue');
+const { unsoldNewSkus } = require('../utils/processMap');
 const { matchesSearch, matchesStyle, profitLine, readDeck, lastChanges } = require('../utils/amzBuyBoxDeck');
 const { amzProfit, priceForProfit, breakevenPrice } = require('../utils/amzProfit');
 const { SETTINGS } = require('../utils/amzPricingStandard');
@@ -118,6 +124,7 @@ router.get('/', async (req, res) => {
     const ladder = stepKey ? await stepMembers(stepKey) : null;
     if (stepKey && !ladder) return res.json({ return_code: 'INVALID_STEP', message: 'Unknown Stock ladder list' });
     // WHERE WE DON'T HAVE THE BUY BOX (header, ?lost=): the part's sizes by THE split, code -> price gap.
+    const newOnly = req.query.new === '1';
     const lostKey = typeof req.query.lost === 'string' && req.query.lost ? req.query.lost : null;
     if (lostKey && !LOST_PARTS.includes(lostKey)) return res.json({ return_code: 'INVALID_PART', message: 'Unknown Buy Box part' });
     const lost = lostKey ? new Map((await readScreen(pool)).rows
@@ -173,13 +180,16 @@ router.get('/', async (req, res) => {
 
     // THE RULE (header): each row's half, and whether it is due.
     const side = await readBuyBoxSide(pool);
+    // NEW ADDITIONS' BUY BOX (header, ?new=1): the unsold new SKUs, code -> first arrivals.
+    const fresh = newOnly ? await unsoldNewSkus(query, sideParams(side).bb) : null;
     const judged = result.rows.map((r) => ({ r, d: dueBy(side, r.code, r.review_parked !== true, Number(r.fba) > 0) }))
       .filter((x) => !reviewHalf || x.d.by === 'review')
-      .filter((x) => includeParked || ladder || lost || x.d.due)
+      .filter((x) => includeParked || ladder || lost || fresh || x.d.due)
       .filter((x) => matchesSearch(x.r, q) && matchesStyle(x.r, g))
       // STOCK LADDER (header, ?step=): the step's sizes only, each with its chip; ?when= narrows; Buy Box sizes are carded too (2026-11-17).
       .filter((x) => !ladder || ladder.members.has(x.r.code))
       .filter((x) => !lost || lost.has(x.r.code))
+      .filter((x) => !fresh || (fresh.has(x.r.code) && x.r.oos !== true))   // at Amazon: live or on its way
       .map((x) => (ladder ? { ...x, when: whenOf(x.d.due, x.d.by, x.r.next_review, ladder.today) } : x))
       .filter((x) => !ladder || when === 'all' || x.when === when);
     // Due before not-due, so the safety cap can only ever trim not-due rows: with the status rows the list passed 500 (2026-10-28)
@@ -187,6 +197,10 @@ router.get('/', async (req, res) => {
     // A Stock ladder list keeps the step's own order (utils/stockLadderList.js — a step holds far fewer than the cap).
     if (ladder) judged.sort((a, b) => ladder.members.get(a.r.code).order - ladder.members.get(b.r.code).order);
     else if (lostKey === 'cheaper') judged.sort((a, b) => (lost.get(b.r.code) ?? 0) - (lost.get(a.r.code) ?? 0));   // biggest gap first
+    // OLDEST-ADDED STYLE FIRST (owner, 2026-11-22: "Its the older ones I would really want to price change first" — a trial; the
+    // screen itself stays newest first). The cards group each style's sizes.
+    else if (fresh) judged.sort((a, b) => fresh.get(a.r.code).style_first_in.localeCompare(fresh.get(b.r.code).style_first_in)
+      || a.r.groupid.localeCompare(b.r.groupid));
     else if (!lost) judged.sort((a, b) => Number(b.d.due) - Number(a.d.due));
     const total = judged.length;
     const outOfStock = judged.filter((x) => x.r.oos === true).length;
@@ -225,6 +239,7 @@ router.get('/', async (req, res) => {
         ladder_units: ladder.members.get(r.code).units,           // local + FBA, one number (the ladder's stock)
       } : {}),
       ...(lost ? { bb_gap: lost.get(r.code) } : {}),             // our price − the Buy Box holder's, postage included (?lost=)
+      ...(fresh ? { first_in: fresh.get(r.code).first_in, days_left: fresh.get(r.code).days_left } : {}),  // ?new=1: first Goods In arrival; days before it leaves New Additions
     }));
 
     // CARDS (header, ?cards=1): the card's economics and picture for the returned rows, in one query.
@@ -258,7 +273,7 @@ router.get('/', async (req, res) => {
       }
       // The Buy Box cards' suggestion for the search's sizes (header) — the deck read narrowed to the same search — and for a
       // Stock ladder step's Buy Box sizes (owner 2026-11-17).
-      if (q || g || ladder || lost) {
+      if (q || g || ladder || lost || fresh) {
         const deck = await readDeck(pool, { q, groupid: g });
         const cardOf = Object.fromEntries(deck.cards.map((c) => [c.code, c]));
         for (const row of rows) {

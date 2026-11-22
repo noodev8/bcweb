@@ -50,7 +50,7 @@ const { query, pool } = require('../database');
 const { readBuyBoxSide, sideParams } = require('../utils/amzDue');
 const { verifyToken } = require('../middleware/verifyToken');
 const logger = require('../utils/logger');
-const { NEW_DAYS, CHANNELS, NEW_SKUS_SQL, OTHER_SIZES_SQL } = require('../utils/processMap');
+const { NEW_DAYS, CHANNELS, NEW_SKUS_SQL, OTHER_SIZES_SQL, isNewSold } = require('../utils/processMap');
 
 router.use(verifyToken);
 
@@ -77,15 +77,14 @@ router.get('/', async (req, res) => {
         net += channels[ch].net;
       }
       const pending = Number(r.amz_pending) || 0;
-      // The NEW_SKUS rule: netted a sale over every channel together, or in a Pending Amazon order (utils/processMap.js →
-      // AMAZON PENDING). Mirrored by bcweb-web/src/lib/process.ts → isSold.
-      if (net > 0 || pending > 0) sold += 1;
+      // THE sold rule (utils/processMap.js → isNewSold). Mirrored by bcweb-web/src/lib/process.ts → isSold.
+      if (isNewSold(r)) sold += 1;
       const ageDays = Number(r.age_days);
       return {
         code: r.code, groupid: r.groupid, title: r.title, brand: r.brand, size: r.size,
         firstIn: r.first_in, ageDays, daysLeft: NEW_DAYS - ageDays,
         localStock: Number(r.local_stock), fbaStock: Number(r.fba_stock), bought: Number(r.bought),
-        onAmz: r.on_amz === true, amzLive: Number(r.amz_live) || 0, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
+        onAmz: r.on_amz === true, amzLive: Number(r.amz_live) || 0, amzTotal: Number(r.amz_total) || 0, amzPrice: money(r.amz_price), amzReview: r.amz_review || null,
         amzDue: r.amz_due === true,
         amzBb: r.amz_bb === true,     // the Buy Box decides this size, not its review date (utils/amzDue.js)
         amzPending: pending,          // in a Pending Amazon order — counts as sold; New Additions tints the tile amber

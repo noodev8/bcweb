@@ -27,6 +27,11 @@ Purpose: Owner: "the usual price change screen but reduced to cards to make it e
                                            Pricing strip (owner, 2026-11-21; server ?lost=, THE split utils/amzBuyBox.js → lostPart).
                                            Walked in the SERVER's order, no style grouping: cheaper is biggest price gap first (owner),
                                            the gap shown on the card's status line. Buy Box suggestion with Use it, as on search.
+           NEW CARDS    /amz/new-cards[?cut=a,b]&from=&back=  New Additions' BUY BOX button (owner, 2026-11-22: "the list of items
+                                           that are on Amazon and just the sizes that have not sold anything yet"): its white tiles
+                                           at Amazon, live or on the way (server ?new=1, utils/processMap.js → unsoldNewSkus), due or
+                                           not. The screen's soft-cut styles (?cut=) are left out — the cards are what's on screen.
+                                           Oldest-added style first (owner, 2026-11-22); the status line leads with the size's days left (owner, same day); walked like search, Buy Box suggestion with Use it.
          Data: GET /amz-all-list ?cards=1 (getAmzDueCards / getAmzSearchCards / getAmzStepCards).
 
 NO SUGGESTION of its own (owner: "no suggestion — I'll type the price or give me the options like we have on the amazon price
@@ -61,7 +66,7 @@ import { useRouter } from 'next/navigation';
 import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import AppShell from '@/components/AppShell';
 import AmzCardFrame, { LastChangeLine, money } from '@/components/AmzCardFrame';
-import { applyAmzPrice, getAmzDueCards, getAmzLostCards, getAmzSearchCards, getAmzStepCards, isLostPart, markAmzReviewed, type AmzLostPart,
+import { applyAmzPrice, getAmzDueCards, getAmzLostCards, getAmzNewCards, getAmzSearchCards, getAmzStepCards, isLostPart, markAmzReviewed, type AmzLostPart,
   type AmzPriceCard, type LadderListKey } from '@/lib/api';
 import { LOST_TEXT } from '@/lib/buyboxAnswers';
 import { CHIPS, LIST_TEXT, isChip, isLadderList, stepAim, stepListHref } from '@/lib/stockLadder';
@@ -71,10 +76,10 @@ import { useUrlParam } from '@/lib/useUrlParam';
 import { useAuth } from '@/contexts/AuthContext';
 import { prettyPathLabel } from '@/lib/nav';
 
-export type PriceCardsMode = 'due' | 'search' | 'step' | 'lost';
+export type PriceCardsMode = 'due' | 'search' | 'step' | 'lost' | 'new';
 
 const DEFAULT_REVIEW = 7;                        // header: the skill's REVIEW_AFTER_PRICE_DAYS
-const NOTE = { due: 'Due card', search: 'Search card', step: 'Step card', lost: 'No Buy Box card' } as const;   // never "Buy Box …": Daily's done-today count leaves those notes out (the deck's own rows)
+const NOTE = { due: 'Due card', search: 'Search card', step: 'Step card', lost: 'No Buy Box card', new: 'New Additions card' } as const;   // never "Buy Box …": Daily's done-today count leaves those notes out (the deck's own rows)
 const END = '__end__';                           // search cards: past the last card
 // Taken once at module load (react-hooks/purity): the Season chip and "n days ago".
 const SEASON = seasonPark();
@@ -129,6 +134,8 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   // BUY BOX CARDS (header): the part of the strip.
   const partParam = useUrlParam('part');
   const part = isLostPart(partParam) ? partParam : null;
+  // NEW CARDS (header): New Additions' soft-cut styles, left out.
+  const cutParam = useUrlParam('cut') ?? '';
   const router = useRouter();
   const walk = mode !== 'due';   // search and step cards walk start to end; due cards wrap round to what's left
   // The log note: "Step card · Unsold 90" says which list the price came from.
@@ -136,24 +143,27 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   // CAME FROM ANOTHER SCREEN (the product menu passes ?from= / ?back=): Back returns there. Our own paths only.
   const fromRaw = useUrlParam('from');
   const from = fromRaw && fromRaw.startsWith('/') && !fromRaw.startsWith('//') ? fromRaw : null;
-  const backLabel = useUrlParam('back') || (from ? prettyPathLabel(from) : mode === 'step' && step ? LIST_TEXT[step].name : 'Amazon Pricing');
+  const backLabel = useUrlParam('back') || (from ? prettyPathLabel(from) : mode === 'step' && step ? LIST_TEXT[step].name : mode === 'new' ? 'New Additions' : 'Amazon Pricing');
   const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
   const backHref = from ?? (mode === 'step' && step ? stepListHref(step, when)
-    : mode === 'search' && q ? `/amz?q=${encodeURIComponent(q)}` : '/amz');
+    : mode === 'search' && q ? `/amz?q=${encodeURIComponent(q)}` : mode === 'new' ? '/analytics/new-additions' : '/amz');
   const fromQs = from ? `&from=${encodeURIComponent(from)}&back=${encodeURIComponent(backLabel)}` : '';
   const selfPath = mode === 'search'
     ? `/amz/search-cards?${g ? `g=${encodeURIComponent(g)}` : `q=${encodeURIComponent(q)}`}${fromQs}`
     : mode === 'step' ? `/amz/step-cards?step=${step ?? ''}&when=${when}`
-      : mode === 'lost' ? `/amz/lost-cards?part=${part ?? ''}` : '/amz/due-cards';
+      : mode === 'lost' ? `/amz/lost-cards?part=${part ?? ''}`
+        : mode === 'new' ? `/amz/new-cards?cut=${encodeURIComponent(cutParam)}${fromQs}` : '/amz/due-cards';
 
   // A snapshot (header): nothing refetches by itself. Waits for the client (useUrlParam reads null until hydrated).
   const key = !hydrated ? null : mode === 'due' ? ['amz-price-cards', 'due']
     : mode === 'step' ? (step ? ['amz-price-cards', 'step', step, when] : null)
       : mode === 'lost' ? (part ? ['amz-price-cards', 'lost', part] : null)
+      : mode === 'new' ? ['amz-price-cards', 'new']
       : g ? ['amz-price-cards', 'style', g] : q ? ['amz-price-cards', 'search', q] : null;
   const { data: raw, error: loadError, busy: isLoading, refresh } = useApiQuery(key,
     () => (mode === 'due' ? getAmzDueCards() : mode === 'step' ? getAmzStepCards(step as LadderListKey, when)
       : mode === 'lost' ? getAmzLostCards(part as AmzLostPart)
+      : mode === 'new' ? getAmzNewCards()
       : getAmzSearchCards(g ? { g } : { q })),
     { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnMount: true, revalidateOnReconnect: false });
   // FRESH ON EVERY OPEN (owner, 2026-11-13: Daily said 8 due, the screen showed 0 until Refresh — a copy from an earlier visit).
@@ -164,12 +174,13 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   // ORDER (header): styles in the server's order, each style's sizes together in size order — BUT the Buy Box cards keep the server's
   // order exactly (cheaper = biggest price gap first, owner 2026-11-21; grouping by style would undo it).
   const cards = useMemo(() => {
-    const rows = data?.rows ?? [];
+    const cut = new Set(cutParam.split(',').filter(Boolean));
+    const rows = (data?.rows ?? []).filter((r) => !cut.has(r.groupid));   // NEW CARDS: the screen's soft cuts (only ever set there)
     if (mode === 'lost') return rows;
     const styleRank = new Map<string, number>();
     rows.forEach((r) => { if (!styleRank.has(r.groupid)) styleRank.set(r.groupid, styleRank.size); });
     return [...rows].sort((a, b) => (styleRank.get(a.groupid)! - styleRank.get(b.groupid)!) || sizeKey(a.code) - sizeKey(b.code) || a.code.localeCompare(b.code));
-  }, [data, mode]);
+  }, [data, mode, cutParam]);
 
   const [done, setDone] = useState<Map<string, Done>>(() => new Map());
   const [cur, setCur] = useState<string | null>(null);
@@ -242,10 +253,11 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const title = mode === 'due' ? 'Not selling · due'
     : mode === 'step' ? `${step ? LIST_TEXT[step].name : 'Range'} · ${CHIPS.find((c) => c.key === when)?.label ?? 'All'}`
       : mode === 'lost' ? (part ? `No Buy Box · ${LOST_TEXT[part].label} · ${LOST_TEXT[part].hint}` : 'No Buy Box')
+      : mode === 'new' ? 'New Additions · unsold sizes at Amazon'
       : g ? `Style ${g}` : `Search “${q}”`;
 
   return (
-    <AppShell crumb={<span className="font-medium text-slate-800">{mode === 'due' ? 'Due cards' : mode === 'step' ? 'Step cards' : mode === 'lost' ? 'Buy Box cards' : 'Search cards'}</span>}>
+    <AppShell crumb={<span className="font-medium text-slate-800">{mode === 'due' ? 'Due cards' : mode === 'step' ? 'Step cards' : mode === 'lost' || mode === 'new' ? 'Buy Box cards' : 'Search cards'}</span>}>
       <div className="mx-auto flex max-w-[55rem] flex-col gap-2.5">
         {/* TOOLBAR — Back · what these cards are · progress count · Refresh. */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -314,6 +326,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
               {mode === 'due' ? (cards.length ? 'All done — Due is clear' : 'Nothing due')
                 : mode === 'step' ? (cards.length ? 'End of the list' : 'Nothing to price on this list')
                 : mode === 'lost' ? (cards.length ? 'End of the list' : 'None in this part on the last reading')
+                : mode === 'new' ? (cards.length ? 'End of the list' : 'No unsold new size is at Amazon')
                 : cards.length ? (g ? 'End of the style' : 'End of the search')
                   : g ? `${g} has no sizes at Amazon` : `Nothing at Amazon matches “${q}”`}
             </div>
@@ -355,7 +368,7 @@ function Card({ mode, step, card, n, of, busy, done, review, onReview, onSet, on
   const changed = valid && (now === null || Math.round(price * 100) !== Math.round(now * 100));
   // The Buy Box lead's price to match (postage included) — only when someone else leads.
   const matchAt = card.bb_lead !== null && card.bb_lead !== undefined && !['US', 'US_SHARED'].includes(card.bb_holder ?? '') ? Number(card.bb_lead) : null;
-  const suggest = mode === 'search' || mode === 'step' || mode === 'lost' ? card.bb_suggest ?? null : null;   // step: its Buy Box sizes (2026-11-17)
+  const suggest = mode !== 'due' ? card.bb_suggest ?? null : null;   // step: its Buy Box sizes (2026-11-17)
   const usedSuggestion = suggest !== null && valid && Math.round(price * 100) === Math.round(suggest * 100);
   // A not-due search card is only looked at (header): its Leave is Next — nothing written, its review date kept.
   const lookOnly = mode !== 'due' && card.parked;   // search and step cards
@@ -370,6 +383,8 @@ function Card({ mode, step, card, n, of, busy, done, review, onReview, onSet, on
   const reviewText = card.next_review ? `review date ${dateLabel(card.next_review)}` : 'no review date';
   const status = mode === 'lost'
     ? { text: card.bb_gap != null && card.bb_gap > 0 ? `The Buy Box is ${money(card.bb_gap)} under our price · ${reviewText}` : card.due_by === 'buybox' ? `${statusOf(card).text} · ${reviewText}` : statusOf(card).text, cls: 'text-slate-900' }   // the review half's line already carries its date
+    // NEW CARDS (header): the size's days left on New Additions leads the status line — the only addition to the standard card.
+    : mode === 'new' && card.days_left != null ? { ...statusOf(card), text: `${card.days_left} day${card.days_left === 1 ? '' : 's'} left on New Additions · ${statusOf(card).text}` }
     : mode !== 'due' ? statusOf(card) : null;
   // STEP CARDS (header): the step's aim is the reason line; a Buy Box size shows the Buy Box suggestion instead.
   const aim = mode === 'step' && step ? stepAim(step, card.ladder_idle_days ?? 0, card.ladder_over ?? 0, card.ladder_over_why) : null;

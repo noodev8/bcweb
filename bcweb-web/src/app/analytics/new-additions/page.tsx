@@ -47,7 +47,12 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     owner: "In stock in Amazon is what im interested in"), each such size a tiny grey corner dot, and the menu's Amazon group greys
     ("Not on Amazon yet") for a style with no size listed. Stock, sold and the Amazon price per size are in the
     tile's tooltip. AMAZON PENDING (owner, 2026-11-19): a size in a Pending Amazon order counts as sold (in the Sold %, as Daily) and
-    is tinted amber until Amazon confirms it (see PENDING_TILE). The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
+    is tinted amber until Amazon confirms it (see PENDING_TILE). THE BADGE SPLITS (owner, 2026-11-22, Repose Taupe: a size sold
+    on Amazon while the row said it wasn't there — "That is misleading"): a size Amazon holds but not live yet (amztotal > 0 — on
+    its way in or reserved) says "Not live at Amazon yet"; only a size with nothing at Amazon says "Not sent to Amazon".
+    BUY BOX (owner, 2026-11-22: "a button on there (not purple) called BUY BOX that gives us the list of items that are on Amazon
+    and just the sizes that have not sold anything yet"): beside Cut / Refresh, plain like them — opens /amz/new-cards, the white
+    tiles at Amazon (live or on the way) as price cards, the soft cuts left out, OLDEST-added style first (owner, same day: the older ones are priced first). The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
     the upload file) — git history.
 
 NO DUE SWITCH — A REVIEW COLUMN INSTEAD (owner, 2026-11-06: the team sets long or short review dates on the other pricing screens,
@@ -518,6 +523,11 @@ function NewAdditionsPageInner() {
                       count, no restore. Cut = the selected rows (Ctrl / Shift-click for several), greyed with nothing picked; Refresh
                       (owner, 2026-11-06: "a permanent REFRESH") = every cut row back, nothing selected, the data fetched again. */}
                   <div className="ml-auto flex items-center gap-2">
+                    {/* BUY BOX (see the header) — plain, not the brand colour (owner). */}
+                    <Link href={`/amz/new-cards?${new URLSearchParams({ ...(cut.length ? { cut: cut.join(',') } : {}), from: selfUrl, back: LIST_LABEL })}`}
+                          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50">
+                      Buy Box
+                    </Link>
                     <button type="button" onClick={cutSelected} disabled={selectedHere.length === 0}
                             title="Hide the selected rows — Ctrl / Shift-click to pick several, Ctrl+A for all, Esc for none"
                             className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none">
@@ -613,18 +623,26 @@ function NewAdditionsPageInner() {
                               <div className="flex items-center gap-1.5">
                                 <span className={'truncate font-mono text-base font-semibold text-slate-900 ' + fade}>{g.groupid}</span>
                                 {done && <CheckIcon className="h-5 w-5 shrink-0 text-emerald-600" aria-label="Every new size sold" />}
-                                {/* NOT IN STOCK AT AMAZON BADGE (owner, 2026-11-13: "a badge on the row to make it obvious we havnt sent
+                                {/* NOT LIVE AT AMAZON BADGES (owner, 2026-11-13: "a badge on the row to make it obvious we havnt sent
                                     them yet" … "In stock in Amazon is what im interested in"): the unsold new sizes with nothing sellable
-                                    at FBA (amzLive 0 — listed or not) — the whole style, or how many. Small slate tag (colour restraint);
-                                    never on Birkenstock or a complete style. */}
+                                    at FBA (amzLive 0) — the whole style, or how many — SPLIT (2026-11-22, see the header) into "not live
+                                    yet" (Amazon holds some: on its way in or reserved) and "not sent" (nothing at Amazon). Small slate
+                                    tags (colour restraint); never on Birkenstock or a complete style. */}
                                 {!done && !isBirk(g.brand) && (() => {
                                   const unsold = g.sizes.filter((r) => !isSold(r));
-                                  const out = unsold.filter((r) => r.amzLive === 0).length;
-                                  if (out === 0) return null;
+                                  const out = unsold.filter((r) => r.amzLive === 0);
+                                  const coming = out.filter((r) => r.amzTotal > 0).length;
+                                  const notSent = out.length - coming;
+                                  const tag = 'shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200';
                                   return (
-                                    <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200">
-                                      {out === unsold.length ? 'Not in stock at Amazon' : `${out} not in stock at Amazon`}
-                                    </span>
+                                    <>
+                                      {notSent > 0 && <span className={tag}>{notSent === unsold.length ? 'Not sent to Amazon' : `${notSent} not sent to Amazon`}</span>}
+                                      {coming > 0 && (
+                                        <span className={tag} title="Amazon holds them but none is live to sell yet — on its way in or reserved">
+                                          {coming === unsold.length ? 'Not live at Amazon yet' : `${coming} not live at Amazon yet`}
+                                        </span>
+                                      )}
+                                    </>
                                   );
                                 })()}
                               </div>
@@ -692,7 +710,7 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
         const pending = state === 'done' && r && pendingOnly(r);
         const look = pending ? PENDING_TILE : SIZE_TILE[state];
         const tip = [pending && `Amazon order pending (${r.amzPending}) — counted as sold; back to unsold if Amazon cancels`,
-                     missing && 'Not in stock at Amazon'].filter(Boolean).join(' · ') || undefined;
+                     missing && (r.amzTotal > 0 ? 'Not live at Amazon yet — on its way in or reserved' : 'Not sent to Amazon')].filter(Boolean).join(' · ') || undefined;
         if (state === 'todo' && r && r.onAmz) {
           return (
             <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`} title={tip}

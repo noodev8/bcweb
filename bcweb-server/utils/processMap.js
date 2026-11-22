@@ -118,6 +118,7 @@ const NEW_SKUS_SQL = `
          -- Amazon (per size)
          (a.code IS NOT NULL) AS on_amz,
          COALESCE(a.amzlive, 0) AS amz_live,   -- sellable at FBA now, Amazon's own count (New Additions' "not in stock at Amazon" badge)
+         COALESCE(a.amztotal, 0) AS amz_total, -- live + on its way / reserved at Amazon (the badge: "not live yet" vs "not sent")
          -- The CURRENT Amazon price: a change logged since the last import (uploaded, or still pending in the basket) beats the feed —
          -- utils/amzNow.js → AMZ_NOW_CTES. New Additions' bulk % works off this, so two moves before an upload don't both start from
          -- the stale feed price.
@@ -166,4 +167,22 @@ const OTHER_SIZES_SQL = `
           OR EXISTS (SELECT 1 FROM amzfeed a WHERE a.code = m.code AND COALESCE(a.amztotal, 0) > 0))
 `;
 
-module.exports = { NEW_DAYS, CHANNELS, NEW_SKUS_SQL, OTHER_SIZES_SQL };
+// THE SOLD RULE for one NEW_SKUS_SQL row (header: SOLD + AMAZON PENDING): net units over every channel together > 0, or in a Pending
+// Amazon order. Daily's count (routes/process-overview.js) and the New Additions Buy Box cards (routes/amz-all-list.js ?new=1) both
+// call it; the screen's mirror is bcweb-web/src/lib/process.ts → isSold.
+function netUnits(row) {
+  return CHANNELS.reduce((n, ch) => n + Number((row.sales && row.sales[ch] && row.sales[ch].net) || 0), 0);
+}
+const isNewSold = (row) => netUnits(row) > 0 || (Number(row.amz_pending) || 0) > 0;
+
+// THE UNSOLD NEW SKUS (New Additions' white tiles), code -> { first_in, style_first_in, days_left } — the style's earliest first arrival is the
+// screen's default order (newest added at the top). `bb` = utils/amzDue.js → sideParams(side).bb, as for NEW_SKUS_SQL.
+async function unsoldNewSkus(query, bb) {
+  const rows = (await query(NEW_SKUS_SQL, [NEW_DAYS, bb])).rows;
+  const styleFirst = new Map();
+  for (const r of rows) if (!styleFirst.has(r.groupid) || r.first_in < styleFirst.get(r.groupid)) styleFirst.set(r.groupid, r.first_in);
+  return new Map(rows.filter((r) => !isNewSold(r))
+    .map((r) => [r.code, { first_in: r.first_in, style_first_in: styleFirst.get(r.groupid), days_left: NEW_DAYS - Number(r.age_days) }]));
+}
+
+module.exports = { NEW_DAYS, CHANNELS, NEW_SKUS_SQL, OTHER_SIZES_SQL, netUnits, isNewSold, unsoldNewSkus };

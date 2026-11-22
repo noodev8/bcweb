@@ -657,6 +657,7 @@ export interface AmzPriceCard extends AmzWinnerRow {
   // A Stock ladder list's sizes (?step=) also carry these (server utils/stockLadderList.js).
   when?: LadderWhen; ladder_idle_days?: number; ladder_over?: number; ladder_over_why?: 'cover' | 'unsold' | null; ladder_units?: number;
   bb_gap?: number | null;   // ?lost= only: our price − the Buy Box holder's, postage included
+  days_left?: number | null; // ?new=1 only: days before the size leaves New Additions (90 − days since its first Goods In)
 }
 export function getAmzDueCards() {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
@@ -678,6 +679,13 @@ export const isLostPart = (v: string | null): v is AmzLostPart => v === 'cheaper
 export function getAmzLostCards(part: AmzLostPart) {
   return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
     { url: '/amz-all-list', method: 'GET', params: { limit: 500, cards: 1, lost: part } },
+    (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
+  );
+}
+// NEW ADDITIONS' BUY BOX CARDS (server ?new=1): the unsold new sizes at Amazon, live or on the way — newest-added style first.
+export function getAmzNewCards() {
+  return request<{ total: number; truncated: boolean; rows: AmzPriceCard[] }>(
+    { url: '/amz-all-list', method: 'GET', params: { limit: 500, cards: 1, new: 1 } },
     (b) => ({ total: Number(b.total) || 0, truncated: !!b.truncated, rows: b.rows || [] })
   );
 }
@@ -5341,6 +5349,7 @@ export interface ProcessSizeRow {
   daysLeft: number;              // 90 − ageDays: days before it leaves the list (sold or not)
   localStock: number; fbaStock: number;
   amzLive: number;   // sellable at FBA now (amzfeed.amzlive) — fbaStock also counts Amazon-bound local pairs
+  amzTotal: number;  // amzfeed.amztotal — live + on its way / reserved at Amazon (0 = nothing at Amazon: not sent)
   bought: number;                // pairs booked in on Goods In (every arrival of the SKU)
   onAmz: boolean;                // the size has an amzfeed listing (FBA, 0-stock ones too)
   // PRICE DUE — the pricing screens' own Due. Amazon per SIZE; Shopify per STYLE (the same on each of its sizes).
