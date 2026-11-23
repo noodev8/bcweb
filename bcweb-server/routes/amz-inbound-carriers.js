@@ -4,8 +4,8 @@ API Route: amz_inbound_carriers
 =======================================================================================================================================
 Method: POST
 Purpose: The ONE confirm box of "Do shipment" (docs/amz-inbound/PLAN.md), once a ready-to-ship date is picked: asks Amazon for the
-         carriers for that date and answers with the two DPDs: is OUR OWN DPD offered (Amazon charges nothing), and AMAZON'S DPD with
-         Amazon's price. The owner then chooses one (owner 2026-11-17). Nothing is confirmed or charged (generateTransportationOptions
+         carriers for that date and answers: is OUR OWN DPD offered (Amazon charges nothing), AMAZON'S DPD with Amazon's price, and
+         AMAZON'S UPS with its price (owner 2026-11-23). The owner then chooses one (owner 2026-11-17). Nothing is confirmed or charged (generateTransportationOptions
          + list only), so it's a POST only because Amazon's "generate" is one. Takes a few seconds (Amazon works it out).
 
 Request Body: { "id": 3, "readyDate": "2026-11-19" }   // the job waiting at the confirm box; the date picked (today or later)
@@ -16,7 +16,8 @@ Success Response:
     "readyDate": "2026-11-19",
     "own": true,                                             // our own DPD offered
     "amazon": { "cost": 2.86, "currency": "GBP",             // Amazon's DPD and its price; null when Amazon doesn't offer it
-                "voidableUntil": "2026-11-20T…Z" | null, "expires": "…" | null }
+                "voidableUntil": "2026-11-20T…Z" | null, "expires": "…" | null },
+    "ups": { "cost": 2.45, … }                               // Amazon's UPS, same shape; null when Amazon doesn't offer it
   }
 }
 =======================================================================================================================================
