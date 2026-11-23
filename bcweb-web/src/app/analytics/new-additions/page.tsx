@@ -52,7 +52,8 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     its way in or reserved) says "Not live at Amazon yet"; only a size with nothing at Amazon says "Not sent to Amazon".
     BUY BOX (owner, 2026-11-22: "a button on there (not purple) called BUY BOX that gives us the list of items that are on Amazon
     and just the sizes that have not sold anything yet"): beside Cut / Refresh, plain like them — opens /amz/new-cards, the white
-    tiles at Amazon (live or on the way) as price cards, the soft cuts left out, OLDEST-added style first (owner, same day: the older ones are priced first). The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
+    tiles at Amazon (live or on the way) as price cards, the soft cuts left out, OLDEST-added style first (owner, same day: the older ones are priced first).
+    With rows SELECTED it opens just those styles (?only=; owner, 2026-11-23: "If none selected, show whats on the screen"). The drop-down's sold/stock grid, Amazon upload file and product links went (the drills link on; AMZ loaded has
     the upload file) — git history.
 
 NO DUE SWITCH — A REVIEW COLUMN INSTEAD (owner, 2026-11-06: the team sets long or short review dates on the other pricing screens,
@@ -523,8 +524,12 @@ function NewAdditionsPageInner() {
                       count, no restore. Cut = the selected rows (Ctrl / Shift-click for several), greyed with nothing picked; Refresh
                       (owner, 2026-11-06: "a permanent REFRESH") = every cut row back, nothing selected, the data fetched again. */}
                   <div className="ml-auto flex items-center gap-2">
-                    {/* BUY BOX (see the header) — plain, not the brand colour (owner). */}
-                    <Link href={`/amz/new-cards?${new URLSearchParams({ ...(cut.length ? { cut: cut.join(',') } : {}), from: selfUrl, back: LIST_LABEL })}`}
+                    {/* BUY BOX (see the header) — plain, not the brand colour (owner). THE SELECTED ROWS ONLY when any are picked
+                        (?only=), else what's on screen (owner, 2026-11-23). */}
+                    <Link href={`/amz/new-cards?${new URLSearchParams({
+                            ...(selectedHere.length ? { only: selectedHere.join(',') } : cut.length ? { cut: cut.join(',') } : {}),
+                            from: selfUrl, back: LIST_LABEL })}`}
+                          title={selectedHere.length ? `Buy Box cards for the ${selectedHere.length === 1 ? 'selected style' : `${selectedHere.length} selected styles`}` : 'Buy Box cards for every style on screen'}
                           className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:border-slate-400 hover:bg-slate-50">
                       Buy Box
                     </Link>

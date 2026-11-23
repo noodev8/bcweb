@@ -27,10 +27,11 @@ Purpose: Owner: "the usual price change screen but reduced to cards to make it e
                                            Pricing strip (owner, 2026-11-21; server ?lost=, THE split utils/amzBuyBox.js → lostPart).
                                            Walked in the SERVER's order, no style grouping: cheaper is biggest price gap first (owner),
                                            the gap shown on the card's status line. Buy Box suggestion with Use it, as on search.
-           NEW CARDS    /amz/new-cards[?cut=a,b]&from=&back=  New Additions' BUY BOX button (owner, 2026-11-22: "the list of items
+           NEW CARDS    /amz/new-cards[?cut=a,b|?only=a,b]&from=&back=  New Additions' BUY BOX button (owner, 2026-11-22: "the list of items
                                            that are on Amazon and just the sizes that have not sold anything yet"): its white tiles
                                            at Amazon, live or on the way (server ?new=1, utils/processMap.js → unsoldNewSkus), due or
-                                           not. The screen's soft-cut styles (?cut=) are left out — the cards are what's on screen.
+                                           not. The screen's soft-cut styles (?cut=) are left out — the cards are what's on screen;
+                                           with rows selected there, ?only= those styles (owner, 2026-11-23).
                                            Oldest-added style first (owner, 2026-11-22); the status line leads with the size's days left (owner, same day); walked like search, Buy Box suggestion with Use it.
          Data: GET /amz-all-list ?cards=1 (getAmzDueCards / getAmzSearchCards / getAmzStepCards).
 
@@ -136,6 +137,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const part = isLostPart(partParam) ? partParam : null;
   // NEW CARDS (header): New Additions' soft-cut styles, left out.
   const cutParam = useUrlParam('cut') ?? '';
+  const onlyParam = useUrlParam('only') ?? '';   // NEW CARDS: New Additions' selected styles, when any are picked
   const router = useRouter();
   const walk = mode !== 'due';   // search and step cards walk start to end; due cards wrap round to what's left
   // The log note: "Step card · Unsold 90" says which list the price came from.
@@ -152,7 +154,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
     ? `/amz/search-cards?${g ? `g=${encodeURIComponent(g)}` : `q=${encodeURIComponent(q)}`}${fromQs}`
     : mode === 'step' ? `/amz/step-cards?step=${step ?? ''}&when=${when}`
       : mode === 'lost' ? `/amz/lost-cards?part=${part ?? ''}`
-        : mode === 'new' ? `/amz/new-cards?cut=${encodeURIComponent(cutParam)}${fromQs}` : '/amz/due-cards';
+        : mode === 'new' ? `/amz/new-cards?${onlyParam ? `only=${encodeURIComponent(onlyParam)}` : `cut=${encodeURIComponent(cutParam)}`}${fromQs}` : '/amz/due-cards';
 
   // A snapshot (header): nothing refetches by itself. Waits for the client (useUrlParam reads null until hydrated).
   const key = !hydrated ? null : mode === 'due' ? ['amz-price-cards', 'due']
@@ -175,12 +177,14 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   // order exactly (cheaper = biggest price gap first, owner 2026-11-21; grouping by style would undo it).
   const cards = useMemo(() => {
     const cut = new Set(cutParam.split(',').filter(Boolean));
-    const rows = (data?.rows ?? []).filter((r) => !cut.has(r.groupid));   // NEW CARDS: the screen's soft cuts (only ever set there)
+    const only = new Set(onlyParam.split(',').filter(Boolean));
+    // NEW CARDS: the screen's selected styles, else everything less its soft cuts (both only ever set there)
+    const rows = (data?.rows ?? []).filter((r) => !cut.has(r.groupid) && (only.size === 0 || only.has(r.groupid)));
     if (mode === 'lost') return rows;
     const styleRank = new Map<string, number>();
     rows.forEach((r) => { if (!styleRank.has(r.groupid)) styleRank.set(r.groupid, styleRank.size); });
     return [...rows].sort((a, b) => (styleRank.get(a.groupid)! - styleRank.get(b.groupid)!) || sizeKey(a.code) - sizeKey(b.code) || a.code.localeCompare(b.code));
-  }, [data, mode, cutParam]);
+  }, [data, mode, cutParam, onlyParam]);
 
   const [done, setDone] = useState<Map<string, Done>>(() => new Map());
   const [cur, setCur] = useState<string | null>(null);
@@ -253,7 +257,7 @@ export default function AmzPriceCards({ mode }: { mode: PriceCardsMode }) {
   const title = mode === 'due' ? 'Not selling · due'
     : mode === 'step' ? `${step ? LIST_TEXT[step].name : 'Range'} · ${CHIPS.find((c) => c.key === when)?.label ?? 'All'}`
       : mode === 'lost' ? (part ? `No Buy Box · ${LOST_TEXT[part].label} · ${LOST_TEXT[part].hint}` : 'No Buy Box')
-      : mode === 'new' ? 'New Additions · unsold sizes at Amazon'
+      : mode === 'new' ? (onlyParam ? `New Additions · ${onlyParam.split(',').filter(Boolean).length === 1 ? onlyParam : `${onlyParam.split(',').filter(Boolean).length} selected styles`} · unsold sizes at Amazon` : 'New Additions · unsold sizes at Amazon')
       : g ? `Style ${g}` : `Search “${q}”`;
 
   return (
