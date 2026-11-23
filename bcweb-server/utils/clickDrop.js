@@ -19,6 +19,16 @@ ACCOUNT FACTS (checked 2026-10-13):
   - A BILLING address is required too (C&D: "At least 'Full name' or 'Company Name' is required for 'Billing address'", "Billing
     address postcode is required for UK orders"). We have no separate billing address, so the delivery address is sent as both.
 
+NORTHERN IRELAND (BT postcodes) NEEDS CUSTOMS DATA (BC19433, 2026-11-23 — the first one). Shopify gives NI country GB, but a parcel from
+Great Britain to NI is refused without its contents: C&D errorCode 600 "Order does not meet customs requirements" (CUSTOMS_REQUIREMENTS),
+with `contents: []`. For a BT postcode the caller passes `contents` (customsItem below), and the order's subtotal / total carry
+their value. Owner, 2026-11-23: the value is the SHOPIFY price (the size price when one is in force, else the style price — the
+customer's actual payment isn't on orderstatus); origin is where the shoe was MADE, not where it's posted from — Birkenstock = DE.
+Other brands have no origin yet (ORIGIN_BY_BRAND), so their NI orders are refused before C&D is called. Field shapes are from the
+spec's ProductItemRequest (https://api.parcel.royalmail.com/doc/v1/click-and-drop-api-v1.yaml): unitValue EXCLUDES tax; SKU plus
+values also saves/overwrites a Product of that SKU on the C&D account (harmless); isRecipientABusiness is mandatory for business
+senders (OBA) on GB->NI orders — always false, our Shopify customers are consumers.
+
 KEY: CLICKDROP_API_KEY in .env (local + VPS). Sent as `Authorization: Bearer <key>`.
 =======================================================================================================================================
 */
@@ -31,6 +41,29 @@ const SERVICE_CODES = { 4: 'TPN24', 5: 'TPS48' };
 const MAX_KG = 20;   // Tracked parcel limit
 // Always 'parcel' (owner, 2026-10-13) — never small/medium. C&D refused 'smallParcel' for TPN24 anyway.
 const PACKAGE_FORMAT = 'parcel';
+
+// NI customs (header). Where the shoe was made, by skusummary.brand (lower-cased). A brand not here can't go to NI from bcweb yet.
+const ORIGIN_BY_BRAND = { birkenstock: 'DE' };
+const CUSTOMS_DESCRIPTION = 'Footwear';
+
+/** A Northern Ireland postcode (BT). Those parcels need customs contents even though the country is GB. */
+const isNorthernIreland = (postcode) => /^BT[0-9]/i.test(String(postcode || '').trim());
+
+/** One contents line: { code, title, ean, quantity, unitValue (ex VAT), unitWeightInGrams, originCountryCode }. */
+function customsItem(line) {
+  const clip = (s, n) => (String(s || '').trim().slice(0, n) || undefined);
+  return {
+    name: clip(line.title || line.code, 800),
+    SKU: clip(line.code, 100),
+    StandardisedManufacturerId: clip(line.ean, 50),
+    quantity: line.quantity,
+    unitValue: line.unitValue,
+    unitWeightInGrams: line.unitWeightInGrams,
+    customsDescription: CUSTOMS_DESCRIPTION,
+    originCountryCode: line.originCountryCode,
+    customsDeclarationCategory: 'eCommerceSaleOfGoods',
+  };
+}
 
 class ClickDropError extends Error {
   constructor(message, status, body) { super(message); this.status = status; this.body = body; }
@@ -106,9 +139,14 @@ function getLabel(orderIdentifier) {
 
 /**
  * Create the shipment and return { orderIdentifier, trackingNumber, label: Buffer|null }.
- * `order` = { ordernum, name, company, address1, address2, city, county, postcode, phone, email, serviceCode, weightKg }.
+ * `order` = { ordernum, name, company, address1, address2, city, county, postcode, phone, email, serviceCode, weightKg,
+ *             contents? } — contents (Northern Ireland only, header) = [{ ...customsItem line, plus grossValue (inc VAT) }].
  */
 async function createOrder(order) {
+  const contents = Array.isArray(order.contents) && order.contents.length ? order.contents : null;
+  const pennies = (n) => Math.round(n * 100) / 100;
+  const subtotal = contents ? pennies(contents.reduce((s, l) => s + l.unitValue * l.quantity, 0)) : 0;
+  const total = contents ? pennies(contents.reduce((s, l) => s + l.grossValue * l.quantity, 0)) : 0;
   const clip = (s, n) => (String(s || '').trim().slice(0, n) || undefined);
   // Delivery and billing are the same person/address — see the header.
   const contact = {
@@ -131,12 +169,17 @@ async function createOrder(order) {
         orderReference: order.ordernum,
         recipient: contact,
         billing: contact,
-        packages: [{ weightInGrams: Math.round(order.weightKg * 1000), packageFormatIdentifier: PACKAGE_FORMAT }],
+        packages: [{
+          weightInGrams: Math.round(order.weightKg * 1000), packageFormatIdentifier: PACKAGE_FORMAT,
+          ...(contents ? { contents: contents.map(customsItem) } : {}),
+        }],
+        ...(contents ? { isRecipientABusiness: false } : {}),
         orderDate: new Date().toISOString(),
-        // The order's money isn't on orderstatus and a domestic parcel doesn't need it (no customs).
-        subtotal: 0,
+        // A domestic parcel needs no value (no customs) and the order's money isn't on orderstatus. Northern Ireland sends the
+        // Shopify price of its contents (header): subtotal ex VAT, total inc VAT; shipping charged isn't known, so 0.
+        subtotal,
         shippingCostCharged: 0,
-        total: 0,
+        total,
         currencyCode: 'GBP',
         postageDetails: { serviceCode: order.serviceCode },
         label: { includeLabelInResponse: true, includeCN: false, includeReturnsLabel: false },
@@ -250,5 +293,6 @@ async function getManifest(manifestId, until = Infinity) {
 }
 
 module.exports = {
-  SERVICE_CODES, MAX_KG, ClickDropError, findByReference, getLabel, createOrder, deleteOrder, createManifests, getManifest,
+  SERVICE_CODES, MAX_KG, ORIGIN_BY_BRAND, ClickDropError, isNorthernIreland, findByReference, getLabel, createOrder, deleteOrder,
+  createManifests, getManifest,
 };

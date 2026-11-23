@@ -39,6 +39,12 @@ SERVICE: courier '4' -> Tracked 24, '5' -> Tracked 48, whatever the weight. Pack
 REFUSED, NO LABEL: pack only ('0'), no courier, no address line 1 / town / postcode, a country other than GB (customs is a separate
 job). Click & Drop requires all three address fields.
 
+NORTHERN IRELAND (BT postcode, country GB) goes through, WITH CUSTOMS CONTENTS (utils/clickDrop.js header; BC19433, 2026-11-23): each
+open line's Shopify price (the active size price, else the style price), ex VAT by the size's VAT flag (utils/vat.js), the parcel
+weight shared over the units, and the brand's country of origin. Refused before C&D is called: NI_NO_ORIGIN (a brand with no origin
+set — only Birkenstock = DE so far) and NI_NO_PRICE (no readable Shopify price). Either way the label can be made by hand in Click &
+Drop with the ordernum as its reference; the next scan finds it and packs the order.
+
 The county is left off when it's a region code ('ENG', 'SCT' — what Shopify's province_code puts there), so it doesn't print on the
 label as an address line.
 =======================================================================================================================================
@@ -55,7 +61,8 @@ WEIGHT_NEEDED: { "return_code": "WEIGHT_NEEDED", "message": "...", "missing": ["
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "MISSING_FIELDS" · "NOT_FOUND" · "NOTHING_TO_PACK" · "NOT_SCANNED" · "PACK_ONLY" · "NO_COURIER" · "NO_ADDRESS" ·
-"NOT_GB" · "WEIGHT_NEEDED" · "INVALID_WEIGHT" · "NO_LABEL" · "CLICKDROP_ERROR" · "UNAUTHORIZED" · "SERVER_ERROR"
+"NOT_GB" · "NI_NO_ORIGIN" · "NI_NO_PRICE" · "WEIGHT_NEEDED" · "INVALID_WEIGHT" · "NO_LABEL" · "CLICKDROP_ERROR" · "UNAUTHORIZED" ·
+"SERVER_ERROR"
 =======================================================================================================================================
 */
 
@@ -66,6 +73,9 @@ const { verifyToken } = require('../middleware/verifyToken');
 const { LEGACY_STAMP } = require('../utils/orderStatus');
 const { CUSTOMER_ORDERTYPE, notDiscarded, rowState } = require('../utils/customerOrders');
 const clickDrop = require('../utils/clickDrop');
+const { safeNumeric } = require('../utils/sql');
+const { sizeTaxSql, isZeroRated } = require('../utils/vat');
+const { ACTIVE_SQL } = require('../utils/sizePrice');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -78,6 +88,42 @@ const OPEN = (state) => state !== 'packed';
 // A refusal the screen shows as it stands. Thrown out of the transaction so it rolls back.
 class Refusal extends Error {
   constructor(code, message, extra = {}) { super(message); this.code = code; this.extra = extra; }
+}
+
+// Northern Ireland customs contents (header): one line per open code. The parcel weight is shared evenly over the units — a group
+// order's weight is the weighed box, never added up from the shoes (owner, 2026-10-13).
+async function niContents(client, ordernum, open, weightKg) {
+  const qtyByCode = new Map();
+  for (const r of open) qtyByCode.set(r.code.toUpperCase(), (qtyByCode.get(r.code.toUpperCase()) || 0) + Number(r.qty));
+  const { rows } = await client.query(
+    `SELECT UPPER(m.code) AS code, ss.brand, COALESCE(NULLIF(btrim(t.shopifytitle), ''), ss.groupid) AS title,
+            regexp_replace(COALESCE(m.ean, ''), 'B$', '') AS ean, ${sizeTaxSql('m', 'ss')} AS tax,
+            COALESCE(sp.price, ${safeNumeric('ss.shopifyprice')}) AS price
+       FROM skumap m
+       JOIN skusummary ss ON ss.groupid = m.groupid
+       LEFT JOIN title t ON t.groupid = ss.groupid
+       LEFT JOIN (${ACTIVE_SQL}) sp ON sp.code = m.code
+      WHERE UPPER(m.code) = ANY($1) AND COALESCE(m.deleted, 0) = 0`,
+    [[...qtyByCode.keys()]]
+  );
+  const byCode = new Map(rows.map((r) => [r.code, r]));
+  const units = [...qtyByCode.values()].reduce((a, b) => a + b, 0);
+  const unitGrams = Math.max(1, Math.round((weightKg * 1000) / units));
+  const lines = [];
+  for (const [code, quantity] of qtyByCode) {
+    const r = byCode.get(code);
+    const origin = clickDrop.ORIGIN_BY_BRAND[String(r?.brand || '').trim().toLowerCase()];
+    if (!origin) {
+      throw new Refusal('NI_NO_ORIGIN', `Northern Ireland needs the country the shoe was made in, and bcweb only knows Birkenstock's (${code}, ${r?.brand || 'no brand'}) — make this label in Click & Drop with reference ${ordernum}, then scan again`);
+    }
+    const gross = r.price === null ? NaN : Number(r.price);
+    if (!Number.isFinite(gross) || gross <= 0) {
+      throw new Refusal('NI_NO_PRICE', `Northern Ireland needs the shoe's value and ${code} has no Shopify price — make this label in Click & Drop with reference ${ordernum}, then scan again`);
+    }
+    const unitValue = Math.round((isZeroRated(r.tax) ? gross : gross / 1.2) * 100) / 100;
+    lines.push({ code, title: r.title, ean: r.ean, quantity, unitValue, grossValue: gross, unitWeightInGrams: unitGrams, originCountryCode: origin });
+  }
+  return lines;
 }
 
 router.post('/', async (req, res) => {
@@ -175,12 +221,13 @@ router.post('/', async (req, res) => {
       if (existing) {
         pdf = await clickDrop.getLabel(existing.orderIdentifier);
       } else {
+        const contents = clickDrop.isNorthernIreland(o.postcode) ? await niContents(client, ordernum, open, weightKg) : undefined;
         const county = String(o.county || '').trim();
         const created = await clickDrop.createOrder({
           ordernum, serviceCode, weightKg,
           name: o.shippingname, company: o.company, address1: o.address1, address2: o.address2, city: o.city,
           county: /^[A-Z]{2,3}$/.test(county) ? '' : county,
-          postcode: o.postcode, phone: o.phone, email: o.email,
+          postcode: o.postcode, phone: o.phone, email: o.email, contents,
         });
         trackingNumber = created.trackingNumber;
         pdf = created.label || await clickDrop.getLabel(created.orderIdentifier);

@@ -75,6 +75,8 @@ no extra steps for the packer.
    an order that has a label, i.e. a packed one.
    **If a Click & Drop order already exists for the ordernum, re-fetch its label. Never create a second one** (that pays postage twice).
 6. **Refused with a reason, no label:** pack only (`'0'`), non-GB country (customs is a separate job), missing postcode/address1.
+   **Northern Ireland** (BT postcode, country GB) is labelled WITH customs contents — Shopify price ex VAT, origin by brand (Birkenstock
+   = DE; other brands refused until set). Owner, 2026-11-23; first one BC19433. Detail: `utils/clickDrop.js` header.
 
 ## Build list
 **Server (`bcweb-server`)**
