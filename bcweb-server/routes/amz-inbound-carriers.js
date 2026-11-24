@@ -15,6 +15,7 @@ Success Response:
   "carriers": {
     "readyDate": "2026-11-19",
     "own": true,                                             // our own DPD offered
+    "other": true,                                           // "Other" own carrier offered (e.g. Royal Mail; 2026-11-24)
     "amazon": { "cost": 2.86, "currency": "GBP",             // Amazon's DPD and its price; null when Amazon doesn't offer it
                 "voidableUntil": "2026-11-20T…Z" | null, "expires": "…" | null },
     "ups": { "cost": 2.45, … }                               // Amazon's UPS, same shape; null when Amazon doesn't offer it

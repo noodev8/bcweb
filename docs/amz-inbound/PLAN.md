@@ -11,7 +11,7 @@ forth to Seller Central's Send to Amazon with the shipping-plan .txt and the box
 | 2 | **NEVER split, regardless of price.** A shipment always goes to ONE Amazon warehouse, even if a split would be cheaper. Price is never used to choose. If Amazon offers no single-warehouse option, BCWEB stops and confirms nothing. |
 | 3 | **Box labels print on the Zebra** (4×6 thermal), through the existing QZ Tray path. |
 | 4 | **Ship from our address**, always the same one. |
-| 5 | ~~Courier = our own local DPD account. NEVER Amazon's DPD.~~ **Changed 2026-11-17 (owner: "let me choose and tell me the cost for amz dpd"): the confirm box offers BOTH DPDs for the date picked, our own (Amazon charges nothing) and Amazon's with its price, and the owner chooses.** **Added 2026-11-23 (owner: "also get UPS from the amz shipping options and show the price, just like we do for amz dpd"): Amazon's UPS too, with its price, chosen and capped the same way.** No other carrier is offered. Nothing is pre-picked. See "Carrier choice" below. |
+| 5 | ~~Courier = our own local DPD account. NEVER Amazon's DPD.~~ **Changed 2026-11-17 (owner: "let me choose and tell me the cost for amz dpd"): the confirm box offers BOTH DPDs for the date picked, our own (Amazon charges nothing) and Amazon's with its price, and the owner chooses.** **Added 2026-11-23 (owner: "also get UPS from the amz shipping options and show the price, just like we do for amz dpd"): Amazon's UPS too, with its price, chosen and capped the same way.** **Added 2026-11-24 (owner: "add the 'other' option so i can send with royal mail"): Amazon's own-carrier "Other"**, like our own DPD (no quote, delivery window) but no Book DPD; the tracking goes in Seller Central by hand. No other carrier is offered. Nothing is pre-picked. See "Carrier choice" below. |
 | 6 | **Ready-to-ship date: we choose it** on the screen at step 4 (no default to today). |
 | 7 | **Tracking numbers: parked**, sorted later. Not part of the first build. |
 | 8 | **ONE PACK GROUP, ALWAYS.** Only a packing option with exactly one pack group is ever confirmed. If Amazon offers none, stop, confirm nothing and cancel the plan. Never pack to more than one group. |
@@ -228,7 +228,11 @@ Owner, 2026-11-17: "can we build it to let me choose and tell me the cost for am
 - **Amazon's UPS (2026-11-23)** sits beside Amazon's DPD: `AMAZON_PARTNERED_CARRIER / GROUND_SMALL_PARCEL`, carrier UPS, with a quote
   (the test plan saw £2.45). Same price cap, same Requote, no delivery window, no Book DPD. **Its carrier code wasn't recorded** (shipped
   plans keep only the option chosen), so it's matched on a code starting `UPS` or "UPS" in the name: check it shows on the first box.
-- **The write guard** still refuses any transportation confirm whose id wasn't vetted (`pickCarrier`): own DPD with no quote, or Amazon's
+- **Other (2026-11-24)**, for Royal Mail: `USE_YOUR_OWN_CARRIER / GROUND_SMALL_PARCEL`, carrier "Other", no quote. Handled as our own DPD
+  (delivery window confirmed, nothing charged by Amazon) but no Book DPD, and the tracking guard still only takes DPD parcel numbers, so
+  the Royal Mail tracking goes in Seller Central by hand. **Its carrier code wasn't recorded either**: matched on the name "Other" or a
+  code starting `OTH` (`ownOther`). Check it shows on the first box.
+- **The write guard** still refuses any transportation confirm whose id wasn't vetted (`pickCarrier`): own DPD / Other with no quote, or Amazon's
   DPD / UPS at or under the price shown. The other carriers can never be confirmed.
 - The booked notice and the bclog line name the carrier and Amazon's price.
 

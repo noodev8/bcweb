@@ -3593,11 +3593,11 @@ export function getAmzInboundStatus() {
   return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-status', method: 'GET' }, inboundJob);
 }
 // The carriers Amazon offers for the date picked (nothing confirmed): our own DPD, Amazon's DPD and Amazon's UPS (owner 2026-11-23)
-// with their prices. amazon / ups = null when Amazon doesn't offer it.
-export type AmzInboundCarrier = 'own' | 'amazon' | 'ups';
+// with their prices, and Other (our own courier that isn't DPD, e.g. Royal Mail — 2026-11-24). amazon / ups = null when Amazon doesn't offer it.
+export type AmzInboundCarrier = 'own' | 'other' | 'amazon' | 'ups';
 export interface AmzCarrierPrice { cost: number; currency: string; voidableUntil: string | null; expires: string | null }
 export interface AmzInboundCarriers {
-  readyDate: string; own: boolean;
+  readyDate: string; own: boolean; other?: boolean;   // other: absent from a server older than 2026-11-24
   amazon: AmzCarrierPrice | null;
   ups: AmzCarrierPrice | null;
 }
