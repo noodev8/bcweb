@@ -41,8 +41,8 @@ job). Click & Drop requires all three address fields.
 
 NORTHERN IRELAND (BT postcode, country GB) goes through, WITH CUSTOMS CONTENTS (utils/clickDrop.js header; BC19433, 2026-11-23): each
 open line's Shopify price (the active size price, else the style price), ex VAT by the size's VAT flag (utils/vat.js), the parcel
-weight shared over the units, and the brand's country of origin. Refused before C&D is called: NI_NO_ORIGIN (a brand with no origin
-set — only Birkenstock = DE so far) and NI_NO_PRICE (no readable Shopify price). Either way the label can be made by hand in Click &
+weight shared over the units, and the brand's country of origin (clickDrop.originFor — any brand not listed goes as China, owner
+2026-11-25). Refused before C&D is called: NI_NO_PRICE (no readable Shopify price) — the label can then be made by hand in Click &
 Drop with the ordernum as its reference; the next scan finds it and packs the order.
 
 The county is left off when it's a region code ('ENG', 'SCT' — what Shopify's province_code puts there), so it doesn't print on the
@@ -61,7 +61,7 @@ WEIGHT_NEEDED: { "return_code": "WEIGHT_NEEDED", "message": "...", "missing": ["
 =======================================================================================================================================
 Return Codes:
 "SUCCESS" · "MISSING_FIELDS" · "NOT_FOUND" · "NOTHING_TO_PACK" · "NOT_SCANNED" · "PACK_ONLY" · "NO_COURIER" · "NO_ADDRESS" ·
-"NOT_GB" · "NI_NO_ORIGIN" · "NI_NO_PRICE" · "WEIGHT_NEEDED" · "INVALID_WEIGHT" · "NO_LABEL" · "CLICKDROP_ERROR" · "UNAUTHORIZED" ·
+"NOT_GB" · "NI_NO_PRICE" · "WEIGHT_NEEDED" · "INVALID_WEIGHT" · "NO_LABEL" · "CLICKDROP_ERROR" · "UNAUTHORIZED" ·
 "SERVER_ERROR"
 =======================================================================================================================================
 */
@@ -112,11 +112,8 @@ async function niContents(client, ordernum, open, weightKg) {
   const lines = [];
   for (const [code, quantity] of qtyByCode) {
     const r = byCode.get(code);
-    const origin = clickDrop.ORIGIN_BY_BRAND[String(r?.brand || '').trim().toLowerCase()];
-    if (!origin) {
-      throw new Refusal('NI_NO_ORIGIN', `Northern Ireland needs the country the shoe was made in, and bcweb only knows Birkenstock's (${code}, ${r?.brand || 'no brand'}) — make this label in Click & Drop with reference ${ordernum}, then scan again`);
-    }
-    const gross = r.price === null ? NaN : Number(r.price);
+    const origin = clickDrop.originFor(r?.brand);
+    const gross = !r || r.price === null ? NaN : Number(r.price);
     if (!Number.isFinite(gross) || gross <= 0) {
       throw new Refusal('NI_NO_PRICE', `Northern Ireland needs the shoe's value and ${code} has no Shopify price — make this label in Click & Drop with reference ${ordernum}, then scan again`);
     }

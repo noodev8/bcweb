@@ -23,8 +23,8 @@ NORTHERN IRELAND (BT postcodes) NEEDS CUSTOMS DATA (BC19433, 2026-11-23 — the 
 Great Britain to NI is refused without its contents: C&D errorCode 600 "Order does not meet customs requirements" (CUSTOMS_REQUIREMENTS),
 with `contents: []`. For a BT postcode the caller passes `contents` (customsItem below), and the order's subtotal / total carry
 their value. Owner, 2026-11-23: the value is the SHOPIFY price (the size price when one is in force, else the style price — the
-customer's actual payment isn't on orderstatus); origin is where the shoe was MADE, not where it's posted from — Birkenstock = DE.
-Other brands have no origin yet (ORIGIN_BY_BRAND), so their NI orders are refused before C&D is called. Field shapes are from the
+customer's actual payment isn't on orderstatus); origin is where the shoe was MADE, not where it's posted from — by brand
+(ORIGIN_BY_BRAND, originFor), any brand not listed goes as China (owner, 2026-11-25). Field shapes are from the
 spec's ProductItemRequest (https://api.parcel.royalmail.com/doc/v1/click-and-drop-api-v1.yaml): unitValue EXCLUDES tax; SKU plus
 values also saves/overwrites a Product of that SKU on the C&D account (harmless); isRecipientABusiness is mandatory for business
 senders (OBA) on GB->NI orders — always false, our Shopify customers are consumers.
@@ -42,8 +42,12 @@ const MAX_KG = 20;   // Tracked parcel limit
 // Always 'parcel' (owner, 2026-10-13) — never small/medium. C&D refused 'smallParcel' for TPN24 anyway.
 const PACKAGE_FORMAT = 'parcel';
 
-// NI customs (header). Where the shoe was made, by skusummary.brand (lower-cased). A brand not here can't go to NI from bcweb yet.
-const ORIGIN_BY_BRAND = { birkenstock: 'DE' };
+// NI customs (header). Where the shoe was made, by skusummary.brand (lower-cased). Owner, 2026-11-25: Birkenstock / Remonte / Rieker
+// = DE, Shepherd = SE; any other brand goes as China (DEFAULT_ORIGIN) rather than being refused. Caprice and Padders were checked and
+// have no single country (Caprice mostly Bangladesh, Padders India / China by style), so they take the default too.
+const ORIGIN_BY_BRAND = { birkenstock: 'DE', remonte: 'DE', rieker: 'DE', shepherd: 'SE' };
+const DEFAULT_ORIGIN = 'CN';
+const originFor = (brand) => ORIGIN_BY_BRAND[String(brand || '').trim().toLowerCase()] || DEFAULT_ORIGIN;
 const CUSTOMS_DESCRIPTION = 'Footwear';
 
 /** A Northern Ireland postcode (BT). Those parcels need customs contents even though the country is GB. */
@@ -293,6 +297,6 @@ async function getManifest(manifestId, until = Infinity) {
 }
 
 module.exports = {
-  SERVICE_CODES, MAX_KG, ORIGIN_BY_BRAND, ClickDropError, isNorthernIreland, findByReference, getLabel, createOrder, deleteOrder,
+  SERVICE_CODES, MAX_KG, originFor, ClickDropError, isNorthernIreland, findByReference, getLabel, createOrder, deleteOrder,
   createManifests, getManifest,
 };
