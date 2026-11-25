@@ -35,7 +35,8 @@ GET /amz-inbound-status:
   7. CARRIER  generateTransportationOptions again for the chosen date → the chosen carrier. Amazon's DPD / UPS only at or under the price
               shown: dearer now → back to the confirm box with the new price (nothing confirmed, plan kept).
   8. WINDOW   OUR OWN DPD / OTHER ONLY (Amazon's docs: own-carrier options carry the precondition CONFIRMED_DELIVERY_WINDOW; the partnered
-              workflow has no window step): generateDeliveryWindowOptions → the earliest AVAILABLE window on or after the ready date.
+              workflow has no window step): generateDeliveryWindowOptions → by the ready date's weekday, Mon–Wed THIS week's window,
+              Thu–Fri NEXT week's (owner 2026-11-25; windowFor).
               7 and 8 are worked out BEFORE anything is confirmed: if either is missing, STOP and cancel the plan, still free.
   9. BOOK     confirmPlacementOption (placement fees are charged from here) → [confirmDeliveryWindowOptions, own DPD only] →
               confirmTransportationOptions (Amazon's DPD / UPS is charged from here).
@@ -434,11 +435,16 @@ function pickCarrier(options, shipmentId, carrier, maxCost) {
   vettedTransport.add(o.transportationOptionId);
   return o;
 }
-// The earliest AVAILABLE delivery window starting on or after the ready-to-ship date.
+// The delivery WEEK, by the ready-to-ship date's weekday (owner, 2026-11-25): Monday–Wednesday → THIS week, Thursday–Friday → NEXT week.
+// Amazon's windows are its Sunday–Saturday weeks and it still offers the week already under way (read 2026-11-25: on Wed 25 Nov it
+// listed 22–28 Nov first), so "this week" = the AVAILABLE window holding the ready date; Sunday counts as this week, Saturday as next.
+// Next week = the earliest AVAILABLE window starting after the ready date, which is also the fallback when this week isn't offered.
 function windowFor(options, readyDate) {
-  return options
-    .filter((w) => w.availabilityType === 'AVAILABLE' && String(w.startDate || '').slice(0, 10) >= readyDate)
-    .sort((a, b) => String(a.startDate).localeCompare(String(b.startDate)))[0] || null;
+  const day = (s) => String(s || '').slice(0, 10);
+  const ok = options.filter((w) => w.availabilityType === 'AVAILABLE').sort((a, b) => day(a.startDate).localeCompare(day(b.startDate)));
+  const weekday = new Date(`${readyDate}T12:00:00Z`).getUTCDay(); // 0 Sunday … 6 Saturday
+  const thisWeek = weekday <= 3 ? ok.find((w) => day(w.startDate) <= readyDate && day(w.endDate) >= readyDate) : null;
+  return thisWeek || ok.find((w) => day(w.startDate) > readyDate) || null;
 }
 
 // ---- the job ---------------------------------------------------------------------------------------------------------------------
@@ -733,7 +739,7 @@ async function book(readyDate, carrier, maxCost) {
       say('Getting the delivery window');
       await genWindows();
       win = windowFor(await listWindows(), readyDate);
-      if (!win) throw new Stop(`Amazon offered no delivery window starting on or after ${readyDate}. Try another date.`);
+      if (!win) throw new Stop(`Amazon offered no delivery window for ${readyDate}. Try another date.`);
     }
 
     // 9. Book: placement (fees from here on — never cancelled automatically after this), then the window, then the DPD
@@ -747,7 +753,7 @@ async function book(readyDate, carrier, maxCost) {
       if (!(await listWindows()).some((w) => w.deliveryWindowOptionId === win.deliveryWindowOptionId)) {
         await genWindows();
         win = windowFor(await listWindows(), readyDate);
-        if (!win) throw new Stop(`Amazon offered no delivery window starting on or after ${readyDate} once booked.`);
+        if (!win) throw new Stop(`Amazon offered no delivery window for ${readyDate} once booked.`);
       }
       say('Confirming the delivery window');
       await waitOp((await post(`${BASE}/inboundPlans/${planId}/shipments/${shipmentId}/deliveryWindowOptions/${win.deliveryWindowOptionId}/confirmation`)).operationId, 'Confirming the delivery window');

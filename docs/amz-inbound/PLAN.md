@@ -84,6 +84,9 @@ window, then cancelled → VOIDED. **Nothing charged.** The script can't confirm
   Parcelforce, Yodel, DHL UK, UPS, TNT, Other. We take DPD (DPDX), the one on every past shipment, and STOP if it's missing.
   Any option with a `quote` is never confirmed.
 - Delivery windows: 7 offered, 7 days each, AVAILABLE. Take the one that starts on or after the chosen ready-to-ship date. Shown in the confirm box.
+  **Changed 2026-11-25 (owner: "if it is a monday tuesday or wednesday book the current week as delivery week. if its a thursday or friday
+  choose the next week"):** the windows are Amazon's Sunday–Saturday weeks and the week under way is still offered (on Wed 25 Nov: 22–28 Nov
+  first). By the ready date's weekday: Sun–Wed → the window holding it, Thu–Sat → the first starting after it (also the fallback). `windowFor`.
 - Box warning seen: "Box minimum cubic volume does not meet the expected minimum cubic cm 11925.79" (the 30×20×15 test box was
   under ~11,900 cm³). A WARNING only; real cartons are far bigger (e.g. 62×48×47). Show warnings, don't stop on them.
 - Cancel before any confirm: SUCCESS, plan VOIDED, free.
@@ -191,7 +194,7 @@ After Confirm, Unpack / Delete / Pack on a stored box refuse until Mark shipped.
    read back and the box labels print on the Zebra. After the placement confirm nothing is cancelled automatically; a later failure
    says so and links to Seller Central. Belt and braces: the two costly confirms are refused by the write guard unless the id was
    vetted by the rule (ONE shipment / own DPD, no quote). Ready-to-ship start sent = 09:00 London that day (15 min from now if today
-   and 09:00 has passed); delivery window = earliest AVAILABLE starting on or after that day. Options generated before the placement
+   and 09:00 has passed); delivery window = by that day's weekday, Mon–Wed this week, Thu–Fri next week (2026-11-25). Options generated before the placement
    confirm are re-used if Amazon still lists them, else generated again under the same rules (not yet seen on a real one).
    **Booked = frozen**: Pack / Delete refuse (`BOOKED`) until Mark shipped, which clears it. Held in memory; after a restart the first
    status read asks Amazon once and a booked plan whose items equal our boxes brings the booked notice + freeze back. A press while
