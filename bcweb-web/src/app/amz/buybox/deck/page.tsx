@@ -463,9 +463,7 @@ function Card({ card, n, busy, setDone, onSet, onLeave, onPrev, onUndo, onNext, 
     <AmzCardFrame
       code={card.code} groupid={card.groupid} size={size} title={card.title} brand={card.brand} imagename={card.imagename} asin={card.asin}
       links={[
-        { href: `/amz/sku/${encodeURIComponent(card.code)}?from=${encodeURIComponent(`/amz/buybox/deck?g=${card.deck}`)}`, label: 'Full price screen →' },
-        ...(card.asin ? [{ href: `https://www.amazon.co.uk/dp/${card.asin}`, label: 'Amazon ↗', external: true }] : []),
-      ]}
+        { href: `/amz/sku/${encodeURIComponent(card.code)}?from=${encodeURIComponent(`/amz/buybox/deck?g=${card.deck}`)}`, label: 'Full price screen →' },      ]}
       reason={reason}
       priceStr={text} setPriceStr={setText} locked={!!setDone}
       now={card.our_price} start={card.suggest} profitNow={card.profit_now} profitAt={profitAt} rrp={card.rrp}

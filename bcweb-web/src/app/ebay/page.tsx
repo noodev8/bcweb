@@ -35,7 +35,8 @@ time"): a listing that needs a look gets a warning icon after its code (hover = 
 "Needs a look" = any red or amber; those listings sort first, and the Needs a look filter shows only them.
 
 TWO VIEWS (Add build step 1, 2026-11-01): On eBay (this file — Checking) | Not on eBay (NotOnEbay.tsx — styles that could be listed,
-with a readiness check). ?view=not opens the second; the switch itself doesn't touch the URL. Each view fetches only when shown.
+with a readiness check). ?view=not opens the second; the switch itself doesn't touch the URL. Both load on opening and stay mounted,
+so the switch never re-reads eBay (owner, 2026-11-22).
 
 REFRESH, LIKE FAST SELLERS: each load is a live eBay call, so the list changes only when Refresh is pressed (or the page is opened) —
 SWR's own refetches are off for this key. The time of the read shows beside the button.
@@ -132,7 +133,10 @@ export default function EbayListingsPage() {
           </button>
         ))}
       </div>
-      {view === 'on' ? <OnEbay /> : <NotOnEbay />}
+      {/* BOTH VIEWS STAY MOUNTED (owner, 2026-11-22: "It refreshes completely from eBay every time I press on ebay or not on ebay. Is
+          that necessary?" — no): each reads eBay once, the switch only shows / hides; Refresh is the only re-read. */}
+      <div hidden={view !== 'on'}><OnEbay /></div>
+      <div hidden={view !== 'not'}><NotOnEbay /></div>
     </AppShell>
   );
 }
@@ -522,7 +526,6 @@ function SizePriceRow({ line: x }: { line: EbayListingLine }) {
       </td>
       <td className="whitespace-nowrap py-1.5 pr-3 text-right tabular-nums text-slate-800">
         {money(now)}
-        {x.own_price !== null && now === x.own_price && <span className="ml-1 text-[10px] font-medium uppercase text-amber-700" title="This size has its own price">own</span>}
       </td>
       <td className="whitespace-nowrap py-1.5">
         <div className="flex items-center gap-2">
