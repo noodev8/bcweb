@@ -64,7 +64,8 @@ export default function LadderListPage() {
   const whenParam = useUrlParam('when');
   const sideParam = useUrlParam('side');
   const key: LadderListKey | null = isLadderList(keyParam) ? keyParam : null;
-  const chip: LadderChip = isChip(whenParam) ? whenParam : 'due';
+  // Overstocked opens on All, not Due (owner, 2026-11-26: "default to ignoring due") — the review date doesn't hold back overstock.
+  const chip: LadderChip = isChip(whenParam) ? whenParam : keyParam === 'overstocked' ? 'all' : 'due';
   const carded = key !== null && CARD_LISTS.includes(key);
   // A CHOICE step opens its two doors; Unsold 90's Amazon door is the list (&side=amazon). Arrived has no list.
   const choice = key !== null && CHOICE_STEPS.includes(key) && (key === 'arrived' || sideParam !== 'amazon');
@@ -197,7 +198,8 @@ const CHOICE_TEXT: Partial<Record<LadderListKey, { lead: string; shopAll: boolea
   unsold180: { lead: 'with no sale for 181 days to 9 months', shopAll: false, neither: 'in styles with a size that sold more recently' },
   // Overstocked (docs/overstock/PLAN.md decision 7): selling sizes holding too much — the Shopify door is the OVERSTOCK cards (a size
   // price per overstocked size beside the style price); "neither" = styles not on the Shopify list (not live there, or no shop stock).
-  overstocked: { lead: "selling, but holding more than 4 months' worth", shopAll: false, neither: 'not on the Shopify list' },
+  // Both doors open on ALL, ignoring Due (owner, 2026-11-26: "default to ignoring due"); shopAll here also sets the Amazon door.
+  overstocked: { lead: "selling, but holding more than 4 months' worth", shopAll: true, neither: 'not on the Shopify list' },
 };
 // THE TALLY (owner, 2026-11-15: "fine as long as we see numbers on the screen that add up"): the step's SKUs split three ways, so the
 // line under the doors sums to the step's total — at Amazon (live at FBA, Birkenstock left out: the step list's rows) + Shopify only
@@ -245,11 +247,14 @@ function StepChoice({ step, amzRows, amzLoaded }: { step: LadderListKey; amzRows
             <span className={small}>Landed in the last 30 days</span>
           </Link>
         ) : (
-          <Link href={`/amz/step-cards?step=${step}&when=due&from=${encodeURIComponent(self)}&back=${encodeURIComponent(LIST_TEXT[step].name)}`} className={door}>
+          <Link href={`/amz/step-cards?step=${step}&when=${text.shopAll ? 'all' : 'due'}&from=${encodeURIComponent(self)}&back=${encodeURIComponent(LIST_TEXT[step].name)}`} className={door}>
             <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Amazon</span>
             <span className="mt-0.5 text-lg font-semibold text-slate-900">Price cards</span>
-            <span className={big}>{amzLoaded ? n(amzDue) : '–'} <span className={unit}>due</span></span>
-            <span className={small}>{amzLoaded ? `of ${n(amzCardable)} sizes` : ''}</span>
+            {text.shopAll
+              ? <><span className={big}>{amzLoaded ? n(amzCardable) : '–'} <span className={unit}>sizes</span></span>
+                  <span className={small}>{amzLoaded ? `${n(amzDue)} due` : ''}</span></>
+              : <><span className={big}>{amzLoaded ? n(amzDue) : '–'} <span className={unit}>due</span></span>
+                  <span className={small}>{amzLoaded ? `of ${n(amzCardable)} sizes` : ''}</span></>}
           </Link>
         )}
         <Link href={`/pricing/cards?step=${step}&${text.shopAll ? 'pending=1&' : ''}from=${encodeURIComponent(self)}`} className={door}>

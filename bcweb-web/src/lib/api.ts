@@ -107,6 +107,7 @@ export interface LoserRow {
 export interface AmzWinnerRow {
   rank: number; code: string; amz_sku: string; groupid: string; size: string; title: string | null; brand: string | null;
   price: number | null; fba: number; fba_inbound: number; u7: number; units: number; last_sold: string | null;
+  asin?: string | null;         // amzfeed.asin — the price card's Amazon badge links to the product page
   rrp: number | null;           // skusummary.rrp (safeNumeric) — the bulk bar's "Reset to RRP" target
   next_review: string | null;   // YYYY-MM-DD or null
   parked: boolean;              // review date still in the future ("pending review") — only ever true when fetched with includeParked

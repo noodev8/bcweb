@@ -63,6 +63,7 @@ import { useApiQuery } from '@/lib/useApiQuery';
 import { useAdCost } from '@/lib/useAdCost';
 import { SKU_HEALTH } from '@/lib/features';
 import { getAmzImportLast, getAmzLoadedList, getBackupLast, getPricingDueCounts, getProcessOverview, getSalesReport, getShopifySellersList, getStockLadder } from '@/lib/api';
+import { stepChoiceHref } from '@/lib/stockLadder';
 import ModuleTile from '@/components/ModuleTile';
 import UpdateShopifyTile from '@/components/UpdateShopifyTile';
 import ProductSearchBox from '@/components/ProductSearchBox';
@@ -284,6 +285,10 @@ function Daily() {
   const ladder = useApiQuery('analytics-stock-ladder', () => getStockLadder());
   const range = ladder.data ? { sold: ladder.data.steps.find((x) => x.key === 'sold')?.skus ?? 0, held: ladder.data.held.skus } : null;
   const rangePct = range ? `${range.held > 0 ? Math.round((range.sold / range.held) * 100) : 0}%` : null;
+  // OVERSTOCK (owner, 2026-11-26): Range's Overstocked count as a % of every SKU held (the same ladder read), so it sits beside Range.
+  // This one is to keep LOW. Opens the Overstocked two-door page (Amazon | Shopify cards, both on All).
+  const over = ladder.data ? { skus: ladder.data.overstocked.skus, held: ladder.data.held.skus } : null;
+  const overPct = over ? `${over.held > 0 ? Math.round((over.skus / over.held) * 100) : 0}%` : null;
   // Today's headline from the Sales screen's own route (all channels). limit 1: only the summary is read, not the lines.
   const sales = useApiQuery('dashboard-sales-today', () => getSalesReport({ window: 'today', limit: 1 }));
   const today = sales.data?.summary ?? null;
@@ -319,9 +324,11 @@ function Daily() {
 
       {/* THE JOBS — five equal cells on hairline dividers (gap-px over a slate fill), one white surface rather than a coloured band
           (owner, 2026-11-13: the blue band and its gradient were "not good"; colour stays a small mark — the dot by the title). */}
-      <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Widths on a 12-col grid (owner, 2026-11-26: Selling's three % were squashed — take room from Prospects / AMZ loaded): the
+          three-box cells (Pricing, Selling) get 3, the one- and two-box cells 2. */}
+      <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-12">
         {/* PRICING — two lists, two counts, two links (no cross-channel total). */}
-        <div className={jobCell}>
+        <div className={jobCell + ' lg:col-span-3'}>
           <TileHead icon={Squares2X2Icon} title="Pricing" sub="Prices to look at" />
           <div className="mt-auto grid grid-cols-3 gap-2 pt-4">
             <CountLink href="/pricing" label="Shopify" n={due.data?.shopify ?? null} unit="due" />
@@ -335,7 +342,7 @@ function Daily() {
 
         {/* ORDERING — two screens, two links, like Pricing (owner, 2026-10-27: "will have to choose which one they want"). Amazon has
             no count; Shopify's is the Sellers view's Sold out (missed in code) — sold in 30 days with nothing local, on order or at FBA. */}
-        <div className={jobCell}>
+        <div className={jobCell + ' lg:col-span-2'}>
           <TileHead icon={ClipboardDocumentListIcon} title="Ordering" sub="What needs buying in or sending" />
           <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
             <Link
@@ -353,25 +360,27 @@ function Daily() {
             longer term 40% as high as possible. Do one, will help the other"): New stuff — of the new SKUs (first in 90 days) the %
             sold -> New Additions; Range — of every size we hold the % sold in the last 90 days -> the Slow movers front screen. Selling
             a new SKU moves it into the Range's sold part, so pushing the first lifts the second. */}
-        <div className={jobCell}>
-          <TileHead icon={SparklesIcon} title="Selling" sub="Both as high as possible" />
-          <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
+        <div className={jobCell + ' lg:col-span-3'}>
+          <TileHead icon={SparklesIcon} title="Selling" sub="New stuff and Range high, Overstock low" />
+          <div className="mt-auto grid grid-cols-3 gap-2 pt-4">
             <CountLink href="/analytics/new-additions" label="New stuff" n={soldPct} unit={newSkus ? `${newSkus.sold} of ${newSkus.total} new` : 'new SKUs'} />
             <CountLink href="/analytics/slow-sizes" label="Range" n={rangePct}
               unit={range ? `${range.sold.toLocaleString('en-GB')} of ${range.held.toLocaleString('en-GB')} held` : 'held'} />
+            <CountLink href={stepChoiceHref('overstocked')} label="Overstock" n={overPct}
+              unit={over ? `${over.skus.toLocaleString('en-GB')} of ${over.held.toLocaleString('en-GB')} held` : 'held'} />
           </div>
         </div>
 
         {/* PROSPECTS and AMZ LOADED — one figure each, in the SAME inner box as the paired cards (owner, 2026-11-06: "align the 7 and 0
             … to match the other boxes"), so every number on Daily sits at one height and size. */}
-        <div className={jobCell}>
+        <div className={jobCell + ' lg:col-span-2'}>
           <TileHead icon={LightBulbIcon} title="Prospects" sub="New products to look into" />
           <div className="mt-auto grid grid-cols-1 gap-2 pt-4">
             <CountLink href="/prospects" label="On the list" n={prospects} unit="finds" />
           </div>
         </div>
 
-        <div className={jobCell + ' sm:col-span-2 lg:col-span-1'}>
+        <div className={jobCell + ' sm:col-span-2 lg:col-span-2'}>
           <TileHead icon={InboxStackIcon} title="AMZ loaded" sub="In stock, not on Amazon yet" />
           <div className="mt-auto grid grid-cols-1 gap-2 pt-4">
             <CountLink href="/amz-loaded" label="To look at" n={amzLoadedDue} unit="styles" />

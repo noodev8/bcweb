@@ -69,6 +69,7 @@ export interface CardButton { label: ReactNode; onClick: () => void; disabled?: 
 export interface AmzCardFrameProps {
   // WHO
   code: string; groupid: string | null; size: string | null; title: string | null; brand: string | null; imagename: string | null;
+  asin?: string | null;                               // the Amazon badge opens the product page on amazon.co.uk (owner, 2026-11-26)
   counter?: string;                                   // "2 of 35"
   links: { href: string; label: string; external?: boolean; title?: string }[];
   status?: ReactNode;                                 // search cards: due / not due
@@ -165,7 +166,12 @@ export default function AmzCardFrame(p: AmzCardFrameProps) {
           <div className="flex flex-wrap items-center gap-2" title={p.code}>
             {/* The full code, size included — no separate size badge (owner, 2026-11-14: "takes focus away") */}
             {/* Which channel this card prices — Shopify and Amazon cards look alike (owner, 2026-11-18) */}
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">Amazon</span>
+            {/* The badge opens the live product page when we know the ASIN (owner, 2026-11-26) */}
+            {p.asin
+              ? <a href={`https://www.amazon.co.uk/dp/${encodeURIComponent(p.asin)}`} target="_blank" rel="noopener noreferrer"
+                  title={`Open ${p.asin} on amazon.co.uk`}
+                  className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800 hover:bg-amber-200">Amazon</a>
+              : <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold uppercase tracking-wide text-amber-800">Amazon</span>}
             <span className="font-mono text-base font-semibold text-slate-900">{p.code}</span>
             {p.counter && <span className="text-xs tabular-nums text-slate-400">{p.counter}</span>}
           </div>

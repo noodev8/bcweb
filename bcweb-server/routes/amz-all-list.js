@@ -148,7 +148,7 @@ router.get('/', async (req, res) => {
         WHERE channel='AMZ' AND qty>0
         GROUP BY code
       )
-      SELECT a.code, a.groupid, a.sku AS amz_sku, SUBSTRING(a.code FROM '[^-]*$') AS size,   -- size = suffix after the last '-'
+      SELECT a.code, a.groupid, a.sku AS amz_sku, NULLIF(UPPER(TRIM(a.asin)), '') AS asin, SUBSTRING(a.code FROM '[^-]*$') AS size,   -- size = suffix after the last '-'
              t.shopifytitle AS title,
              NULLIF(TRIM(sk.brand), '') AS brand,
              ${safeNumeric('a.amzprice')} AS price,
@@ -209,6 +209,7 @@ router.get('/', async (req, res) => {
       rank: i + 1,
       code: r.code,
       amz_sku: r.amz_sku,
+      asin: r.asin || null,                 // the Amazon badge on the price card links to its product page (owner, 2026-11-26)
       groupid: r.groupid,
       size: r.size,
       title: r.title || null,

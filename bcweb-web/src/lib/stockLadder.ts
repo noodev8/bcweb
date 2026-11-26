@@ -89,4 +89,4 @@ export const stepBoxHref = (key: LadderListKey) => (CHOICE_STEPS.includes(key) ?
 // The step's Amazon LIST (the chips, Price these) — the step cards' Back and the list's own chips.
 export const stepListHref = (key: LadderListKey, chip?: LadderChip) => (key === 'clearance' ? CLEARANCE_HREF
   : `/analytics/slow-sizes/step?key=${key}${CHOICE_STEPS.includes(key) && key !== 'arrived' ? '&side=amazon' : ''}`
-    + `${chip && chip !== 'due' ? `&when=${chip}` : ''}`);
+    + `${chip && (chip !== 'due' || key === 'overstocked') ? `&when=${chip}` : ''}`);   // Overstocked opens on All, so its Due is spelt out

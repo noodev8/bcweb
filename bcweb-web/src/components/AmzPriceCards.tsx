@@ -395,7 +395,7 @@ function Card({ mode, step, card, n, of, busy, done, review, onReview, onSet, on
 
   return (
     <AmzCardFrame
-      code={card.code} groupid={card.groupid} size={card.size} title={card.title} brand={card.brand} imagename={card.imagename}
+      code={card.code} groupid={card.groupid} size={card.size} title={card.title} brand={card.brand} imagename={card.imagename} asin={card.asin}
       counter={`${n} of ${of}`}
       links={[{ href: priceScreenHref, label: 'Full price screen →', title: 'The full price screen for this SKU — sales and price history; its Back returns to this card' }]}
       status={status && <span className={status.cls}>{status.text}</span>}
