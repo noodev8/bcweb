@@ -10,7 +10,11 @@ Purpose: The team's shared notepad for MINING NEW PRODUCTS on Amazon (owner, 202
          Deliberately loose — "an extended Google Docs specific for us":
            - one line = one style: a name, an optional Amazon link/ASIN, an owner (who added it), a gut rating (Diamond / Good / Sketchy —
              HIDDEN since 2026-11-04, see SHOW_RATING)
-           - CHECKS: rank / price / sellers typed by hand each time someone looks (no scraping, no API — owner's call). Size is optional
+           - SEARCH AMAZON (2026-11-27, owner: "is there a quicker, automated way?" — lifting the 2026-10-21 "no API"): the words they
+             used to type into Amazon, answered from Amazon's own API (components/ProspectAmazonSearch.tsx) — styles by best rank, Buy
+             Box, sellers, DUPLICATE / ON THE LIST, and the Rieker stock list's cost, sizes and return on cost. Add fills the add form.
+             Still no scraping; reviews stay a look on the page (the API has none)
+           - CHECKS: rank / price / sellers typed by hand each time someone looks (or filled by Search Amazon's Add). Size is optional
              because rank differs by size on the same listing; the line shows the latest check per size, History shows them all (rank
              changes are read by eye — owner)
            - NOTES: a thread with names, about any size or anything
@@ -33,12 +37,13 @@ import {
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
+import ProspectAmazonSearch, { ProspectPrefill } from '@/components/ProspectAmazonSearch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
 import { prettyPathLabel } from '@/lib/nav';
 import {
-  addProspectCheck, addProspectNote, archiveProspect, checkProspectAsin, deleteProspectItem, getProspects, getSizeGaps, reopenProspect, saveProspect,
+  addProspectCheck, addProspectNote, archiveProspect, checkProspectAsin, checkProspectOnAmazon, deleteProspectItem, getProspects, getSizeGaps, reopenProspect, saveProspect,
   Prospect, ProspectOutcome, ProspectRating,
 } from '@/lib/api';
 
@@ -173,7 +178,8 @@ export default function ProspectsPage() {
   const rows = q.data ?? NO_ROWS;
 
   // The add form, open or not. seed = the Amazon link it was opened with (from the toolbar box); key remounts it for a new paste.
-  const [adding, setAdding] = useState<{ seed: string; key: number } | null>(null);
+  // prefill = a find picked from Search Amazon (2026-11-27): the form opens with its name, ASIN, first check and cost in.
+  const [adding, setAdding] = useState<{ seed: string; key: number; prefill?: ProspectPrefill } | null>(null);
   const [paste, setPaste] = useState('');
   // The one find open for editing; the rest are narrow rows (owner, 2026-10-21: "Only edit one at a time").
   const [openId, setOpenIdRaw] = useState<number | null>(null);
@@ -298,10 +304,13 @@ export default function ProspectsPage() {
               <PlusIcon className="h-4 w-4" /> Add a find
             </button>
           </div>
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <ProspectAmazonSearch onAdd={(prefill) => { setAdding({ seed: '', key: Date.now(), prefill }); setOpenId(null); }} />
+          </div>
         </div>
 
         {adding && (
-          <ProspectForm key={adding.key} seed={adding.seed}
+          <ProspectForm key={adding.key} seed={adding.seed} prefill={adding.prefill}
             onDone={() => { setAdding(null); q.refresh(); }} onCancel={() => setAdding(null)} onReopened={onReopened} />
         )}
 
@@ -390,17 +399,20 @@ export default function ProspectsPage() {
 
 // ---- Add / edit a line ------------------------------------------------------------------------------------------------------------
 // Adding can carry the first check too (rank / price / sellers seen right now), so logging a find is one form, not two.
-function ProspectForm({ edit, seed, onDone, onCancel, onReopened }: {
-  edit?: Prospect; seed?: string; onDone: () => void; onCancel: () => void; onReopened?: (id: number) => void;
+function ProspectForm({ edit, seed, prefill, onDone, onCancel, onReopened }: {
+  edit?: Prospect; seed?: string; prefill?: ProspectPrefill; onDone: () => void; onCancel: () => void; onReopened?: (id: number) => void;
 }) {
-  // seed = a link pasted in the toolbar: the form opens with its name and ASIN already in.
-  const [name, setName] = useState(edit?.name ?? (seed ? nameFromAmazonUrl(seed) : ''));
-  const [amazon, setAmazon] = useState(edit?.asin ?? (seed ? asinFromAmazonUrl(seed) ?? seed.toUpperCase() : ''));
+  // seed = a link pasted in the toolbar: the form opens with its name and ASIN already in. prefill = a Search Amazon pick: name, ASIN,
+  // the first check (rank, price, sellers, size as read from Amazon) and the supplier list's cost — all still editable before Save.
+  const [name, setName] = useState(edit?.name ?? prefill?.name ?? (seed ? nameFromAmazonUrl(seed) : ''));
+  const [amazon, setAmazon] = useState(edit?.asin ?? prefill?.asin ?? (seed ? asinFromAmazonUrl(seed) ?? seed.toUpperCase() : ''));
   const [rating, setRating] = useState<ProspectRating | null>(edit?.rating ?? null);
   const [comment, setComment] = useState('');
   const [rrp, setRrp] = useState(edit?.rrp ?? '');
-  const [cost, setCost] = useState(edit?.cost ?? '');
-  const [check, setCheck] = useState({ size: '', rank: '', price: '', sellers: '' });
+  const [cost, setCost] = useState(edit?.cost ?? prefill?.cost ?? '');
+  const [check, setCheck] = useState(prefill
+    ? { size: prefill.size, rank: prefill.rank, price: prefill.price, sellers: prefill.sellers }
+    : { size: '', rank: '', price: '', sellers: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -441,14 +453,14 @@ function ProspectForm({ edit, seed, onDone, onCancel, onReopened }: {
         <label className="text-xs font-medium text-slate-600">
           Amazon link or ASIN <span className="font-normal text-slate-400">(optional)</span>
           <span className="mt-1 flex gap-2">
-            <input autoFocus={!seed} value={amazon} onChange={(e) => pasteAmazon(e.target.value)}
+            <input autoFocus={!seed && !prefill} value={amazon} onChange={(e) => pasteAmazon(e.target.value)}
               placeholder="Paste the Amazon page address" className={`${inputCls} block min-w-0 flex-1`} />
             {/^[A-Za-z0-9]{10}$/.test(amazon.trim()) && <AmazonLink asin={amazon.trim().toUpperCase()} label="Open" />}
           </span>
         </label>
         <label className="text-xs font-medium text-slate-600">
           What is it
-          <input autoFocus={!!seed} value={name} onChange={(e) => setName(e.target.value)} maxLength={200}
+          <input autoFocus={!!seed || !!prefill} value={name} onChange={(e) => setName(e.target.value)} maxLength={200}
             placeholder="e.g. Rieker Y3453 ankle boot, black" className={`${inputCls} mt-1 block w-full`} />
         </label>
       </div>
@@ -854,7 +866,25 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
       {error && <p className="mt-2 text-sm text-red-700">{error}</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
-        {!archived && !checking && <button type="button" onClick={() => setChecking(true)} className={smallBtn}>+ Check rank again</button>}
+        {/* CHECK ON AMAZON (owner, 2026-11-27: "we check rank and type it manually. May as well help us do that with a button") —
+            reads the line's listing and saves it as a check (Fashion rank, Buy Box, sellers). Needs an Amazon link on the line or a
+            check; typing one by hand stays beside it. */}
+        {!archived && (p.asin || p.checks.some((c) => c.asin)) && (
+          <button type="button" disabled={busy} onClick={() => run(() => checkProspectOnAmazon(p.id))} className={smallBtn}
+            title="Read rank, price and sellers from Amazon now and save them as a check">
+            {busy ? 'Checking…' : 'Check on Amazon'}
+          </button>
+        )}
+        {/* Typing a check by hand is the quiet fallback once the line can be checked on Amazon (owner, 2026-11-27: "I doubt I will
+            use the old one … make it more subtle") — kept for a line with no Amazon link (then it is the normal button) or when Amazon
+            shows nothing. */}
+        {!archived && !checking && ((p.asin || p.checks.some((c) => c.asin)) ? (
+          <button type="button" onClick={() => setChecking(true)} className="px-1 text-xs text-slate-400 hover:text-slate-700 hover:underline">
+            or type it
+          </button>
+        ) : (
+          <button type="button" onClick={() => setChecking(true)} className={smallBtn}>+ Check rank again</button>
+        ))}
         {p.checks.length > 1 && (
           <button type="button" onClick={() => setHistory(!history)} className={smallBtn}>
             {history ? 'Hide history' : `History · ${p.checks.length}`}

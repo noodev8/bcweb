@@ -5310,6 +5310,11 @@ export function saveProspect(args: {
 export function addProspectCheck(args: { prospect_id: number; size: string; amazon: string; rank: string; price: string; sellers: string }) {
   return request<{ id: number }>({ url: '/prospect-check-add', method: 'POST', data: args }, (b) => ({ id: b.id }));
 }
+// CHECK ON AMAZON (2026-11-27): the line's listing read from Amazon (Fashion rank, Buy Box, sellers, size) and saved as a check by the
+// server — the button instead of typing. NO_ASIN = the line has no Amazon link; EMPTY = Amazon showed nothing, nothing saved.
+export function checkProspectOnAmazon(prospect_id: number) {
+  return request<{ id: number }>({ url: '/prospect-check-amazon', method: 'POST', data: { prospect_id } }, (b) => ({ id: b.id }));
+}
 export function addProspectNote(prospect_id: number, body: string) {
   return request<{ id: number }>({ url: '/prospect-note-add', method: 'POST', data: { prospect_id, body } }, (b) => ({ id: b.id }));
 }
@@ -5322,6 +5327,37 @@ export function archiveProspect(id: number, outcome: ProspectOutcome, reason: st
 }
 export function reopenProspect(id: number) {
   return request<null>({ url: '/prospect-reopen', method: 'POST', data: { id } }, () => null);
+}
+// SEARCH AMAZON (2026-11-27) — one search page (20 sizes) from Amazon's own API: rank, Buy Box, sellers, our two duplicate checks and
+// the supplier's stock list match. Rules in bcweb-server/routes/prospect-amazon-search.js (no reviews, no RRP — Amazon gives neither).
+export type SupplierLevel = 'limited' | 'substantial';
+export interface SupplierStyle {
+  supplier: string; style: string; season: string | null; cost: number | null;
+  sizes: Record<string, SupplierLevel>;   // only sizes in stock
+  list_date: string;                      // YYYY-MM-DD printed on the list
+}
+export interface AmazonSearchItem {
+  asin: string; parent: string | null; title: string; brand: string | null; size: string | null; colour: string | null;
+  rank: { category: string; rank: number } | null;          // its own category ("Women's Boots")
+  group_rank: { category: string; rank: number } | null;    // the broad group ("Fashion")
+  buybox: number | null; lowest: number | null;
+  fba: number | null; fbm: number | null;                    // null = offers not read
+  have: string | null;                                       // ours already — the amzfeed groupid
+  listed: { id: number; name: string; archived: boolean } | null;
+  supplier: { colour_sure: boolean; styles: SupplierStyle[] } | null;
+  // What a pair keeps on Amazon at this size's price with the list's cost (THE Amazon formula) — one-style matches only.
+  return_on_cost: { price: number; cost: number; profit: number; on_cost_pct: number } | null;
+}
+export interface AmazonSearchPage {
+  total: number; next_token: string | null; offers_error: string | null;
+  supplier_lists: Record<string, string>;
+  items: AmazonSearchItem[];
+}
+export function searchAmazonProspects(q: string, next_token?: string) {
+  return request<AmazonSearchPage>(
+    { url: '/prospect-amazon-search', method: 'GET', params: { q, ...(next_token ? { next_token } : {}) } },
+    (b) => ({ total: b.total, next_token: b.next_token ?? null, offers_error: b.offers_error ?? null, supplier_lists: b.supplier_lists || {}, items: b.items || [] })
+  );
 }
 
 // ---- New SKUs (GET /process-overview) — Daily's New stuff / Prospects counts and New Additions' list (the same SKUs, 2026-11-05).

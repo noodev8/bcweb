@@ -107,6 +107,10 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          A size of a style that IS on Amazon but is missing one size counts too: that is the same "make the file" job.
          Amazon-only figures (price, sales, profit, FBA live, Amazon SKU, floor) are null/0 — nothing to read them from.
 
+         SUPPLIER STOCK (owner, 2026-11-27: "saves us looking them up manually before knowing if we can order them") arrives as
+         Can't get itself: loading the Rieker list marks / releases our Rieker / Remonte sizes (utils/supplierStock.js →
+         applyCantGet), so this route needs nothing of its own — a list-set mark reads like any other, marked_by 'Rieker list'.
+
 Schema landmines respected: skumap.amzprofit is a junk-prone VARCHAR (2dp string) -> safeNumeric. amzfeed.amzsold is a real integer.
 amzfeed is FBA-only, READ ONLY. Size = the code's suffix after the last '-' (not RIGHT(code,2), which reads '.5' on a half size). Human name from title.shopifytitle. Requires auth.
 =======================================================================================================================================

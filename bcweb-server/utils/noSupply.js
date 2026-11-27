@@ -35,6 +35,9 @@ ONE SYSTEM, PER SIZE (owner, 2026-11-13). Stored ONLY in no_supply_size — one 
            routes/product-seasons.js       per style                                   — Back Office → Seasons, Can't get view + bulk
            utils/sizeGaps.js               leaves out styles marked whole (noSupplyWholeStyleSql)
            routes/no-supply-set.js / no-supply-clear.js   the writes (markSizes / markStyles / clearSizes / clearStyles)
+           utils/supplierStock.js → applyCantGet           the SUPPLIER LIST writes (2026-11-27): loading the Rieker list marks
+                                                           the Rieker / Remonte sizes it lacks ('Rieker list') and releases those it
+                                                           has — the PDF does the pressing (owner: "replaces us doing it manually")
 
 THE PARK IS ALWAYS NO_SUPPLY_MONTHS (3), FROM TODAY (owner, 2026-09-26). Chosen over the alternatives on how they fail:
   - 1 month  — "too frequent": on a list of 30+ winners something comes back to re-check every week.

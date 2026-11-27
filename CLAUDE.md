@@ -54,6 +54,7 @@ Start the API first. Seed/reset a user: `node scripts/seed-user.js <username> <p
 - **New stuff and Range stay apart.** New stuff's % is pulled down by new stock on purpose — don't add a maturity window.
 - Owner's standing rules: one question per screen; qty is shown, never a rule.
 - **Prospects:** no links to pricing or ordering, no sales figures, no scraping — the only link to our stock is the DUPLICATE warning.
+  Search Amazon (2026-11-27) reads Amazon's API (`routes/prospect-amazon-search.js`) — rank, Buy Box, sellers; reviews aren't in the API. Supplier stock lists: `utils/supplierStock.js` (THE copy). Loading the Rieker list SETS / RELEASES Can't get on Rieker + Remonte sizes (not on the PDF = stock zero = marked 'Rieker list'; in stock = released, hand marks too) — through `utils/noSupply.js`, no second sign; "load the Rieker list" = `node scripts/supplier-stock-load.js rieker <pdf> --apply` (PDF in Downloads, run locally). GRS (Lunar) sends no list.
 - **Size gaps:** ranges are a brand setting set by hand in `size_gap_range` — never inferred from sister colours.
 - **Seasons** feed only Inventory's WINTER/SUMMER commands and the Google Ads season filter.
 
