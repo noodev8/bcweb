@@ -35,6 +35,9 @@ THE BUY BOX IS SHARED BY SHARE OF VIEWS (owner, 2026-11-12 — "swap to the shar
     amz_buybox_now.sales_rank — "Rank:" on the price card. Sizes carry the parent's rank (a family figure). Today only, no history.
     0 = read fine but Amazon gave no rank ("Rank: none" on the card — usually not selling, owner 2026-11-14); NULL = the rank call
     failed / not read (nothing shown — never mistaken for "none"), and never an error on the Buy Box reading. Migration 20261114.
+    EVERY LISTING TOO (2026-11-27): after a WHOLE-LIST read, executeRun also reads the rank of every amzfeed ASIN, 0-stock ones
+    included (utils/amzRank.js → readAllRanks, into amz_rank_now) — for Amazon Order's "ranks well, none left, can get" flag.
+    Best-effort: it can't fail the Buy Box read.
 
 HISTORY (change-only, KEEP_MONTHS): a size gets a row only when holder / Buy Box price / our price / cheapest rival (seller + price) /
 rival count / our share of views (as a WHOLE %) / our eligibility differs from its previous row. Purged by the read itself: a row older than the cut-off goes only once a newer row is also
@@ -371,6 +374,14 @@ async function executeRun(run) {
     });
     const changed = await withTransaction((client) => saveReadings(client, run.id, readings, run.scope === 'all'));
     const failed = readings.filter((r) => r.error).length;
+    // EVERY LISTING'S RANK (header: SALES RANK) — the whole-list read only; never fails the run.
+    if (run.scope === 'all') {
+      try {
+        await require('./amzRank').readAllRanks();
+      } catch (e) {
+        logger.error(`amzBuyBox: every-listing rank read failed: ${e.message}`);
+      }
+    }
     await query(
       `UPDATE amz_buybox_run SET status = 'ok', finished_at = now(), done = total, changed = $2, error = $3 WHERE id = $1`,
       [run.id, changed, failed ? `${failed} of ${readings.length} sizes could not be read` : null]);
@@ -485,4 +496,4 @@ async function readScreen(db) {
   return { rows: out, counts, headline, last_all: lastAll.rows[0] || null, last_run: lastAny.rows[0] || null, running: running.rows[0] || null };
 }
 
-module.exports = { LOST_PARTS, lostPart, countsForHeadline, GROUPS, KEEP_MONTHS, sizesToRead, startRun, executeRun, readAmazon, summarise, saveReadings, classify, readScreen, fashionRank };
+module.exports = { LOST_PARTS, lostPart, countsForHeadline, GROUPS, KEEP_MONTHS, sizesToRead, startRun, executeRun, readAmazon, summarise, saveReadings, classify, readScreen, fashionRank, readRanks };

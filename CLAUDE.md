@@ -62,6 +62,7 @@ Start the API first. Seed/reset a user: `node scripts/seed-user.js <username> <p
 
 - **Grain is the SKU.** `amzfeed` is FBA-only; BCWEB writes it only through the stock sync and the price push. `utils/amzSpApi.js` is THE one place BCWEB calls SP-API (no AWS / IAM / signing). Incident plan: `docs/security/incident-response-plan.md` (review every 6 months).
 - A refused price push stores nothing. Nothing is uploaded any more (old upload routes remain, unused).
+- **Ranked** on Amazon Order (`utils/amzRank.js`, THE copy): Fashion rank ≤ 200k (urgent ≤ 100k) + no stock anywhere + not Can't get + no sale in 30 days (the second pass after the sales-led order) — the re-buy blind spot of sales-led ordering. Rank today only (`amz_rank_now`, every listing, read by the hourly whole-list Buy Box read) — no history / trend.
 - The AMZ listed tag reads bclog 'Amazon Listing' — **never `skumap.status '1'`** (the old .xlsm stamps it whether uploaded or not).
 - The `/amz-pricing` skill sets prices only via `scripts/amz-price-set.js` (dry run by default).
 

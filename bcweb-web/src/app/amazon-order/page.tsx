@@ -233,7 +233,7 @@ CAN'T GET (owner, 2026-09-27; PER SIZE since 2026-11-13) — "I pressed Can't ge
 
 import { Fragment, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, FireIcon, SunIcon, SparklesIcon, ShoppingCartIcon,
+  MagnifyingGlassIcon, XMarkIcon, ArrowPathIcon, ChevronUpIcon, ChevronDownIcon, FireIcon, SunIcon, SparklesIcon, ArrowTrendingUpIcon, ShoppingCartIcon,
   FunnelIcon, TrashIcon, ClockIcon, NoSymbolIcon, MinusIcon, PlusIcon, BoltIcon,
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
@@ -560,6 +560,21 @@ function isSimmer(r: AmazonOrderRow, hotBar: number | null, warmMin: number): bo
     && r.units_30d > 0 && r.fba_total === 0;
 }
 
+// RANKED (owner, 2026-11-27: "Our order screen should not only rank by sales but indicate a solid ranking of something we have no
+// stock of, but Rieker have") — the blind spot of re-buying by our own sales: a size that ran out sells nothing, so a season turning
+// and Amazon's rank climbing never shows in our figures. Ranked = on Amazon, Fashion rank 1..rankSolid today, NO stock anywhere
+// (local 0 and FBA TOTAL 0 — live, inbound, on order, picked), not Can't get (which the Rieker list keeps for Rieker / Remonte), and
+// NO SALE IN 30 DAYS (owner, 2026-11-27: "Only show what hasnt sold in 30 days?") — a size that sold is the first pass's (sales lead:
+// rate fills, Hot / Warm), so Ranked is purely the blind spot. Its view shows LAST SOLD per size, because the rank is the family's:
+// a size that sold before it ran out is a yes, one that never sold is a skip.
+// Bands from the server (utils/amzRank.js): <= rankUrgent is the strong tag (owner: "more excited and urgent for under 100k").
+// The rank is Amazon's FAMILY figure (every size and colour of a parent reads the same), so it says the style sells, not this size.
+function isRanked(r: AmazonOrderRow, rankSolid: number): boolean {
+  return r.on_amazon && r.amz_rank !== null && r.amz_rank > 0 && r.amz_rank <= rankSolid
+    && r.local_stock === 0 && r.fba_total === 0 && !r.no_supply && r.units_30d === 0;
+}
+const fmtRankK = (n: number) => (n >= 1000 ? `${Math.round(n / 1000)}k` : String(n));
+
 /*
  * BOOST — Warm's extra lever (owner, 2026-10-21). See BOOST in the header for the why; this is the arithmetic, kept pure so the
  * dialog's preview and its Apply can never disagree.
@@ -780,8 +795,8 @@ const PICK_KEEP_DEFAULT = 1;
 
 // The four mutually-exclusive views a rate fill can be scoped to — the three presets plus the unfiltered list. Used to remember a
 // rate PER VIEW (see coverageByView) so flicking between Winners and Potential shows each one's own rate still lit.
-type ViewKey = 'all' | 'winners' | 'potential' | 'simmer' | 'basket';
-const NO_COVERAGE: Record<ViewKey, number | null> = { all: null, winners: null, potential: null, simmer: null, basket: null };
+type ViewKey = 'all' | 'winners' | 'potential' | 'simmer' | 'ranked' | 'basket';
+const NO_COVERAGE: Record<ViewKey, number | null> = { all: null, winners: null, potential: null, simmer: null, ranked: null, basket: null };
 
 // LOCAL DRAFT SAVE — Order is still not sent anywhere until the button is pressed (owner decision), but it's now saved to THIS
 // BROWSER via localStorage (debounced, see the save effect below) so a reload or an accidental tab close doesn't lose an afternoon
@@ -1027,6 +1042,8 @@ function AmazonOrderContent() {
   // The Hot | Warm bars, from the server (see isHot / isWarm). hotBar null = nothing sold in 30 days, so Hot is empty.
   const hotBar = data?.hot_bar ?? null;
   const warmMin = data?.warm_min_unit_profit ?? 3;
+  const rankSolid = data?.rank_solid ?? 200000;
+  const rankUrgent = data?.rank_urgent ?? 100000;
 
   // CAN'T GET — sizes of a marked style with nothing on the local shelf are off the screen (supplyHidden; see the header). The chip's
   // number is what it's hiding from the list you'd otherwise see.
@@ -1134,16 +1151,19 @@ function AmazonOrderContent() {
   // SIMMER — sold at a profit in 30 days but under Warm's £3, and nothing at Amazon (isSimmer; see SIMMER in the header). In the
   // same group as Hot and Warm, so one preset governs the screen at a time.
   const [simmerOnly, setSimmerOnly] = useState(false);
+  // RANKED (isRanked) — the fourth preset in the group.
+  const [rankedOnly, setRankedOnly] = useState(false);
   // Switching preset carries the rate-fill highlight with it rather than wiping it — see coverageByView below. Deliberately leaves
   // qty itself alone: a filter is a view change, not a "wipe what I've built up" action, same reasoning as onReset above.
-  function toggleWinners() { setWinnersOnly((v) => !v); if (listing === 'off') setListing('on'); setPotentialOnly(false); setSimmerOnly(false); setOrdersOnly(false); deselectAll(); }
-  function togglePotential() { setPotentialOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setSimmerOnly(false); setOrdersOnly(false); deselectAll(); }
-  function toggleSimmer() { setSimmerOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setPotentialOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleWinners() { setWinnersOnly((v) => !v); if (listing === 'off') setListing('on'); setPotentialOnly(false); setSimmerOnly(false); setRankedOnly(false); setOrdersOnly(false); deselectAll(); }
+  function togglePotential() { setPotentialOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setSimmerOnly(false); setRankedOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleSimmer() { setSimmerOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setPotentialOnly(false); setRankedOnly(false); setOrdersOnly(false); deselectAll(); }
+  function toggleRanked() { setRankedOnly((v) => !v); if (listing === 'off') setListing('on'); setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setOrdersOnly(false); deselectAll(); }
 
   // Not on Amazon has no Amazon sales for Hot / Warm / Simmer to test, so choosing it switches them off.
   function chooseListing(v: 'on' | 'off' | 'both') {
     setListing(v);
-    if (v === 'off') { setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); }
+    if (v === 'off') { setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setRankedOnly(false); }
     deselectAll();
   }
 
@@ -1186,7 +1206,7 @@ function AmazonOrderContent() {
     const next = !ordersOnly;
     setOrdersOnly(next);
     setBasketSnapshot(next ? basketCodes() : null);
-    setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setRankedOnly(false);
     if (next) setCut(new Set());
     deselectAll();
   }
@@ -1202,7 +1222,7 @@ function AmazonOrderContent() {
   // Search steps deliberately get no slot of their own: they're freeform and unbounded, so they fold into whichever preset (or the
   // unfiltered list) is governing at the time. A rate re-tap is still the clear gesture, and still clears only the current view.
   const [coverageByView, setCoverageByView] = useState<Record<ViewKey, number | null>>(NO_COVERAGE);
-  const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : simmerOnly ? 'simmer' : ordersOnly ? 'basket' : 'all';
+  const viewKey: ViewKey = winnersOnly ? 'winners' : potentialOnly ? 'potential' : simmerOnly ? 'simmer' : rankedOnly ? 'ranked' : ordersOnly ? 'basket' : 'all';
   const coverageMonths = coverageByView[viewKey];
   const anyCoverage = useMemo(() => Object.values(coverageByView).some((m) => m !== null), [coverageByView]);
   function setCoverageForView(months: number | null) {
@@ -1245,7 +1265,7 @@ function AmazonOrderContent() {
   // confirmed action for exactly that reason.
   function onReset() {
     setIncludes([]); setExcludes([]); setIncludeInput(''); setExcludeInput(''); setSeasonFilter(null);
-    setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setOrdersOnly(false);
+    setWinnersOnly(false); setPotentialOnly(false); setSimmerOnly(false); setRankedOnly(false); setOrdersOnly(false);
     setListing('on');
     setBasketSnapshot(null);
     setCut(new Set()); deselectAll();
@@ -1284,16 +1304,18 @@ function AmazonOrderContent() {
     // The listing switch picks the sets (see the header). Unlisted rows never come under Hot / Warm / Simmer, which are tests of
     // Amazon sales these rows don't have.
     let out = listing === 'off' ? [] : narrow(baseRows);
-    const unlisted = listing !== 'on' && !winnersOnly && !potentialOnly && !simmerOnly ? narrow(offBaseRows) : [];
+    const unlisted = listing !== 'on' && !winnersOnly && !potentialOnly && !simmerOnly && !rankedOnly ? narrow(offBaseRows) : [];
     if (winnersOnly) out = out.filter((r) => isHot(r, hotBar, warmMin));
     // Warm carries the 6-month recent-sale guard (owner, 2026-08-20) inside isWarm — unit_profit is STICKY (see isRecentlySold).
     if (potentialOnly) out = out.filter((r) => isWarm(r, hotBar, warmMin));
     // Simmer reads FBA Total live from the server, so a size leaves the list once the refresh after Confirm Basket counts its unit.
     if (simmerOnly) out = out.filter((r) => isSimmer(r, hotBar, warmMin));
+    // Ranked: best rank first — it has no sales to sort by, which is the point.
+    if (rankedOnly) out = out.filter((r) => isRanked(r, rankSolid)).sort((a, b) => (a.amz_rank ?? 0) - (b.amz_rank ?? 0));
     return unlisted.length > 0 ? [...out, ...unlisted] : out;
-  }, [allRows, baseRows, offBaseRows, listing, seasonFilter, includes, excludes, winnersOnly, potentialOnly, simmerOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin]);
+  }, [allRows, baseRows, offBaseRows, listing, seasonFilter, includes, excludes, winnersOnly, potentialOnly, simmerOnly, rankedOnly, ordersOnly, qtyByHalf, basketSnapshot, focusedOrderCode, hotBar, warmMin, rankSolid]);
 
-  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || simmerOnly || ordersOnly || listing !== 'on';
+  const filtering = includes.length > 0 || excludes.length > 0 || seasonFilter !== null || winnersOnly || potentialOnly || simmerOnly || rankedOnly || ordersOnly || listing !== 'on';
 
 
   // Order/Pick box value for a row, as a sortable number — empty/non-numeric reads as null, same "unknown isn't small" rule as
@@ -1352,6 +1374,8 @@ function AmazonOrderContent() {
       if (d === 0) return a.code.localeCompare(b.code);
       return d * dir;
     };
+    // RANKED keeps its best-rank-first order (set in `filtered`) until a column is clicked — its sizes have no sales to sort by.
+    if (manualOrder === null && rankedOnly && chosenSortKey === DEFAULT_SORT) return listedFirst([...filtered]);
     if (manualOrder === null) return listedFirst([...filtered].sort(byNormalSort));
     // Manual order wins for any row it names (coverage-fill's just-computed rank); anything filtered in AFTER the fill (e.g. a
     // search term typed since) wasn't ranked, so it falls back to the normal sort and is appended after the ranked rows.
@@ -1364,7 +1388,7 @@ function AmazonOrderContent() {
       if (rb !== undefined) return 1;
       return byNormalSort(a, b);
     }));
-  }, [filtered, sortKey, sortDir, manualOrder]);
+  }, [filtered, sortKey, sortDir, manualOrder, rankedOnly, chosenSortKey]);
 
   // DROPPING THE SNAPSHOT while the Order or Pick column is the active sort would leave that sort with nothing to sort BY (it has
   // no row field behind it — see byNormalSort above), so the bulk basket edits that clear it re-snapshot the order on screen
@@ -2304,6 +2328,18 @@ function AmazonOrderContent() {
               <SparklesIcon className="h-4 w-4" />
               Simmer
             </button>
+            <button
+              type="button"
+              onClick={toggleRanked}
+              title={`Ranks under ${fmtRankK(rankSolid)} on Amazon now, none left anywhere, no sale in 30 days, and we can get it`}
+              className={
+                'flex items-center gap-1.5 rounded px-2 py-1 text-sm font-medium ' +
+                (rankedOnly ? SEG_ON : SEG_OFF)
+              }
+            >
+              <ArrowTrendingUpIcon className="h-4 w-4" />
+              Ranked
+            </button>
           </div>
 
 
@@ -2657,6 +2693,11 @@ function AmazonOrderContent() {
                   { ...WARM_COLUMN, title: `The Amazon price whose next sale makes over £${warmMin} a unit (Warm), and the rise on the price now — queued, else live. Sorts smallest rise first` },
                   sortKey, sortDir, onSort,
                 )}
+                {/* LAST SOLD — the size's last Amazon sale. Added for Ranked (the rank is the family's, this is the size's), then made
+                    standard in every view (owner, 2026-11-27: "Shall we have it permanently … as standard?"). */}
+                <th className="whitespace-nowrap px-2 py-1.5 text-right font-medium" title="This size's last Amazon sale">
+                  Last sold
+                </th>
                 {/* Cut — no sort, just a header label for the X button column. */}
                 <th className="whitespace-nowrap px-1 py-1.5 font-medium" />
               </tr>
@@ -2739,6 +2780,17 @@ function AmazonOrderContent() {
                           <NoSymbolIcon className="h-3 w-3" />
                         </button>
                       )}
+                      {/* RANKED tag (isRanked) — the rank itself, ONE quiet outlined style for both bands (owner, 2026-11-27: the dark
+                          one was "too heavy … ok as standard (same as 200k)"); the number says how urgent. Only on a size that
+                          qualifies, so it never sits on a row that has stock. */}
+                      {isRanked(r, rankSolid) && (
+                        <span
+                          title={`Amazon Fashion rank #${r.amz_rank!.toLocaleString('en-GB')}${r.amz_rank! <= rankUrgent ? ' (under ' + fmtRankK(rankUrgent) + ')' : ''} — none left, and we can get it`}
+                          className="rounded border border-slate-400 bg-white px-1 font-sans text-[10px] font-medium leading-4 text-slate-700"
+                        >
+                          #{fmtRankK(r.amz_rank!)}
+                        </span>
+                      )}
                     </span>
                   </td>
                   <td className={'whitespace-nowrap border-l border-slate-100 px-2 py-1.5 text-right ' + (r.local_stock === 0 ? 'text-slate-300' : 'text-slate-700')}>{r.local_stock}</td>
@@ -2817,6 +2869,9 @@ function AmazonOrderContent() {
                       </td>
                     );
                   })()}
+                  <td className={'whitespace-nowrap px-2 py-1.5 text-right tabular-nums ' + (r.last_sold ? 'text-slate-700' : 'text-slate-400')}>
+                    {r.last_sold ? shortDate(r.last_sold) : 'never'}
+                  </td>
                   <td className="whitespace-nowrap px-1 py-1.5">
                     <button
                       type="button"
@@ -2835,7 +2890,7 @@ function AmazonOrderContent() {
                     clickable — a bare click target you can't see the boundary of invites mis-clicks on a line with three values. */}
                 {expandedCode === r.code && (
                   <tr className="bg-slate-50/70">
-                    <td colSpan={simmerOnly ? 12 : 11} className="px-3 py-2">
+                    <td colSpan={simmerOnly ? 13 : 12} className="px-3 py-2">
                       {/* Four blocks, left to right: the picture, the price (the one thing you act on), what it's worth and last
                           went for, and the codes you copy; Can't get and Inventory sit on the action line below. Label beside value at text-sm (owner, 2026-09-28: "easier to
                           read") rather than one run-on xs line. */}

@@ -176,6 +176,9 @@ export interface AmazonOrderRow {
   // false = a stocked size with no Amazon listing (the list's off_amazon array) — Amazon-only fields are null/0. Shown only under a
   // search; Order and Pick are open on it, rate fills skip it.
   on_amazon: boolean;
+  // AMAZON RANK (2026-11-27) — the size's Fashion rank today (family figure), read for every listing by the hourly Buy Box read
+  // (server utils/amzRank.js). 0 = Amazon gave none, null = not read / not on Amazon.
+  amz_rank: number | null;
 }
 // Screen-level, not per row: Amazon order lines queued from this screen that nobody has actually placed with a supplier yet
 // (orderstatus, ordertype 3, arrived=0, orderdate=''). Drives the "waiting to be placed" indicator on /amazon-order.
@@ -768,6 +771,7 @@ function normaliseAmazonOrderRow(r: AmazonOrderRow, onAmazon: boolean): AmazonOr
     floor: r.floor ?? null,
     warm_price: r.warm_price ?? null,
     no_supply: r.no_supply === true,
+    amz_rank: r.amz_rank ?? null,
     no_supply_since: r.no_supply_since ?? null,
     no_supply_until: r.no_supply_until ?? null,
     no_supply_by: r.no_supply_by ?? null,
@@ -935,6 +939,7 @@ export function getAmazonOrderList() {
     // The Hot | Warm bars (server utils/portfolio.js). hot_bar = the 30-day profit at the top-20% line of sizes that sold in 30
     // days — Hot is profit_30d >= it; null when nothing sold (Hot empty). warm_min_unit_profit = Warm's unit-profit floor.
     hot_bar: number | null; warm_min_unit_profit: number;
+    rank_solid: number; rank_urgent: number;   // the Ranked flag's bands (server utils/amzRank.js) — 200k / 100k
   }>(
     { url: '/amazon-order-list', method: 'GET' },
     (b) => ({
@@ -953,6 +958,8 @@ export function getAmazonOrderList() {
       on_order: { units: Number(b.on_order?.units) || 0, skus: Number(b.on_order?.skus) || 0 },
       hot_bar: b.hot_bar === null || b.hot_bar === undefined ? null : Number(b.hot_bar),
       warm_min_unit_profit: Number(b.warm_min_unit_profit) || 3,
+      rank_solid: Number(b.rank_solid) || 200000,
+      rank_urgent: Number(b.rank_urgent) || 100000,
     })
   );
 }

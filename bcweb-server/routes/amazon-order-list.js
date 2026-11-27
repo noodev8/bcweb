@@ -107,6 +107,11 @@ Purpose: Landing screen for the Amazon Order module — every managed Amazon SKU
          A size of a style that IS on Amazon but is missing one size counts too: that is the same "make the file" job.
          Amazon-only figures (price, sales, profit, FBA live, Amazon SKU, floor) are null/0 — nothing to read them from.
 
+         AMAZON RANK (owner, 2026-11-27: "Our order screen should not only rank by sales but indicate a solid ranking of something we
+         have no stock of, but Rieker have") — `amz_rank` on each listed row: the size's Fashion rank today (amz_rank_now, read for
+         every listing by the hourly Buy Box read — utils/amzRank.js); 0 = Amazon gave none, null = not read. `rank_solid` /
+         `rank_urgent` are the bands (200k / 100k). The page flags a size in band with no stock and no Can't get. Off-Amazon rows: null.
+
          SUPPLIER STOCK (owner, 2026-11-27: "saves us looking them up manually before knowing if we can order them") arrives as
          Can't get itself: loading the Rieker list marks / releases our Rieker / Remonte sizes (utils/supplierStock.js →
          applyCantGet), so this route needs nothing of its own — a list-set mark reads like any other, marked_by 'Rieker list'.
@@ -125,6 +130,7 @@ Success Response:
   "on_order": { "units": 20, "skus": 11 },                                    // Amazon lines placed with a supplier, not yet arrived
   "hot_bar": 15.36,                         // Hot = profit_30d >= this among sizes sold in 30d (top 20%); null if nothing sold
   "warm_min_unit_profit": 3,                // Warm = not Hot, unit_profit > this, sold on Amazon in 6 months
+  "rank_solid": 200000, "rank_urgent": 100000,   // the Ranked flag's bands (utils/amzRank.js)
   "rows": [
     { "code": "...-38", "groupid": "...", "size": "38", "title": "...", "price": 37.99,
       "units_7d": 2, "units_30d": 6, "unit_profit": 9.70, "profit_30d": 58.20, "fba_total": 12, "fba_live": 10, "pick_pending": 2,
@@ -134,7 +140,8 @@ Success Response:
       "warm_price": 41.26,                  // Amazon price whose sale would make £3.01 — Simmer's "£3 price" (null if no cost)
       "season": "Summer",                   // skusummary.season (Summer | Winter | Any) — the SUMMER/WINTER search
       "no_supply": false, "no_supply_since": null, "no_supply_until": null, "no_supply_by": null,     // the SIZE's mark
-      "on_amazon": true },
+      "on_amazon": true,
+      "amz_rank": 45210 | 0 | null },        // Fashion rank today (0 = none, null = not read) — utils/amzRank.js
     ...  // profit_30d desc NULLS LAST, code as tiebreak
   ],
   "off_amazon": [ { ...same shape, "on_amazon": false, Amazon-only fields null/0 } ]   // stocked, not listed — see above
@@ -157,6 +164,7 @@ const { notPlaced, placed } = require('../utils/orderStatus');
 const { NO_SUPPLY_UNTIL_SQL, noSupplySelectSql, noSupplyJoinSql, noSupplyFields } = require('../utils/noSupply');
 const { HOT_SHARE, WARM_MIN_UNIT_PROFIT } = require('../utils/portfolio');
 const { priceForProfit } = require('../utils/amzProfit');
+const { RANK_SOLID, RANK_URGENT } = require('../utils/amzRank');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -272,6 +280,7 @@ router.get('/', async (req, res) => {
              -- Detail row extras (owner, 2026-09-28): the style's RRP and its picture (bare filename; the web builds the URL).
              ${safeNumeric('sk.rrp')} AS rrp,
              NULLIF(sk.imagename, '') AS imagename,
+             rk.sales_rank AS amz_rank,
              -- "Can't get it" (utils/noSupply.js): the size's mark.
              ${noSupplySelectSql('nss')}
       FROM amzfeed a
@@ -285,6 +294,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN lastsold ON lastsold.code = a.code
       LEFT JOIN queued ON queued.code = a.code
       LEFT JOIN amzpend ON amzpend.code = a.code
+      LEFT JOIN amz_rank_now rk ON rk.asin = UPPER(TRIM(a.asin))
       ${noSupplyJoinSql('a.code')}
       ORDER BY COALESCE(${safeNumeric('m.amzprofit')}, amzpend.unit_profit) * COALESCE(a.amzsold,0) DESC NULLS LAST, a.code
     `);
@@ -365,6 +375,7 @@ router.get('/', async (req, res) => {
         imagename: r.imagename || null,
         ...noSupplyFields(r),
         on_amazon: onAmazon,
+        amz_rank: r.amz_rank === null || r.amz_rank === undefined ? null : Number(r.amz_rank),
       };
     };
     const rows = result.rows.map((r) => toRow(r, true));
@@ -409,7 +420,8 @@ router.get('/', async (req, res) => {
 
     return res.json({
       return_code: 'SUCCESS', count: rows.length, no_supply_default_until: parkUntil, to_place: toPlace, on_order: onOrder,
-      hot_bar: hotBar, warm_min_unit_profit: WARM_MIN_UNIT_PROFIT, rows, off_amazon: offAmazon,
+      hot_bar: hotBar, warm_min_unit_profit: WARM_MIN_UNIT_PROFIT, rank_solid: RANK_SOLID, rank_urgent: RANK_URGENT,
+      rows, off_amazon: offAmazon,
     });
   } catch (err) {
     logger.error('[amazon-order-list] error:', err.message);
