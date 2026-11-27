@@ -118,7 +118,11 @@ const NEW_SKUS_SQL = `
          -- Amazon (per size)
          (a.code IS NOT NULL) AS on_amz,
          COALESCE(a.amzlive, 0) AS amz_live,   -- sellable at FBA now, Amazon's own count (New Additions' "not in stock at Amazon" badge)
-         COALESCE(a.amztotal, 0) AS amz_total, -- live + on its way / reserved at Amazon (the badge: "not live yet" vs "not sent")
+         COALESCE(a.amztotal, 0) AS amz_total, -- live + on its way / reserved at Amazon (0 = the badge's "not sent")
+         -- Units still on their way IN to Amazon (owner, 2026-11-27: the badge splits "On its way to Amazon" from "At Amazon — processing"
+         -- so arrival shows). amzfeed has no inbound column; the size history's latest row holds the same SP-API / report reading
+         -- (utils/amzSizeHistory.js — change-only, so the latest row is today's value; a ledger row has none, read 0).
+         COALESCE(ih.inbound, 0) AS amz_inbound,
          -- The CURRENT Amazon price: a change logged since the last import (uploaded, or still pending in the basket) beats the feed —
          -- utils/amzNow.js → AMZ_NOW_CTES. New Additions' bulk % works off this, so two moves before an upload don't both start from
          -- the stale feed price.
@@ -145,6 +149,7 @@ const NEW_SKUS_SQL = `
     LEFT JOIN title t       ON t.groupid  = sz.groupid
     LEFT JOIN amzfeed a     ON a.code     = sz.code
     LEFT JOIN amz_now an    ON an.code    = sz.code
+    LEFT JOIN LATERAL (SELECT h.inbound FROM amz_size_history h WHERE h.code = sz.code ORDER BY h.day DESC LIMIT 1) ih ON a.code IS NOT NULL
     LEFT JOIN loc           ON loc.code   = sz.code
     LEFT JOIN fba           ON fba.code   = sz.code
     LEFT JOIN sloc          ON sloc.groupid = sz.groupid

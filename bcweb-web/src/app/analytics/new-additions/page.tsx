@@ -50,6 +50,9 @@ THE LAYOUT (kept from the 2026-10-27/29 rounds — owner: "way to much going on"
     is tinted amber until Amazon confirms it (see PENDING_TILE). THE BADGE SPLITS (owner, 2026-11-22, Repose Taupe: a size sold
     on Amazon while the row said it wasn't there — "That is misleading"): a size Amazon holds but not live yet (amztotal > 0 — on
     its way in or reserved) says "Not live at Amazon yet"; only a size with nothing at Amazon says "Not sent to Amazon".
+    SPLIT AGAIN (owner, 2026-11-27, A310: Amazon showed it in stock while the row said "Not live" — "This way I know our shipment
+    has arrived"): units still inbound (amzInbound > 0, from the size history) say "On its way to Amazon"; received but not on sale
+    yet (reserved — Amazon processing) say "At Amazon — processing". No tooltip on these badges (owner, same day).
     BUY BOX (owner, 2026-11-22: "a button on there (not purple) called BUY BOX that gives us the list of items that are on Amazon
     and just the sizes that have not sold anything yet"): beside Cut / Refresh, plain like them — opens /amz/new-cards, the white
     tiles at Amazon (live or on the way) as price cards, the soft cuts left out, OLDEST-added style first (owner, same day: the older ones are priced first).
@@ -631,22 +634,21 @@ function NewAdditionsPageInner() {
                                 {/* NOT LIVE AT AMAZON BADGES (owner, 2026-11-13: "a badge on the row to make it obvious we havnt sent
                                     them yet" … "In stock in Amazon is what im interested in"): the unsold new sizes with nothing sellable
                                     at FBA (amzLive 0) — the whole style, or how many — SPLIT (2026-11-22, see the header) into "not live
-                                    yet" (Amazon holds some: on its way in or reserved) and "not sent" (nothing at Amazon). Small slate
-                                    tags (colour restraint); never on Birkenstock or a complete style. */}
+                                    yet" (Amazon holds some: on its way in or reserved) and "not sent" (nothing at Amazon); the first SPLIT
+                                    again (2026-11-27, header) into "on its way" and "at Amazon — processing". Small slate tags (colour
+                                    restraint), no tooltip; never on Birkenstock or a complete style. */}
                                 {!done && !isBirk(g.brand) && (() => {
                                   const unsold = g.sizes.filter((r) => !isSold(r));
                                   const out = unsold.filter((r) => r.amzLive === 0);
-                                  const coming = out.filter((r) => r.amzTotal > 0).length;
-                                  const notSent = out.length - coming;
+                                  const coming = out.filter((r) => r.amzTotal > 0 && r.amzInbound > 0).length;
+                                  const arrived = out.filter((r) => r.amzTotal > 0 && !(r.amzInbound > 0)).length;
+                                  const notSent = out.length - coming - arrived;
                                   const tag = 'shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200';
                                   return (
                                     <>
                                       {notSent > 0 && <span className={tag}>{notSent === unsold.length ? 'Not sent to Amazon' : `${notSent} not sent to Amazon`}</span>}
-                                      {coming > 0 && (
-                                        <span className={tag} title="Amazon holds them but none is live to sell yet — on its way in or reserved">
-                                          {coming === unsold.length ? 'Not live at Amazon yet' : `${coming} not live at Amazon yet`}
-                                        </span>
-                                      )}
+                                      {coming > 0 && <span className={tag}>{coming === unsold.length ? 'On its way to Amazon' : `${coming} on its way to Amazon`}</span>}
+                                      {arrived > 0 && <span className={tag}>{arrived === unsold.length ? 'At Amazon — processing' : `${arrived} at Amazon — processing`}</span>}
                                     </>
                                   );
                                 })()}
@@ -715,7 +717,7 @@ function SizeRun({ g, amzHref, onAmz }: { g: StyleGroup; amzHref: (code: string)
         const pending = state === 'done' && r && pendingOnly(r);
         const look = pending ? PENDING_TILE : SIZE_TILE[state];
         const tip = [pending && `Amazon order pending (${r.amzPending}) — counted as sold; back to unsold if Amazon cancels`,
-                     missing && (r.amzTotal > 0 ? 'Not live at Amazon yet — on its way in or reserved' : 'Not sent to Amazon')].filter(Boolean).join(' · ') || undefined;
+                     missing && (r.amzTotal === 0 ? 'Not sent to Amazon' : r.amzInbound > 0 ? 'On its way to Amazon' : 'At Amazon — processing')].filter(Boolean).join(' · ') || undefined;
         if (state === 'todo' && r && r.onAmz) {
           return (
             <Link key={t.code} href={amzHref(t.code)} aria-label={`Size ${t.size} — price it on Amazon`} title={tip}

@@ -5339,6 +5339,7 @@ export interface ProcessSizeRow {
   localStock: number; fbaStock: number;
   amzLive: number;   // sellable at FBA now (amzfeed.amzlive) — fbaStock also counts Amazon-bound local pairs
   amzTotal: number;  // amzfeed.amztotal — live + on its way / reserved at Amazon (0 = nothing at Amazon: not sent)
+  amzInbound: number; // units still on their way IN to Amazon (size history) — > 0 "On its way to Amazon", else "At Amazon — processing"
   bought: number;                // pairs booked in on Goods In (every arrival of the SKU)
   onAmz: boolean;                // the size has an amzfeed listing (FBA, 0-stock ones too)
   // PRICE DUE — the pricing screens' own Due. Amazon per SIZE; Shopify per STYLE (the same on each of its sizes).
