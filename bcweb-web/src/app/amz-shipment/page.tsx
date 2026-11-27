@@ -86,9 +86,10 @@ prep set per SKU as Amazon allows, the plan made, ONE pack group only, every box
 (never split). Then it STOPS at THE ONE CONFIRM BOX: the warehouse, Amazon's fee, boxes / units, and a ready-to-ship date picked here
 (no default, owner). Picking the date asks Amazon for the carriers for it and shows them to choose from (owner 2026-11-17, was our
 own DPD only): OUR OWN DPD (Amazon charges nothing), OTHER (our own courier that isn't DPD, e.g. Royal Mail, 2026-11-24: no Book
-DPD, tracking in Seller Central), AMAZON'S DPD and AMAZON'S UPS (2026-11-23), each with Amazon's price. No carrier
+DPD, tracking in Seller Central) and AMAZON'S DPD with Amazon's price (Amazon's UPS was offered 2026-11-23, removed 2026-11-27 —
+owner: "we wont be using them going forward"). No carrier
 is pre-picked. Confirm books it (the carrier, and for our own DPD the delivery window, are worked out first, then the warehouse, window
-and carrier are confirmed; Amazon's DPD / UPS is never booked above the price shown — dearer, and the box comes back with the new
+and carrier are confirmed; Amazon's DPD is never booked above the price shown — dearer, and the box comes back with the new
 price) and the box labels print on the Zebra
 straight away (one 4 × 6 page per box, the Royal Mail label's QZ Tray path). The printer is a choice (owner 2026-11-17), "Labels
 print on" in the confirm box and on the booked notice: the Zebra by default, any printer QZ Tray sees, or the browser's print dialog;
@@ -153,7 +154,7 @@ const FINISH_BTN = 'flex w-full items-center gap-2 rounded-lg border border-slat
 const MENU_ITEM = 'flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 ';
 const boxUnits = (b: { lines: BoxLine[] }) => b.lines.reduce((n, l) => n + l.qty, 0);
 // The Do shipment carriers as the screen names them (the confirm box, the booked notice).
-const CARRIER_NAME: Record<AmzInboundCarrier, string> = { own: 'Our own DPD', other: 'Other (e.g. Royal Mail)', amazon: 'Amazon’s DPD', ups: 'Amazon’s UPS' };
+const CARRIER_NAME: Record<AmzInboundCarrier, string> = { own: 'Our own DPD', other: 'Other (e.g. Royal Mail)', amazon: 'Amazon’s DPD' };
 // Our own courier (own DPD / Other): Amazon charges nothing. The other two are Amazon's, at its price.
 const isOwnCarrier = (c: AmzInboundCarrier | null | undefined) => c === 'own' || c === 'other';
 // What the screen shows in a stored box — sent with Delete / a refill's Pack so the server can check it's still that box.
@@ -792,7 +793,7 @@ function Packing({ initial, autoBack, onShipped }: {
   // THE CONFIRM BOX's Confirm: books it, then prints the box labels on the Zebra as soon as it's booked.
   async function confirmInbound() {
     if (!inboundJob || !readyDate || !carrier || !carriers || carriers.readyDate !== readyDate) return;
-    const maxCost = carrier === 'amazon' || carrier === 'ups' ? carriers[carrier]?.cost ?? null : null;
+    const maxCost = carrier === 'amazon' ? carriers.amazon?.cost ?? null : null;
     if (!isOwnCarrier(carrier) && maxCost === null) return;
     setInboundBusy(true);
     setInboundError(null);
@@ -806,7 +807,7 @@ function Packing({ initial, autoBack, onShipped }: {
     }
     const j = await waitForInbound();
     setInboundBusy(false);
-    if (j?.state === 'confirm') { await loadCarriers(readyDate); return; } // Amazon's DPD / UPS got dearer: the new price, choose again
+    if (j?.state === 'confirm') { await loadCarriers(readyDate); return; } // Amazon's DPD got dearer: the new price, choose again
     setReadyDate('');
     setCarriers(null);
     setCarrier(null);
@@ -1138,11 +1139,11 @@ function Packing({ initial, autoBack, onShipped }: {
                     className="h-8 w-full rounded-md border border-slate-300 px-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                   />
                 </label>
-                {/* CARRIER — our own DPD, Amazon's DPD and Amazon's UPS for the date picked (owner 2026-11-17, UPS 2026-11-23). Never pre-picked. */}
+                {/* CARRIER — our own DPD, Other and Amazon's DPD for the date picked (owner 2026-11-17; UPS removed 2026-11-27). Never pre-picked. */}
                 <fieldset className="space-y-1" disabled={inboundBusy}>
                   <legend className="mb-0.5 font-medium text-slate-900">Carrier</legend>
                   {inboundJob.notice && <div className="font-semibold text-amber-800">{inboundJob.notice}</div>}
-                  {!readyDate && <div className="text-slate-500">Pick the date first: Amazon prices its DPD and UPS for that day.</div>}
+                  {!readyDate && <div className="text-slate-500">Pick the date first: Amazon prices its DPD for that day.</div>}
                   {readyDate && carriersBusy && <div className="text-slate-500">Asking Amazon…</div>}
                   {readyDate && !carriersBusy && carriersError && (
                     <div className="text-red-700">{carriersError} <button type="button" onClick={() => loadCarriers(readyDate)} className="font-semibold underline">Try again</button></div>
@@ -1167,7 +1168,7 @@ function Packing({ initial, autoBack, onShipped }: {
                           <span className="block text-slate-500">{carriers.other ? 'Our own courier, booked by us. Amazon charges nothing. Tracking goes in Seller Central.' : 'Amazon didn’t offer it for this date.'}</span>
                         </span>
                       </label>
-                      {(['amazon', 'ups'] as const).map((k) => {
+                      {(['amazon'] as const).map((k) => {
                         const p = carriers[k];
                         return (
                           <label key={k} className={`flex items-start gap-2 rounded border px-2 py-1.5 ${carrier === k ? 'border-brand-500 bg-brand-50' : 'border-slate-200'} ${p ? 'cursor-pointer' : 'opacity-50'}`}>
@@ -1209,8 +1210,8 @@ function Packing({ initial, autoBack, onShipped }: {
                 </div>
                 <div>
                   {inboundJob.result.boxes} {inboundJob.result.boxes === 1 ? 'box' : 'boxes'}, {inboundJob.result.units} units
-                  {inboundJob.result.carrier === 'amazon' || inboundJob.result.carrier === 'ups'
-                    ? <> · {CARRIER_NAME[inboundJob.result.carrier]}{inboundJob.result.carrierCost != null && <> ({money(inboundJob.result.carrierCost)})</>}</>
+                  {inboundJob.result.carrier === 'amazon'
+                    ? <> · {CARRIER_NAME.amazon}{inboundJob.result.carrierCost != null && <> ({money(inboundJob.result.carrierCost)})</>}</>
                     : inboundJob.result.carrier === 'own' ? <> · our own DPD</>
                     : inboundJob.result.carrier === 'other' ? <> · {CARRIER_NAME.other}</> : null}
                   {inboundJob.result.readyDate && <> · ready {dayLabel(inboundJob.result.readyDate)}</>}
@@ -1226,8 +1227,8 @@ function Packing({ initial, autoBack, onShipped }: {
                 {printerPicker}
                 {labelsMsg?.ok && <div>{labelsMsg.ok}.</div>}
                 {labelsMsg?.error && <div className="font-semibold text-red-700">{labelsMsg.error}</div>}
-                {/* BOOK DPD — our own DPD only (Amazon's DPD / UPS make their own labels, Other is booked by us; the server checks the carrier on Amazon too). */}
-                {inboundJob.result.carrier !== 'amazon' && inboundJob.result.carrier !== 'ups' && inboundJob.result.carrier !== 'other' && (() => {
+                {/* BOOK DPD — our own DPD only (Amazon's DPD makes its own labels, Other is booked by us; the server checks the carrier on Amazon too). */}
+                {inboundJob.result.carrier !== 'amazon' && inboundJob.result.carrier !== 'other' && (() => {
                   const r = inboundJob.result;
                   if (!r) return null;
                   const d = r.dpd ?? null;
@@ -1267,8 +1268,8 @@ function Packing({ initial, autoBack, onShipped }: {
                   );
                 })()}
                 <div className="text-emerald-700">
-                  {inboundJob.result.carrier === 'amazon' || inboundJob.result.carrier === 'ups'
-                    ? `${CARRIER_NAME[inboundJob.result.carrier]}: check the collection and tracking in Seller Central. When ${inboundJob.result.carrier === 'ups' ? 'UPS' : 'DPD'} collects: Mark shipped here.`
+                  {inboundJob.result.carrier === 'amazon'
+                    ? `${CARRIER_NAME.amazon}: check the collection and tracking in Seller Central. When DPD collects: Mark shipped here.`
                     : inboundJob.result.carrier === 'other'
                     ? 'Other: send it with our own courier (e.g. Royal Mail) and put the tracking in Seller Central. When it goes: Mark shipped here.'
                     : 'Book DPD prints the DPD labels on the DPD printer and sends the tracking to Amazon. When DPD collects: Mark shipped here.'}

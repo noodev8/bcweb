@@ -3578,7 +3578,7 @@ export interface AmzInboundJob {
   id: number; by: string; startedAt: string; finishedAt: string | null;
   state: 'running' | 'confirm' | 'done' | 'stopped' | 'failed'; step: string;
   log: { at: string; text: string }[]; warnings: string[]; message: string | null; sellerCentral?: string;
-  notice?: string | null;   // back at the confirm box: Amazon's DPD / UPS got dearer than the price shown (nothing booked)
+  notice?: string | null;   // back at the confirm box: Amazon's DPD got dearer than the price shown (nothing booked)
   totals: { boxes: number; units: number; kg?: number };   // kg = the boxes' weights added up
   confirm: {
     warehouse: string; town: string; fee: number; fees: { text: string; amount: number; currency: string }[];
@@ -3593,14 +3593,13 @@ export function startAmzInbound(boxes: number, units: number) {
 export function getAmzInboundStatus() {
   return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-status', method: 'GET' }, inboundJob);
 }
-// The carriers Amazon offers for the date picked (nothing confirmed): our own DPD, Amazon's DPD and Amazon's UPS (owner 2026-11-23)
-// with their prices, and Other (our own courier that isn't DPD, e.g. Royal Mail — 2026-11-24). amazon / ups = null when Amazon doesn't offer it.
-export type AmzInboundCarrier = 'own' | 'other' | 'amazon' | 'ups';
+// The carriers Amazon offers for the date picked (nothing confirmed): our own DPD, Amazon's DPD with its price, and Other (our own
+// courier that isn't DPD, e.g. Royal Mail — 2026-11-24). amazon = null when Amazon doesn't offer it. (Amazon's UPS removed 2026-11-27, owner.)
+export type AmzInboundCarrier = 'own' | 'other' | 'amazon';
 export interface AmzCarrierPrice { cost: number; currency: string; voidableUntil: string | null; expires: string | null }
 export interface AmzInboundCarriers {
   readyDate: string; own: boolean; other?: boolean;   // other: absent from a server older than 2026-11-24
   amazon: AmzCarrierPrice | null;
-  ups: AmzCarrierPrice | null;
 }
 export function getAmzInboundCarriers(id: number, readyDate: string) {
   // Amazon works the carriers out while this waits (generateTransportationOptions, often 20s+; the server waits up to 4 minutes), far
@@ -3608,7 +3607,7 @@ export function getAmzInboundCarriers(id: number, readyDate: string) {
   return request<{ carriers: AmzInboundCarriers | null }>({ url: '/amz-inbound-carriers', method: 'POST', data: { id, readyDate }, timeout: 300000 },
     (b) => ({ carriers: (b.carriers as AmzInboundCarriers) || null }));
 }
-// carrier = the carrier chosen; maxCost = Amazon's DPD / UPS price shown (the server never books it dearer).
+// carrier = the carrier chosen; maxCost = Amazon's DPD price shown (the server never books it dearer).
 export function confirmAmzInbound(id: number, readyDate: string, carrier: AmzInboundCarrier, maxCost: number | null, boxes: number, units: number) {
   return request<{ job: AmzInboundJob | null }>({ url: '/amz-inbound-confirm', method: 'POST', data: { id, readyDate, carrier, maxCost, boxes, units } }, inboundJob);
 }
