@@ -230,7 +230,6 @@ app.use('/amz-inbound-cancel', require('./routes/amz-inbound-cancel')); // AMZ S
 app.use('/amz-inbound-labels', require('./routes/amz-inbound-labels')); // AMZ Shipment: box labels of the booked shipment (PDF for the Zebra) — READ ONLY
 app.use('/amz-dpd-book', require('./routes/amz-dpd-book')); // AMZ Shipment: Book DPD — our own DPD consignment for the booked shipment + tracking to Amazon
 app.use('/amz-dpd-label', require('./routes/amz-dpd-label')); // AMZ Shipment: the DPD labels (raw printer commands for the DPD printer) — READ ONLY
-app.use('/dpd-test-label', require('./routes/dpd-test-label')); // TEMP: DPD label test (books a REAL consignment to our own address — void in MyDPD). Remove after sign-off.
 
 // Inventory Management module (docs/inventory-spec.md). Read-only stock lookup: "have we got this, and where is it?".
 // Slice 1 = the style list only; the client fetches it once and does the Contains / Does-not-contain filtering in the browser.

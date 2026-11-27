@@ -16,7 +16,8 @@ THE CALLS (spec v3.2, base https://api.dpdlocal.co.uk):
                 2026-11-19). text/html is A4 only and fails DPD's sign-off on a thermal printer, so it is not offered.
 
 EVERY BOOKING IS VALIDATED FIRST: book() sends the body with ?test=true and only then, if DPD accepted it, books it for real. A
-mistake in the body comes back as DPD's own words with nothing booked.
+mistake in the body comes back as DPD's own words with nothing booked. LIVE since 2026-11-27 (owner: "make the actualy dpd not a test
+but real"): the DPD_LIVE switch and the temporary label-test route are gone; every booking that passes the check is real.
 
 .env: DPD_USERNAME, DPD_PASSWORD, DPD_ACCOUNT, DPD_COLLECT_ORG / _STREET / _TOWN / _POSTCODE / _PHONE (our address, the collection).
 Never plain `username` / `password`: on Windows process.env.username is the Windows user (env names are case-insensitive), a 401.
@@ -137,12 +138,11 @@ function shipmentBody({ delivery, parcels, totalKg, collectionDate, refs = [] })
   };
 }
 
-// Validate (?test=true), then — only when live — book for real.
-// Returns { body, test: true } or { body, shipmentId, consignment, parcels: ['15976…', …] }.
-async function book(args, { live }) {
+// Validate (?test=true), then book for real.
+// Returns { body, shipmentId, consignment, parcels: ['15976…', …] }.
+async function book(args) {
   const body = shipmentBody(args);
   await callJson('POST', '/shipping/shipment?test=true', { body }); // throws with DPD's words on a bad body; books nothing
-  if (!live) return { body, test: true };
   const data = await callJson('POST', '/shipping/shipment', { body });
   const c = ((data && data.consignmentDetail) || [])[0] || {};
   if (!data || !data.shipmentId || !c.consignmentNumber) throw new Error(`DPD booked but sent back no consignment: ${JSON.stringify(data).slice(0, 300)}`);
@@ -183,7 +183,4 @@ function collectionDate(date) {
   return `${d}T${now < '09:00' ? '09:00' : now}:00`;
 }
 
-// Bookings for real only when DPD_LIVE=true (after DPD's label sign-off); otherwise every booking stops at the ?test=true check.
-const isLive = () => String(process.env.DPD_LIVE || '').trim().toLowerCase() === 'true';
-
-module.exports = { book, label, collectionDate, isLive, collection, PARCEL_NEXT_DAY };
+module.exports = { book, label, collectionDate, collection, PARCEL_NEXT_DAY };

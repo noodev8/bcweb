@@ -841,7 +841,7 @@ async function labels() {
 // USE_YOUR_OWN_CARRIER / DPDX. One press:
 //   1. DPD  one consignment, Parcel Next Day (owner), from our address to Amazon's warehouse (getShipment's destination; Amazon gives no
 //           phone and DPD requires one, so the contact phone is ours). Parcels = Amazon's boxes, weight = their kg added up, ref 1 =
-//           the FBA15 id, ref 2 = the warehouse. Validated with ?test=true first; booked for real only when DPD_LIVE=true (utils/dpdApi.js).
+//           the FBA15 id, ref 2 = the warehouse. Validated with ?test=true first, then booked for real (utils/dpdApi.js; live since 2026-11-27).
 //   2. AMAZON  the tracking straight away (owner: "send the tracking to amz right away"): box U00000n → DPD parcel n, in order.
 //           Amazon then holds the numbers, so nothing is stored here (no table); a restart reads them back (describeBooked.tracking).
 //   The screen then prints DPD's labels on the DPD printer (never the Zebra, owner) — dpdLabel().
@@ -853,7 +853,7 @@ let dpdBusy = false;
 const dpdView = () => (dpd ? { consignment: dpd.consignment, parcels: dpd.parcels, trackingSent: dpd.trackingSent, canReprint: !!dpd.dpdShipmentId } : null);
 const kgOf = (w) => { const v = Number((w && w.value) || 0); return w && /^lb/i.test(String(w.unit || '')) ? v * 0.45359237 : v; };
 
-// Returns { error: 'BUSY' | 'NOT_BOOKED' | 'NOT_OWN_DPD' | 'ALREADY' | 'PARCEL_COUNT', … } | { test: true, … } | { dpd, trackingError? }.
+// Returns { error: 'BUSY' | 'NOT_BOOKED' | 'NOT_OWN_DPD' | 'ALREADY' | 'PARCEL_COUNT', … } | { dpd, trackingError? }.
 async function bookDpd({ by }) {
   if (dpdBusy) return { error: 'BUSY' };
   dpdBusy = true;
@@ -888,12 +888,8 @@ async function bookDpd({ by }) {
         parcels: boxes.length, totalKg: kg,
         collectionDate: dpdApi.collectionDate(job && job.result && job.result.shipmentId === b.shipmentId ? job.result.readyDate : null),
         refs: [b.fba, wh],
-      }, { live: dpdApi.isLive() });
-      if (r.test) {
-        logActivity({ who: by, section: 'AMZ Shipment', log: `Book DPD (test mode, nothing booked): ${b.fba} to ${wh}, ${boxes.length} parcels, ${kg.toFixed(1)} kg — DPD accepted the details` });
-        return { test: true, boxes: boxes.length, kg: Math.round(kg * 10) / 10 };
-      }
-      d = { amzShipmentId: b.shipmentId, fba: b.fba, dpdShipmentId: r.shipmentId, consignment: r.consignment, parcels: r.parcels, trackingSent: false };
+      });
+      d ={ amzShipmentId: b.shipmentId, fba: b.fba, dpdShipmentId: r.shipmentId, consignment: r.consignment, parcels: r.parcels, trackingSent: false };
       dpd = d;
       logActivity({ who: by, section: 'AMZ Shipment', log: `Book DPD: ${b.fba} to ${wh}, consignment ${r.consignment}, ${r.parcels.length} parcels (${r.parcels.join(', ')}), ${kg.toFixed(1)} kg, Parcel Next Day` });
     }
