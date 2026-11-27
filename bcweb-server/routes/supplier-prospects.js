@@ -7,7 +7,8 @@ Purpose: Prospects → Rieker list (owner, 2026-11-27: "Start with what we can g
          supplier's stock list WITH stock that we don't stock, with how it sells on Amazon — its best-ranked size's overall Fashion
          rank, Buy Box, sellers — as the last scan found it (scripts/supplier-amazon-scan.js → supplier_amazon, run after each "load the
          Rieker list"), plus our cost from the list and the return on cost at that price (utils/prospect.js → returnOnCost, THE Amazon
-         formula). Best rank first; ranked styles, then found-but-unranked, then not found on Amazon.
+         formula). Best rank first. ONLY RANKED STYLES (owner, 2026-11-27: "lets not even show no rank for now. we dont add them
+         ourselves") — a style with no Fashion rank, or not on Amazon at all, is left out; the scan still stores them.
          "On the list" = a Prospects line (active or archived) carries the style's Amazon ASIN, or its name reads as the style
          (utils/supplierStock.js → lookup, the same code match as the saved lines' dots — a line's link is often another size).
          READ ONLY. Adding goes through prospect-save as usual. Requires auth.
@@ -67,7 +68,8 @@ router.get('/', async (req, res) => {
            LIMIT 1) pl ON true
        WHERE st.supplier = $1 AND st.sizes <> '{}'::jsonb
          AND NOT EXISTS (SELECT 1 FROM skusummary s WHERE s.groupid = st.style)
-       ORDER BY sa.group_rank IS NULL, sa.group_rank, sa.asin IS NULL, st.style`, [supplier]);
+         AND sa.group_rank IS NOT NULL
+       ORDER BY sa.group_rank, st.style`, [supplier]);
 
     // Lines matched by the code in their name — one lookup for every line (its id stands in for an ASIN).
     const lines = (await query(`SELECT id, name, archived_at IS NOT NULL AS archived FROM prospect ORDER BY archived_at IS NOT NULL, id`)).rows;

@@ -11,9 +11,9 @@ Purpose: PDF FIRST (owner, 2026-11-27: "Start with what we can get and then see 
          A row: the style (code, season), its best-ranked size on Amazon (title, size, Open), Fashion rank, Buy Box (else lowest),
          sellers, our cost and the keep a pair / return on cost at that price, and the can-get size dots (black = can get).
          ADD puts it straight on Prospects with its first check (rank, price, sellers, size) and cost — no form, the row then says ON THE
-         LIST. The name carries the Rieker code, so the saved line shows the same dots. Styles not found on Amazon sit at the bottom,
-         plainly marked — rank can't judge them.
-         SORT: best Fashion rank first, then found on Amazon with no rank, then not on Amazon (server). The header's Rank / On cost
+         LIST. The name carries the Rieker code, so the saved line shows the same dots. Only RANKED styles come (owner, 2026-11-27: "lets
+         not even show no rank for now. we dont add them ourselves") — no rank / not on Amazon are left out by the server.
+         SORT: best Fashion rank first (server). The header's Rank / On cost
          switch it (owner, 2026-11-27: "Im interested in high profit and low rank and will balance the two") — rank lowest first, on
          cost highest first; a row with nothing to sort on stays at the bottom. No blended score: the owner does the balancing. Every row CAN be got — a style
          is only here with at least one size in stock on Rieker's list.
@@ -42,14 +42,13 @@ export default function RiekerListPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [sort, setSort] = useState<'rank' | 'profit'>('rank');
   const found = useMemo(() => {
-    const list = (rows || []).filter((r) => r.asin && !cut.has(r.style));
+    const list = (rows || []).filter((r) => !cut.has(r.style));
     if (sort === 'profit') {
       const key = (r: SupplierProspect) => r.return_on_cost?.on_cost_pct ?? -Infinity;
       list.sort((a, b) => key(b) - key(a));
     }
     return list;   // 'rank' = the server's order
   }, [rows, cut, sort]);
-  const notFound = useMemo(() => (rows || []).filter((r) => !r.asin && !cut.has(r.style)), [rows, cut]);
   async function onRefresh() {
     setRefreshing(true);
     await q.refresh();
@@ -89,10 +88,10 @@ export default function RiekerListPage() {
                 className={'w-16 shrink-0 text-right hover:text-slate-900 ' + (sort === 'profit' ? 'text-slate-900 underline' : '')}>On cost</button>
               <span className="w-36 shrink-0" />
             </div>
-            {[...found, ...notFound].map((r) => (
+            {found.map((r) => (
               <Row key={r.style} r={r} onAdded={() => q.refresh()} onCut={() => setCut((prev) => new Set(prev).add(r.style))} />
             ))}
-            {!found.length && !notFound.length && <p className="px-5 py-4 text-sm text-slate-500">Nothing on the list.</p>}
+            {!found.length && <p className="px-5 py-4 text-sm text-slate-500">Nothing on the list.</p>}
           </div>
         )}
       </div>
@@ -140,7 +139,7 @@ function Row({ r, onAdded, onCut }: { r: SupplierProspect; onAdded: () => void; 
             </span>
           )}
           <span className="w-20 shrink-0 text-right tabular-nums text-slate-800">
-            {!r.asin ? <span className="text-xs text-slate-400">Not on Amazon</span> : r.rank !== null ? `#${fmtRank(r.rank)}` : <span className="text-xs text-slate-400">No rank</span>}
+            {r.rank !== null ? `#${fmtRank(r.rank)}` : ''}
           </span>
           <span className="w-16 shrink-0 text-right tabular-nums text-slate-700">{money(price)}</span>
           {/* RRP ESTIMATE (owner, 2026-11-27) — from the cost, so a price far over it (Pia: £131.65 on ~£65) reads as unreal at a glance. */}
