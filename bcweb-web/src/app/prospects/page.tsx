@@ -37,7 +37,7 @@ import {
 } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 import AppShell from '@/components/AppShell';
-import ProspectAmazonSearch, { ProspectPrefill } from '@/components/ProspectAmazonSearch';
+import ProspectAmazonSearch, { ProspectPrefill, SupplierLine } from '@/components/ProspectAmazonSearch';
 import { useAuth } from '@/contexts/AuthContext';
 import { useApiQuery } from '@/lib/useApiQuery';
 import { useUrlParam } from '@/lib/useUrlParam';
@@ -363,6 +363,14 @@ export default function ProspectsPage() {
               Size gaps · {gaps.data.counts.open_styles}
             </Link>
           )}
+          {/* RIEKER LIST (owner, 2026-11-27: "Start with what we can get and then see if it is worth it") — the styles on Rieker's stock
+              list we don't stock, with how they sell on Amazon. Its own screen, like Size gaps. */}
+          {!archive && (
+            <Link href="/prospects/rieker-list" title="Styles Rieker can sell us that we don't stock, best Amazon rank first"
+              className={`${smallBtn} py-1.5 text-sm ${gaps.data ? '' : 'ml-auto'}`}>
+              Rieker list
+            </Link>
+          )}
         </div>
 
         {q.error ? (
@@ -588,6 +596,7 @@ function ProspectRow({ p, dim, mark, onOpen, onCut }: {
           {rating && <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${rating.on}`}>{rating.label}</span>}
         </span>
       )}
+      {/* Rieker stock is NOT on the row — only in the open card (owner, 2026-11-27: "hidden under the expand … so the list stays lean"). */}
       <span className="min-w-0 flex-1 truncate font-medium text-slate-900">{p.name}</span>
       {mark === 'new' && <span className="shrink-0 rounded-full bg-sky-600 px-2 py-0.5 text-[11px] font-semibold text-white">NEW</span>}
       {mark === 'changed' && (
@@ -704,6 +713,10 @@ function ProspectCard({ p, onChanged, onClose }: { p: Prospect; onChanged: () =>
           <HaveBadge p={p} />
         </div>
       </div>
+
+      {/* RIEKER STOCK on a saved line (owner, 2026-11-27) — the same code / cost / can-get dots as Search Amazon, read live from the
+          stored list, so a new load shows on the next refresh. Only on a match, and only here in the open card. */}
+      {p.supplier && <div className="mt-2"><SupplierLine sup={p.supplier} /></div>}
 
       {SHOW_RATING && (
         <div className="mt-2">

@@ -5277,6 +5277,8 @@ export interface Prospect {
   have: { groupid: string } | null;   // one of our Amazon listings carries an ASIN on this line
   checks: ProspectCheck[];            // oldest first
   notes: ProspectNote[];              // oldest first
+  // The supplier's stock list matched by the line's name (2026-11-27) — Rieker-group codes only; null = no match. Read live.
+  supplier: { colour_sure: boolean; styles: SupplierStyle[] } | null;
 }
 export function getProspects() {
   return request<Prospect[]>({ url: '/prospect-list', method: 'GET' }, (b) => b.rows || []);
@@ -5350,13 +5352,33 @@ export interface AmazonSearchItem {
 }
 export interface AmazonSearchPage {
   total: number; next_token: string | null; offers_error: string | null;
+  hidden: number;   // sizes the server left out — Rieker / Remonte surely not on the Rieker list
   supplier_lists: Record<string, string>;
   items: AmazonSearchItem[];
+}
+// RIEKER LIST (2026-11-27) — every supplier style we can get and don't stock, with how it sells on Amazon as the last scan found it
+// (bcweb-server/routes/supplier-prospects.js). Read only; the scan runs after "load the Rieker list", never from the screen.
+export interface SupplierProspect {
+  style: string; season: string | null; cost: number | null; sizes: Record<string, SupplierLevel>;
+  rrp_est: number | null;   // ESTIMATED RRP from the cost (Rieker × 2.34), whole pounds — until we buy it and set the real one
+  asin: string | null; title: string | null; size: string | null;
+  rank: number | null; rank_category: string | null;
+  buybox: number | null; lowest: number | null; fba: number | null; fbm: number | null;
+  return_on_cost: { price: number; cost: number; profit: number; on_cost_pct: number } | null;
+  listed: { id: number; archived: boolean } | null;
+  scanned: boolean;   // false = added by a newer load, not yet looked up on Amazon
+}
+export interface SupplierProspects { list_date: string | null; scanned_at: string | null; rows: SupplierProspect[] }
+export function getSupplierProspects(supplier = 'rieker') {
+  return request<SupplierProspects>(
+    { url: '/supplier-prospects', method: 'GET', params: { supplier } },
+    (b) => ({ list_date: b.list_date ?? null, scanned_at: b.scanned_at ?? null, rows: b.rows || [] })
+  );
 }
 export function searchAmazonProspects(q: string, next_token?: string) {
   return request<AmazonSearchPage>(
     { url: '/prospect-amazon-search', method: 'GET', params: { q, ...(next_token ? { next_token } : {}) } },
-    (b) => ({ total: b.total, next_token: b.next_token ?? null, offers_error: b.offers_error ?? null, supplier_lists: b.supplier_lists || {}, items: b.items || [] })
+    (b) => ({ total: b.total, next_token: b.next_token ?? null, offers_error: b.offers_error ?? null, hidden: Number(b.hidden) || 0, supplier_lists: b.supplier_lists || {}, items: b.items || [] })
   );
 }
 

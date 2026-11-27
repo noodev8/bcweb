@@ -26,7 +26,12 @@ Success Response:
       "have": { "groupid": "RIE-Y3453-BLACK" } | null,
       "checks": [ { "id": 9, "size": "38", "asin": null, "rank": "58k", "price": "64.99", "sellers": "3", "checked_by": "Summer",
                     "checked_at": "..." } ],                      // oldest first
-      "notes":  [ { "id": 2, "body": "38 is the one selling", "created_by": "Summer", "created_at": "..." } ] }   // oldest first
+      "notes":  [ { "id": 2, "body": "38 is the one selling", "created_by": "Summer", "created_at": "..." } ],  // oldest first
+      "supplier": { "colour_sure": true, "styles": [ { "supplier": "rieker", "style": "98860-22", "season": "…", "cost": 34.2,
+                    "sizes": { "39": "substantial" }, "list_date": "2026-11-27" } ] } | null }
+          // SUPPLIER STOCK (owner, 2026-11-27: "add the dots to saved Rieker lines") — the line's name matched to a supplier stock list
+          // by utils/supplierStock.js → lookup (the same match as Search Amazon: a Rieker-group code in the name). Read live from the
+          // stored list on every load, so a new "load the Rieker list" shows on the next refresh. null = no match.
   ]
 }
 =======================================================================================================================================
@@ -42,6 +47,7 @@ const router = express.Router();
 const { query } = require('../database');
 const { verifyToken } = require('../middleware/verifyToken');
 const { moneyNum, returnOnCost } = require('../utils/prospect');
+const supplierStock = require('../utils/supplierStock');
 const logger = require('../utils/logger');
 
 router.use(verifyToken);
@@ -94,6 +100,10 @@ router.get('/', async (req, res) => {
     for (const n of notes.rows) {
       byId.get(n.prospect_id)?.notes.push({ id: n.id, body: n.body, created_by: n.created_by, created_at: n.created_at });
     }
+
+    // SUPPLIER STOCK — see the response notes. One query for every line (lookup keys by an id; the line's id stands in for an ASIN).
+    const sup = await supplierStock.lookup(rows.map((r) => ({ asin: String(r.id), title: r.name })));
+    for (const row of rows) row.supplier = sup.get(String(row.id)) ?? null;
 
     return res.json({ return_code: 'SUCCESS', rows });
   } catch (err) {

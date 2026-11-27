@@ -13,6 +13,8 @@ Purpose: The search the team did by hand on Amazon ("Lunar boots women" → open
          the return on cost. Click the row for its sizes. REVIEWS: Amazon's API has none, so "Open" goes to the page to look.
          "Add" opens the usual add form filled in from the best-ranked size (name, ASIN, rank, price, sellers, cost) — nothing is
          saved until Save, so the add form's own duplicate check and Reopen still apply.
+         CAN'T GET IS LEFT OUT by the server (Rieker / Remonte listings surely not on the Rieker list — owner, 2026-11-27), so a page
+         can come back thin; that is the point ("we are looking for diamonds in rough"). One quiet line says so when it empties a page.
          One page = 20 sizes (Amazon's maximum) — enough (owner, 2026-11-27: "top 20 is enough. the bottom ones are ranking too far
          out"); "More" stays as a quiet link under the list for the odd deeper look.
          No brand box (owner, 2026-11-27: "I just type a search") — the server still takes an optional brand, unused.
@@ -136,7 +138,9 @@ export default function ProspectAmazonSearch({ onAdd }: { onAdd: (p: ProspectPre
             </button>
           </div>
           {hidden ? null : groups.length === 0 ? (
-            <p className="px-3 py-3 text-sm text-slate-500">{allGroups.length ? 'Every row cut.' : 'Nothing found.'}</p>
+            <p className="px-3 py-3 text-sm text-slate-500">
+              {allGroups.length ? 'Every row cut.' : page.hidden ? 'Nothing here you can get.' : 'Nothing found.'}
+            </p>
           ) : (
             <div className="divide-y divide-slate-100">
               {groups.map((g) => (
@@ -257,7 +261,7 @@ function GroupRow({ g, open, onToggle, onAdd, onCut }: {
 
 // The supplier's side: style, cost, sizes as small dots — black = can get, empty = can't (two states, owner 2026-11-27),
 // and the return on cost. "colour?" when the listing's colour couldn't be pinned: every colour of that style on the list is shown.
-function SupplierLine({ sup, roc }: { sup: { colour_sure: boolean; styles: SupplierStyle[] }; roc: AmazonSearchItem['return_on_cost'] }) {
+export function SupplierLine({ sup, roc }: { sup: { colour_sure: boolean; styles: SupplierStyle[] }; roc?: AmazonSearchItem['return_on_cost'] }) {
   return (
     <span className="mt-1 block space-y-0.5 text-xs text-slate-600">
       {sup.styles.map((s) => (

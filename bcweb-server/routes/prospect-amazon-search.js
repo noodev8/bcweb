@@ -13,6 +13,10 @@ Purpose: The Prospects "Search Amazon" panel (owner, 2026-11-27: "is there a qui
            - "on our list / ours already": prospect + amzfeed by ASIN (the same two checks as prospect-asin-check)
            - supplier stock: utils/supplierStock.js — a Rieker-group code found in the listing, matched to the Rieker stock list
              (cost, sizes in stock). Lunar's GRS sends no list, so Lunar finds have none.
+         CAN'T GET IS LEFT OUT (owner, 2026-11-27: "shall we just hide them if i cant get them anyway? … we are looking for diamonds in
+         rough"): a Rieker / Remonte listing whose code we read and that is NOT on the Rieker list (any colour) is dropped from
+         `items` — utils/supplierStock.js → surelyCantGet. A listing we couldn't read a code from stays (unknown, not can't).
+         `hidden` counts what went, so the screen can say why a page came back thin.
          REVIEWS ARE NOT HERE: Amazon's API does not give star ratings or review counts — the screen links to the page for that.
          No RRP either: Amazon's list price came back empty on every listing tried; the Rieker cost comes from the list.
          One search page = 20 sizes (Amazon's maximum); "More" passes next_token. The screen groups sizes into styles by parent.
@@ -30,6 +34,7 @@ Success Response:
   "total": 309,                                   // Amazon's count of matching listings (sizes)
   "next_token": "…" | null,
   "offers_error": null | "…",                     // offers could not be read — ranks only on this page
+  "hidden": 6,                                    // sizes left out: surely can't get (Rieker / Remonte not on the list)
   "supplier_lists": { "rieker": "2026-11-27" },   // the loaded supplier lists and their dates
   "items": [
     { "asin": "B0DFMKV8KN", "parent": "B0DFMXXXXX" | null, "title": "…", "brand": "Lunar", "size": "4 UK", "colour": "Burgundy",
@@ -116,6 +121,7 @@ router.get('/', async (req, res) => {
     const haveBy = new Map(have.rows.map((r) => [r.asin, r.groupid]));
     const listedBy = new Map(listed.rows.map((r) => [r.asin, { id: r.id, name: r.name, archived: r.archived }]));
 
+    const hide = new Set(items.filter((it) => supplierStock.surelyCantGet(it, supplier.has(it.asin), lists)).map((it) => it.asin));
     for (const it of items) {
       Object.assign(it, readOffers(offerBy.get(it.asin)));
       it.have = haveBy.get(it.asin) ?? null;
@@ -132,7 +138,7 @@ router.get('/', async (req, res) => {
 
     res.json({
       return_code: 'SUCCESS', total: found.numberOfResults ?? items.length, next_token: found.pagination?.nextToken ?? null,
-      offers_error: offersError, supplier_lists: lists, items,
+      offers_error: offersError, supplier_lists: lists, hidden: hide.size, items: items.filter((it) => !hide.has(it.asin)),
     });
   } catch (err) {
     logger.error('[prospect-amazon-search] error:', err.message);

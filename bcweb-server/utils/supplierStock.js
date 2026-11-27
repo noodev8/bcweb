@@ -23,8 +23,18 @@ Exports:
   candidates(item)              -> [{ base, colours: ['01', …] }] — pure: what codes an Amazon item may be (item = { title, model, part })
   lookup(items)                 -> Map(asin -> { supplier, style, colour_sure, … }) — one query for a whole search page (no N+1)
   supplierList()                -> { rieker: '2026-11-27' } — the date of each loaded list, to say how fresh it is
+  surelyCantGet(item, matched, lists)
+                                -> true when we are SURE the supplier can't sell us this Amazon listing, so Search Amazon hides it
+                                   (owner, 2026-11-27: "shall we just hide them if i cant get them anyway?"). All three must hold:
+                                   the listing's brand is one a LOADED list covers (Rieker / Remonte), a Rieker-style code was read
+                                   from it (candidates), and no colour of that code is on the list (no match). A listing too badly
+                                   worded to read a code from is NOT hidden — unknown is kept, so nothing is missed on wording.
   BRAND_SUPPLIER                which of OUR brands (skusummary.brand) each list covers
   BRAND_SUPPLIER                which of OUR brands (skusummary.brand) each list covers
+  estRrp(supplier, cost)        -> an ESTIMATED RRP from the list's cost, whole pounds | null (owner, 2026-11-27: "An estimate is enough
+                                   here until we actually buy it and put the real figures in"). Rieker: cost × 2.34 — the steady ratio
+                                   on the Rieker styles we stock (£25.90→£60, £27.95→£65, £32.10→£75, £34.20→£79.99, £36.30→£85,
+                                   £37.15→£87; median 2.34 over 43 styles, 2026-11-27). No ladder stored. Shown "~£65", never written.
   applyCantGet(client, supplier, apply)
                                 -> { mark: [codes], release: [codes] } — THE LIST DRIVES "CAN'T GET" (owner, 2026-11-27: "make it act
                                    like our cant get, same sign. So it basically replaces us doing it manually … the PDF can and should
@@ -111,7 +121,18 @@ async function supplierList() {
 
 const BRAND_SUPPLIER = { Rieker: 'rieker', Remonte: 'rieker' };
 
+function surelyCantGet(item, matched, lists) {
+  const supplier = BRAND_SUPPLIER[item.brand];
+  return !!supplier && !!lists[supplier] && !matched && candidates(item).length > 0;
+}
+
 const SUPPLIER_NAME = { rieker: 'Rieker list' };
+
+const RRP_RATIO = { rieker: 2.34 };
+function estRrp(supplier, cost) {
+  const k = RRP_RATIO[supplier];
+  return k && cost ? Math.round(Number(cost) * k) : null;
+}
 
 async function applyCantGet(client, supplier, apply) {
   const brands = Object.keys(BRAND_SUPPLIER).filter((b) => BRAND_SUPPLIER[b] === supplier);
@@ -135,4 +156,4 @@ async function applyCantGet(client, supplier, apply) {
   return { sizes: rows.length, mark, release };
 }
 
-module.exports = { candidates, lookup, supplierList, BRAND_SUPPLIER, applyCantGet };
+module.exports = { candidates, lookup, supplierList, BRAND_SUPPLIER, applyCantGet, surelyCantGet, estRrp };
